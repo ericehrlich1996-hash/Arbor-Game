@@ -12,7 +12,7 @@
    ===================================================================== */
 'use strict';
 
-const SAWC={barL:.61,barBase:-.22,reach:.95,kerf:.006};
+const SAWC={barL:.61,barBase:-.22,reach:.95,kerf:.015};   // kerf = half the width of the slot the chain removes
 
 /* ---------- quaternion from an orthonormal basis (columns x,y,z) ---------- */
 function quatFromBasis(x,y,z){const m00=x[0],m11=y[1],m22=z[2],tr=m00+m11+m22;let q;
@@ -74,10 +74,11 @@ function stepSaw(dt){const s=G.saw,tr=G.tree;s.cutting=false;s.bind=false;
   s.cutting=true;if(!aligned||!crosses){s.bind=true;return;}
   const rate=WOOD.cutSpeed*(.35+.65*s.rpm)*(c.limb!=null?1.5:1);const maxS=c.exit+.004;
   if(c.s<maxS){c.s=Math.min(maxS,c.s+rate*dt);}
-  const front=V.add(W.e,V.mul(W.f,c.s));emit(W.e,V.add(V.mul(W.f,-1.1),[0,.5,0]),3,hex('#e2cfa0'),1.1,.8,.022);
+  const front=V.add(W.e,V.mul(W.f,c.s));emit(W.e,V.add(V.mul(W.f,-1.6),[0,.9,0]),5,hex('#e2cfa0'),1.4,1.1,.026);if(Math.random()<.5)emit(W.e,V.add(V.mul(W.f,-1),[0,.3,0]),2,hex('#b89a6a'),.8,1.4,.045);
   if(c.kind==='tree'){tr.cutDirty=true;}
   else if(c.kind==='stump'){if(c.s>=c.exit){finishStumpCut(c);s.cut=null;}}
-  else if(c.s>=c.exit){finishPieceCut(c);s.cut=null;}}
+  else if(c.s>=c.exit){finishPieceCut(c);s.cut=null;}
+  else if(c.limb==null&&performance.now()-(c.b.kerfT||0)>90){c.b.kerfT=performance.now();RD.free(c.b.gpu);c.b.gpu=RD.upload(buildPieceMesh(G.tree.T,c.b.piece,null));}}
 function startCut(h){const s=G.saw;
   if(h.kind==='stump'){const tr=G.tree,base=[tr.x,tr.y0,tr.z],qi=Q.conj(tr.q);const e=Q.rot(qi,V.sub(h.p,base)),f=Q.rot(qi,s.f),n=Q.rot(qi,s.n);
     for(const c of tr.stumpCuts){if(Math.abs(V.dot(c.n,n))>.995&&Math.abs(V.dot(c.n,V.sub(e,c.e)))<.012&&V.dot(c.f,f)>.97&&!c.done)return c;}
@@ -89,10 +90,13 @@ function startCut(h){const s=G.saw;
     const c={kind:'tree',e,f,n,s:0,exit:chordTree(e,f)};tr.cuts.push(c);return c;}
   const b=h.b,qi=Q.conj(b.q);const e=bodyLocal(b,h.p),f=Q.rot(qi,s.f),n=Q.rot(qi,s.n);
   const c={kind:'body',b,e,f,n,s:0,limb:h.cap.limb!=null?h.cap.limb:null,sub:h.cap.sub,cap:h.cap};
+  // a cut already started on this piece at the same place picks up where it left off
+  if(c.limb==null&&b.piece.kerfs){for(const k of b.piece.kerfs){if(Math.abs(V.dot(k.n,n))>.99&&Math.abs(V.dot(k.n,V.sub(e,k.e)))<.015&&V.dot(k.f,f)>.95){k.b=b;k.cap=h.cap;return k;}}}
   // distance through the wood along the bar
   const capW={a:bodyWorld(b,V.add(h.cap.a,b.com)),b:bodyWorld(b,V.add(h.cap.b,b.com)),r:h.cap.r};
   const [tIn,tOut]=chord(t=>{const p=V.add(h.p,V.mul(s.f,t));const [cp]=closestOnSeg(p,capW.a,capW.b);return V.dist(p,cp)<=capW.r;},-.05,1.4);
-  if(tIn!=null){c.e=bodyLocal(b,V.add(h.p,V.mul(s.f,tIn)));}c.exit=Math.max(.02,(tOut!=null&&tIn!=null)?tOut-tIn:.05);return c;}
+  if(tIn!=null){c.e=bodyLocal(b,V.add(h.p,V.mul(s.f,tIn)));}c.exit=Math.max(.02,(tOut!=null&&tIn!=null)?tOut-tIn:.05);
+  if(c.limb==null&&h.cap.trunk){(b.piece.kerfs=b.piece.kerfs||[]).push(c);}return c;}
 // march along a line: first distance inside the wood, and where it leaves again
 function chord(inside,t0,t1){let tIn=null,tOut=null;for(let t=t0;t<=t1;t+=.004){const i=inside(t);if(i&&tIn==null)tIn=t;if(!i&&tIn!=null){tOut=t;break;}}if(tIn!=null&&tOut==null)tOut=t1;return [tIn,tOut];}
 function chordTree(e,f){const T=G.tree.T;const [a,b]=chord(t=>{const p=V.add(e,V.mul(f,t));return Math.hypot(p[0],p[2])<=T.rAt(clamp(p[1],0,T.H));},-.03,1.5);return a!=null?Math.max(.02,b-Math.max(0,a)):.02;}
@@ -112,7 +116,7 @@ function finishStumpCut(c){const tr=G.tree,T=tr.T;c.done=true;c.s=c.exit+.01;
   const yc=c.e[1]+(c.n[0]*c.e[0]+c.n[2]*c.e[2])/(Math.abs(c.n[1])>1e-3?c.n[1]:1e-3);   // plane height at the stem centre
   if(tr.barberDir&&yc<tr.stumpY0+1.4){spawnSlab(tr);tr.barberDir=null;}
   if(yc<tr.stumpH){tr.stumpH=Math.max(.02,yc);G.stumpCol=[{x:tr.x,z:tr.z,r:T.rAt(tr.stumpH),y0:tr.y0-2,y1:tr.y0+tr.stumpH}];}
-  RD.free(tr.stump);tr.stump=RD.upload(buildStumpMesh2(T,tr.cuts.concat(tr.stumpCuts),tr.stumpR,tr.stumpY0,tr.barberDir));SFX.crunch();}
+  RD.free(tr.stump);tr.stump=RD.upload(buildStumpMesh2(T,tr.cuts.concat(tr.stumpCuts.filter(k=>k.done)),tr.stumpR,tr.stumpY0,tr.barberDir));SFX.crunch();}
 function spawnSlab(tr){const T=tr.T,r=T.rAt(tr.stumpY0),d=tr.barberDir,base=[tr.x,tr.y0,tr.z];
   const c=V.add(base,[-d[0]*r*.55,tr.stumpY0+.75,-d[2]*r*.55]);const w=r*1.3,th=r*.45,hh=1.5;const yaw=Math.atan2(d[0],d[2]);const q=Q.axis([0,1,0],yaw);
   const mb=new MeshB();mb.box(0,0,0,w,hh,th,SAP,[SAP,SAP,SAP,SAP,SAP,BARK]);
@@ -158,10 +162,12 @@ function stepStanding(dt){const tr=G.tree;if(tr.state!=='stand')return;
     if(A)for(const w of A.wedges){const key=tr.cuts.indexOf(w.c1)+'-'+tr.cuts.indexOf(w.c2);if(!tr.freed[key]){tr.freed[key]=w;spawnWedge(w);}}
     rebuildStanding();
     if(A){const open=Object.keys(tr.freed).length>0;
-      if(A.held===0)tr.goKind='drop';else if(open&&A.frac<=.13)tr.goKind='hinge';else if(!open&&A.frac<=.42&&backHeavy(A))tr.goKind='barber';else tr.goKind=null;}}
+      if(A.held===0)tr.goKind='drop';else if(open&&A.frac<=.13)tr.goKind='hinge';else if(!open&&A.frac<=.3&&leansOverHold(A))tr.goKind='barber';else if(!open&&A.frac<=.08)tr.goKind='drop';else tr.goKind=null;}}
   if(tr.goKind){tr.goAcc=(tr.goAcc||0)+dt;if(tr.goAcc>.14)startFall(tr.goKind);}else tr.goAcc=0;}
 // without an open face, a deep cut from one side lets the stem split up the back
-function backHeavy(A){let sx=0,sz=0,n=0;for(const c of A.cols){if(c.lo!=null){sx+=c.x;sz+=c.z;n++;}}return n>0;}
+// a barber chair needs real lean, and the stem leaning over the uncut wood that is left holding it
+function leansOverHold(A){const tr=G.tree;if(G.W.tree.lean<.035)return false;let sx=0,sz=0,n=0;for(const c of A.cols){if(c.lo==null){sx+=c.x;sz+=c.z;n++;}}if(!n)return false;
+  const h=V.norm([sx/n,0,sz/n]);const lw=Q.rot(Q.conj(tr.q),tr.leanDir);return h[0]*lw[0]+h[2]*lw[2]>.45;}
 
 /* ---------- start the fall ---------- */
 function startFall(kind){const tr=G.tree,T=tr.T,A=tr.A||analyzeStanding();tr.goKind=null;
@@ -207,6 +213,9 @@ function spawnWedge(w){const tr=G.tree,T=tr.T,base=[tr.x,tr.y0,tr.z];const R=T.r
   const b=makeBody([{p:cen,m,I:cylI(m,.04,2*half,V.norm(Q.rot(tr.q,w.l)))}],P,[{a:V.add(cen,V.mul(Q.rot(tr.q,w.l),-half*.8)),b:V.add(cen,V.mul(Q.rot(tr.q,w.l),half*.8)),r:.025}],[0,0,0,1],[0,0,0],{wedge:true});
   b.gpu=RD.upload(mb);b.v=V.add(V.mul(Q.rot(tr.q,w.face),.6),[0,.3,0]);PHYS.bodies.push(b);SFX.crunch();}
 
+/* ---------- the slot the chain eats: a surface point inside the kerf is pushed in to the cut front ---------- */
+function kerfGroove(p,c,r){const d=V.dot(c.n,V.sub(p,c.e));if(Math.abs(d)>SAWC.kerf)return null;const along=V.dot(V.sub(p,c.e),c.f);if(along>c.s)return null;
+  const depth=Math.min(c.s-along+.004,r*.98);const rl=Math.hypot(p[0],p[2])||1;const k=Math.max(.02,(rl-depth)/rl);return [p[0]*k,p[1],p[2]*k];}
 /* ---------- standing tree mesh with real kerfs and open faces ---------- */
 function rebuildStanding(){const tr=G.tree;if(tr.mesh)RD.free(tr.mesh);tr.mesh=RD.upload(buildStandingMesh(tr.T,tr.cuts,Object.values(tr.freed||{})));}
 function buildStandingMesh(T,cuts,wedges){const mb=new MeshB(),seg=36;
@@ -214,12 +223,12 @@ function buildStandingMesh(T,cuts,wedges){const mb=new MeshB(),seg=36;
   // ring heights: coarse along the stem, fine through the cut band
   const ys=new Set();for(let y=-.4;y<T.H;y+=.3)ys.add(+y.toFixed(3));ys.add(T.H);
   if(live.length){let lo=1e9,hi=-1e9;for(const c of live){const R=T.rAt(clamp(c.e[1],0,T.H));const ext=Math.abs(c.n[1])>.05?R*Math.hypot(c.n[0],c.n[2])/Math.abs(c.n[1]):.3;lo=Math.min(lo,c.e[1]-Math.min(ext,.5)-.02);hi=Math.max(hi,c.e[1]+Math.min(ext,.5)+.02);}
-    for(let y=Math.max(-.39,lo);y<=hi;y+=.006)ys.add(+y.toFixed(4));}
+    for(let y=Math.max(-.39,lo);y<=hi;y+=.005)ys.add(+y.toFixed(4));}
   const Y=[...ys].filter(y=>y>=-.4&&y<=T.H).sort((a,b)=>a-b);
   const rows=[];for(const y of Y){const r=T.rAt(Math.max(y,0)),row=[];const band=live.length&&y>-.39&&y<T.H-.01;
     for(let s=0;s<=seg;s++){const a=s/seg*Math.PI*2;let p=[Math.cos(a)*r,y,Math.sin(a)*r],col=null;
       if(band){for(const w of wedges){if(inWedge(w,p)){const d1=V.dot(w.c1.n,V.sub(p,w.c1.e)),d2=V.dot(w.c2.n,V.sub(p,w.c2.e));const c=Math.abs(d1)<Math.abs(d2)?w.c1:w.c2,d=c===w.c1?d1:d2;p=V.sub(p,V.mul(c.n,d));col=SAP;break;}}
-        if(!col)for(const c of live){const d=V.dot(c.n,V.sub(p,c.e));if(Math.abs(d)<SAWC.kerf*1.4&&V.dot(V.sub(p,c.e),c.f)<=c.s){p=[p[0]*.955,p[1],p[2]*.955];col=KERF;break;}}}
+        if(!col)for(const c of live){const g=kerfGroove(p,c,r);if(g){p=g;col=KERF;break;}}}
       row.push(mb.v(p,V.norm([Math.cos(a),.1,Math.sin(a)]),col||barkCol(T,y,a)));}rows.push(row);}
   for(let j=0;j<rows.length-1;j++)for(let s=0;s<seg;s++)mb.quad(rows[j][s],rows[j][s+1],rows[j+1][s+1],rows[j+1][s]);
   mb.sphere(0,T.H,0,T.rAt(T.H),.04,T.rAt(T.H),BARK,6,3);

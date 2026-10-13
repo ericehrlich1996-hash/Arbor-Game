@@ -47,7 +47,7 @@ function pieceGeom(T,P){const S=[],pts=[],caps=[];const rho=WOOD.rho;
   return {S,pts,caps};}
 
 /* ---------- mesh for a piece (or the whole standing tree) ---------- */
-const BARK=hex('#7c766c'),BARK_D=hex('#58534b'),BLOND=hex('#c4ae88'),SAP=hex('#e6d3a6'),HEART=hex('#c8ad78'),KERF=hex('#2a2016');
+const BARK=hex('#7c766c'),BARK_D=hex('#58534b'),BLOND=hex('#c4ae88'),SAP=hex('#e6d3a6'),HEART=hex('#c8ad78'),KERF=hex('#1a1209');
 function barkCol(T,y,a,cut){const n=Math.sin(a*7+y*9.3)*Math.sin(a*3-y*13.1);let c=n>.25?BARK_D:BARK;
   const bl=Math.sin(a*2+y*1.7+T.seed)*Math.sin(y*.9-T.seed*.3);if(y>3&&bl>.55)c=mixc(c,BLOND,.8);return cut?SAP:c;}
 function addEndCap(mb,T,y,r,up,seg){const cc=mb.v([0,y,0],[0,up,0],HEART);const rings=[.35,.7,.985],cols=[HEART,shade(HEART,1.08),SAP];
@@ -55,21 +55,26 @@ function addEndCap(mb,T,y,r,up,seg){const cc=mb.v([0,y,0],[0,up,0],HEART);const 
     for(let s=0;s<seg;s++){if(inner.length===1)mb.tri(cc,ring[s+1],ring[s]);else mb.quad(inner[s],inner[s+1],ring[s+1],ring[s]);}inner=ring;}
   // thin bark edge, flush with the stem (no lip sticking out past the bark)
   const rim=[];for(let s=0;s<=seg;s++){const a=s/seg*Math.PI*2;rim.push(mb.v([Math.cos(a)*r*.999,y,Math.sin(a)*r*.999],[0,up,0],BARK_D));}for(let s=0;s<seg;s++)mb.quad(inner[s],inner[s+1],rim[s+1],rim[s]);}
-function buildPieceMesh(T,P,cuts){const mb=new MeshB(),seg=16;
+function buildPieceMesh(T,P,cuts){const mb=new MeshB(),seg=P.kerfs&&P.kerfs.length?32:16;
   if(P.kind==='trunk'){
     const ys=[];for(let y=P.y0;y<P.y1;y+=.3)ys.push(y);ys.push(P.y1);
     // the felled stem's butt follows the felling cuts: the bark runs down to each cut plane
     let hiAt=null,hiMin=P.y0,hiMax=P.y0;
     if(P.butt){const live=P.butt.cuts.filter(c=>c.s>.002);const R0=T.rAt(P.y0);const raw=heightField(T,live,R0,Math.max);
-      hiAt=(x,z)=>{const h=raw(x,z);return clamp(h==null?P.y0-.02:h,P.y0-.35,P.y0+.35);};
+      const top=Math.min(P.y0+.35,P.y1-.025);hiAt=(x,z)=>{const h=raw(x,z);return clamp(h==null?P.y0-.02:h,P.y0-.35,top);};
       for(let i=0;i<=10;i++)for(let j=0;j<=10;j++){const x=(i/10*2-1)*R0,z=(j/10*2-1)*R0;if(x*x+z*z>R0*R0)continue;const h=hiAt(x,z);hiMin=Math.min(hiMin,h);hiMax=Math.max(hiMax,h);}
       for(let y=hiMin-.01;y<=hiMax+.02;y+=.015)ys.push(y);}
+    // live kerfs: fine rings across the band each cut plane sweeps through the stem
+    const kerfs=(P.kerfs||[]).filter(k=>k.s>.002&&Math.abs(k.n[1])>.3);
+    for(const k of kerfs){const yk=k.e[1]+(k.n[0]*k.e[0]+k.n[2]*k.e[2])/k.n[1];const ext=Math.min(.4,T.rAt(clamp(yk,0,T.H))*Math.hypot(k.n[0],k.n[2])/Math.abs(k.n[1])+SAWC.kerf*2);
+      for(let y=yk-ext;y<=yk+ext;y+=.005)if(y>P.y0&&y<P.y1)ys.push(y);}
     const yLo=P.butt?hiMin-.01:P.y0;
     const Y=[...new Set(ys.map(y=>+y.toFixed(4)))].filter(y=>y>=yLo&&y<=P.y1).sort((a,b)=>a-b);
     const rows=[];for(const y of Y){const r=T.rAt(y),row=[];
       for(let s=0;s<=seg;s++){const a=s/seg*Math.PI*2;const x=Math.cos(a)*r,z=Math.sin(a)*r;let yy=y;
         if(hiAt&&y<=hiMax+.001){const h=hiAt(x,z);if(yy<h)yy=h;}
-        row.push(mb.v([x,yy,z],V.norm([Math.cos(a),.1,Math.sin(a)]),barkCol(T,y,a)));}rows.push(row);}
+        let pp=[x,yy,z],col=null;for(const k of kerfs){const g=kerfGroove(pp,k,r);if(g){pp=g;col=KERF;break;}}
+        row.push(mb.v(pp,V.norm([Math.cos(a),.1,Math.sin(a)]),col||barkCol(T,y,a)));}rows.push(row);}
     for(let j=0;j<rows.length-1;j++)for(let s=0;s<seg;s++)mb.quad(rows[j][s],rows[j][s+1],rows[j+1][s+1],rows[j+1][s]);
     if(P.butt)buttCap(mb,T,P,hiAt);else if(P.y0>0.01||P.cutBottom)addEndCap(mb,T,P.y0,T.rAt(P.y0),-1,seg);
     if(P.y1<T.H-.02)addEndCap(mb,T,P.y1,T.rAt(P.y1),1,seg);else mb.sphere(0,P.y1,0,T.rAt(P.y1),.04,T.rAt(P.y1),BARK,6,3);

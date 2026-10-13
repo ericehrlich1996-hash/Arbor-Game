@@ -31,12 +31,12 @@ function makeWorld(seed){
     return h;};
   // ---- problem tree: open lawn, clear of the house, shed, drive and road by more than its height ----
   W.tree=null;
-  for(let k=0;k<400&&!W.tree;k++){const x=R.range(-38,38),z=R.range(-24,40);const ht=R.range(13,15);
+  for(let k=0;k<400&&!W.tree;k++){const x=R.range(-38,38),z=R.range(-24,40);const ht=R.range(17,20);
     const clear=ht+3.5;
     const dHouse=boxDist(x,z,W.house), dShed=boxDist(x,z,W.shed), dPile=Math.hypot(x-W.pile.x,z-W.pile.z), dPark=Math.hypot(x-W.park[0],z-W.park[2]);
     const dDrive=Math.min(...W.drive.map(p=>Math.hypot(x-p[0],z-p[1])));
     if(dHouse<clear||dShed<clear||dPile<clear-1||dPark<clear+4||dDrive<clear-2||z-W.roadZ<clear+4)continue;
-    W.tree={x,z,h:ht,dbh:R.range(.36,.41),lean:R.range(.02,.06),leanDir:R.range(0,Math.PI*2),seed:R.int(1,1e6)};}
+    W.tree={x,z,h:ht,dbh:R.range(.5,.6),lean:R.range(.02,.06),leanDir:R.range(0,Math.PI*2),seed:R.int(1,1e6)};}
   if(!W.tree)W.tree={x:s*24,z:30,h:16,dbh:.5,lean:.04,leanDir:1,seed:5};
   // ---- old man waits by the parking spot ----
   W.oldMan={x:W.park[0]-s*3.2,z:W.park[2]+4.5};

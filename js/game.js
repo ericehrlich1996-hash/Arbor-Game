@@ -79,12 +79,13 @@ function frameOrigin(b){return V.sub(b.pos,Q.rot(b.q,b.com));}
 function removeBody(b){b.mode='gone';const i=PHYS.bodies.indexOf(b);if(i>=0)PHYS.bodies.splice(i,1);if(b.gpu)RD.free(b.gpu);}
 function velAtWorld(b,p){const r=V.sub(p,b.pos);return V.add(b.v,V.cross(b.w,r));}
 
-function buckBody(b,y){const P=b.piece;if(y-P.y0<.03||P.y1-y<.03)return false;
-  const o=frameOrigin(b),q=b.q;const A={kind:'trunk',y0:P.y0,y1:y,limbs:P.limbs.filter(id=>G.tree.T.limbs[id].y<y),stubs:(P.stubs||[]).slice(),cutBottom:P.cutBottom,butt:P.butt,lt:P.lt};
-  const Bp={kind:'trunk',y0:y,y1:P.y1,limbs:P.limbs.filter(id=>G.tree.T.limbs[id].y>=y),stubs:(P.stubs||[]).slice(),cutBottom:true,lt:P.lt};
+function buckBody(b,y){const P=b.piece;if(y-P.y0<.04||P.y1-y<.04)return false;
+  const o=frameOrigin(b),q=b.q;const kerfY=k=>k.e[1]+(k.n[0]*k.e[0]+k.n[2]*k.e[2])/(Math.abs(k.n[1])>1e-3?k.n[1]:1e-3);const left=(P.kerfs||[]).filter(k=>k.s<k.exit);
+  const A={kerfs:left.filter(k=>kerfY(k)<y),kind:'trunk',y0:P.y0,y1:y-SAWC.kerf,limbs:P.limbs.filter(id=>G.tree.T.limbs[id].y<y),stubs:(P.stubs||[]).slice(),cutBottom:P.cutBottom,butt:P.butt,lt:P.lt};
+  const Bp={kerfs:left.filter(k=>kerfY(k)>=y),kind:'trunk',y0:y+SAWC.kerf,y1:P.y1,limbs:P.limbs.filter(id=>G.tree.T.limbs[id].y>=y),stubs:(P.stubs||[]).slice(),cutBottom:true,lt:P.lt};
   removeBody(b);const nb=[];for(const Pn of [A,Bp]){const g=pieceGeom(G.tree.T,Pn);let c=[0,0,0],m=0;for(const s of g.S){c=V.add(c,V.mul(s.p,s.m));m+=s.m;}c=V.mul(c,1/m);
     const wc=V.add(o,Q.rot(q,c));nb.push(spawnPiece(Pn,q,o,velAtWorld(b,wc),b.w));}if(G.tree.body===b)G.tree.body=nb[0];
-  nb.forEach(wake);SFX.crunch();return true;}
+  nb.forEach(b2=>{wake(b2);for(const k of b2.piece.kerfs||[])k.b=b2;});SFX.crunch();return true;}
 // cut a limb part way out: the stretch beyond t falls, a stub stays on the stem
 function cutLimbAt(b,id,t){const P=b.piece;const o=frameOrigin(b),q=b.q;const [ta,tb]=limbSpan(P,id);
   const rest=Object.assign({},P,{lt:Object.assign({},P.lt||{},{[id]:t})});removeBody(b);const tb2=spawnPiece(rest,q,o,b.v,b.w);if(G.tree.body===b)G.tree.body=tb2;
