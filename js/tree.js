@@ -40,9 +40,9 @@ function pieceGeom(T,P){const S=[],pts=[],caps=[];const rho=WOOD.rho;
     const nc=Math.max(1,Math.ceil(L/1.0));for(let i=0;i<nc;i++){const a=P.y0+i*L/nc,b=P.y0+(i+1)*L/nc;caps.push({a:[0,a,0],b:[0,b,0],r:T.rAt((a+b)/2),trunk:true});}}
   for(const Lm of pieceLimbs(T,P)){const [ta,tb]=limbSpan(P,Lm.id);const n=4,len=Lm.len*(tb-ta);
     for(let i=0;i<n;i++){const t0=ta+(tb-ta)*i/n,t1=ta+(tb-ta)*(i+1)/n,r=limbR(Lm,(t0+t1)/2),l=len/n,m=rho*Math.PI*r*r*l;S.push({p:limbPt(Lm,(t0+t1)/2),m,I:cylI(m,Math.max(r,.01),Math.max(l,.01),Lm.dir)});}
-    for(const f of [0,.5,1])pts.push(limbPt(Lm,ta+(tb-ta)*f));
+    for(const f of [0,.25,.5,.75,1]){const t=ta+(tb-ta)*f;pts.push([...limbPt(Lm,t),limbR(Lm,t)*.95]);}
     caps.push({a:limbPt(Lm,ta),b:limbPt(Lm,tb),r:limbR(Lm,(ta+tb)/2)*1.15,limb:Lm.id});
-    Lm.subs.forEach((sb,si)=>{if(sb.t<ta||sb.t>tb)return;const o=limbPt(Lm,sb.t),e=V.add(o,V.mul(sb.dir,sb.len)),m=rho*Math.PI*sb.r0*sb.r0*.4*sb.len;S.push({p:V.lerp(o,e,.5),m,I:cylI(m,sb.r0,sb.len,sb.dir)});pts.push(e);
+    Lm.subs.forEach((sb,si)=>{if(sb.t<ta||sb.t>tb)return;const o=limbPt(Lm,sb.t),e=V.add(o,V.mul(sb.dir,sb.len)),m=rho*Math.PI*sb.r0*sb.r0*.4*sb.len;S.push({p:V.lerp(o,e,.5),m,I:cylI(m,sb.r0,sb.len,sb.dir)});pts.push([...V.lerp(o,e,.5),sb.r0*.6],[...e,sb.r0*.3]);
       caps.push({a:o,b:e,r:sb.r0*.9,limb:Lm.id,sub:si});});}
   return {S,pts,caps};}
 

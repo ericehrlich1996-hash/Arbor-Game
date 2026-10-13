@@ -78,7 +78,7 @@ function stepSaw(dt){const s=G.saw,tr=G.tree;s.cutting=false;s.bind=false;
   if(c.kind==='tree'){tr.cutDirty=true;}
   else if(c.kind==='stump'){if(c.s>=c.exit){finishStumpCut(c);s.cut=null;}else if(performance.now()-(tr.stumpT||0)>110){tr.stumpT=performance.now();rebuildStump();}}
   else if(c.s>=c.exit){finishPieceCut(c);s.cut=null;}
-  else if(c.limb==null&&performance.now()-(c.b.kerfT||0)>90){c.b.kerfT=performance.now();RD.free(c.b.gpu);c.b.gpu=RD.upload(buildPieceMesh(G.tree.T,c.b.piece,null));}}
+  else if(c.limb==null&&performance.now()-(c.b.kerfT||0)>90){c.b.kerfT=performance.now();RD.free(c.b.gpu);c.b.mb=buildPieceMesh(G.tree.T,c.b.piece,null);c.b.gpu=RD.upload(c.b.mb);}}
 function startCut(h){const s=G.saw;
   if(h.kind==='stump'){const tr=G.tree,base=[tr.x,tr.y0,tr.z],qi=Q.conj(tr.q);const e=Q.rot(qi,V.sub(h.p,base)),f=Q.rot(qi,s.f),n=Q.rot(qi,s.n);
     for(const c of tr.stumpCuts){if(Math.abs(V.dot(c.n,n))>.995&&Math.abs(V.dot(c.n,V.sub(e,c.e)))<.012&&V.dot(c.f,f)>.97&&!c.done)return c;}

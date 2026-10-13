@@ -54,6 +54,11 @@ function makeWorld(seed){
   W.yardTrees=[];for(let k=0;k<60&&W.yardTrees.length<5;k++){const x=R.range(-44,44),z=R.range(-40,50);
     if(Math.hypot(x-W.tree.x,z-W.tree.z)<W.tree.h+8||boxDist(x,z,W.house)<5||boxDist(x,z,W.shed)<5||Math.hypot(x-W.park[0],z-W.park[2])<12||Math.min(...W.drive.map(p=>Math.hypot(x-p[0],z-p[1])))<6||z-W.roadZ<8)continue;
     W.yardTrees.push({x,z,h:R.range(6,10),kind:R()<.5?'pine':'hard',r:R.range(1.6,2.6),c:R()});W.colliders.push({t:'circle',x,z,r:.35});}
+  // the ground everything stands on is exactly the ground that gets drawn: the terrain mesh's own triangles
+  W.Hs=W.H;const N=140,S=300,st=S/N,G0=new Float32Array((N+1)*(N+1));for(let j=0;j<=N;j++)for(let i=0;i<=N;i++)G0[j*(N+1)+i]=W.Hs(-S/2+i*st,-S/2+j*st);
+  W.H=(x,z)=>{const gx=clamp((x+S/2)/st,0,N-1e-6),gz=clamp((z+S/2)/st,0,N-1e-6),i=Math.floor(gx),j=Math.floor(gz),fx=gx-i,fz=gz-j;
+    const A=G0[j*(N+1)+i],B=G0[(j+1)*(N+1)+i],C=G0[(j+1)*(N+1)+i+1],D=G0[j*(N+1)+i+1];
+    return fz>fx?A+(C-B)*fx+(B-A)*fz:A+(D-A)*fx+(C-D)*fz;};
   return W;
 }
 function boxDist(x,z,b){const dx=Math.max(Math.abs(x-b.x)-b.w/2,0),dz=Math.max(Math.abs(z-b.z)-b.d/2,0);return Math.hypot(dx,dz);}

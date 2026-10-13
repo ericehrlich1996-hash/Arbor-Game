@@ -65,14 +65,14 @@ function settleTrailer(reset){const c=G.chip,h=chipHitchPoint();const L=-CHIP.ax
   // the axle stays where it was and the tongue swings to point at the new hitch position
   let ax=(!reset&&c.axle)?c.axle:[h[0]-Math.sin(c.yaw)*L,0,h[2]-Math.cos(c.yaw)*L];const d=[h[0]-ax[0],h[2]-ax[2]];c.yaw=Math.atan2(d[0],d[1]);
   ax=[h[0]-Math.sin(c.yaw)*L,0,h[2]-Math.cos(c.yaw)*L];c.pos=[h[0],h[1]-.5,h[2]];c.axle=[ax[0],G.W.H(ax[0],ax[2]),ax[2]];
-  c.pitch=Math.atan2(c.pos[1]+.0-c.axle[1],L);}
-function chipMatrix(){const c=G.chip;return M.mul(M.mul(M.T(c.pos[0],c.pos[1],c.pos[2]),M.Ry(c.yaw)),M.Rx(c.pitch*.0));}
+  c.pitch=Math.asin(clamp((c.axle[1]+TRUCK.wheelR-c.pos[1]+.1)/2.3,-.5,.5));}
+function chipMatrix(){const c=G.chip;return M.mul(M.mul(M.T(c.pos[0],c.pos[1],c.pos[2]),M.Ry(c.yaw)),M.Rx(c.pitch||0));}
 function hopperWorld(){return M.apply(chipMatrix(),[0,1.0,-3.6]);}
 function chuteWorld(){return M.apply(chipMatrix(),[0,2.45,-.9]);}
 
 /* ================= bodies (felled stem, limbs, rounds) ================= */
 function spawnPiece(P,q,origin,v,w){const T=G.tree.T;const g=pieceGeom(T,P);const b=makeBody(g.S,g.pts,g.caps,q,origin,{piece:P});
-  b.gpu=RD.upload(buildPieceMesh(T,P,null));if(v)b.v=v.slice();if(w)b.w=w.slice();PHYS.bodies.push(b);classify(b);return b;}
+  b.mb=buildPieceMesh(T,P,null);b.gpu=RD.upload(b.mb);if(v)b.v=v.slice();if(w)b.w=w.slice();PHYS.bodies.push(b);classify(b);return b;}
 function classify(b){const P=b.piece,T=G.tree.T;if(!P){b.brush=false;b.round=false;return;}
   if(P.kind==='limb'){b.brush=true;b.round=false;return;}
   const rMax=T.rAt(P.y0);b.brush=rMax<WOOD.brushR;b.round=!b.brush&&P.limbs.length===0;}
@@ -197,22 +197,35 @@ function onKey(e,down){const k=e.code;G.keys[k]=down;if(!down)return;
   else if(k==='KeyQ'&&G.pl.carry)dropOne();
   else if(k==='Digit1')equip('hands');
   else if(k==='Digit2')equip('saw');
+  else if(k==='Digit3')toggleMuffs();
   else if(k==='KeyR'&&G.pl.tool==='saw')pullStart();
   else if(k==='KeyH'){$('help').hidden=!$('help').hidden;}
   else if(k==='KeyC'||k==='ControlLeft'){G.pl.crouch=!G.pl.crouch;}
   else if(k==='Space'&&G.pl.ground){G.pl.vy=4.2;G.pl.ground=false;}}
-function equip(t){const p=G.pl;if(p.carry)dropCarry();if(t===p.tool)return;p.tool=t;if(t!=='saw'&&G.saw.on){sawOff();}
-  document.querySelectorAll('.slot').forEach(s=>s.classList.toggle('on',s.dataset.t===t));if(t==='saw'&&!G.saw.on)toast('Press R to pull-start the saw.',2200);}
+function equip(t){const p=G.pl;if(t==='saw'&&G.saw.racked){toast('The saw is on the chipper rack.',1800);return;}if(p.carry)dropCarry();if(t===p.tool)return;p.tool=t;if(t!=='saw'&&G.saw.on){sawOff();}
+  document.querySelectorAll('.slot[data-t]').forEach(s=>s.classList.toggle('on',s.dataset.t===t));if(t==='saw'&&!G.saw.on)toast('Press R to pull-start the saw.',2200);}
 function pullStart(){const s=G.saw;if(s.on){sawOff();return;}if(s.pull>0)return;s.pull=.5;s.pulls++;SFX.pull();
   setTimeout(()=>{if(G.pl.tool!=='saw')return;if(s.pulls>=2&&Math.random()<.6||s.pulls>=4){s.on=true;s.pulls=0;s.engine=makeEngine('saw');toast('Saw running.',1800);}else{SFX.sputter();toast(s.pulls===1?'Choke is on. Pull again.':'Sputter… pull again.',1400);}},380);}
 function sawOff(){const s=G.saw;s.on=false;if(s.engine){s.engine.stop();s.engine=null;}s.cutting=false;}
 
 /* ================= interaction ================= */
+function rackAction(){const s=G.saw;if(s.racked){s.racked=false;G.pl.tool='hands';equip('saw');SFX.pick();return;}
+  if(G.pl.tool!=='saw')return;sawOff();s.racked=true;G.pl.tool='hands';document.querySelectorAll('.slot[data-t]').forEach(x=>x.classList.toggle('on',x.dataset.t==='hands'));SFX.clank();}
+function toggleMuffs(){G.muffs=!G.muffs;setMuffs(G.muffs);$('muffSlot').classList.toggle('on',G.muffs);SFX.pick();}
+// branches squeeze into the infeed: everything inside the hood is pushed toward the throat, tips fold along the walls
+function foldIntoHopper(b){const cm=chipMatrix(),inv=invRigid(cm),Mo=bodyMatrix(b),src=b.mb,out=new MeshB();out.i=src.i;out.c=src.c;out.n=src.n;const P=src.p,np=new Array(P.length);
+  for(let k=0;k<P.length;k+=3){const w=M.apply(Mo,[P[k],P[k+1],P[k+2]]);const l=M.apply(inv,w);
+    if(l[2]>-2.95){l[0]*=.1;l[1]=1.0+(l[1]-1.0)*.1;l[2]=Math.min(l[2],-2.85);}                                 // past the rollers: gone into the drum
+    else if(l[2]>-4.3){const t=(l[2]+4.3)/1.35;const hw=lerp(.58,.34,t),hh=lerp(.44,.3,t);l[0]=clamp(l[0],-hw,hw);l[1]=clamp(l[1],1.0-hh,1.0+hh);}
+    const q=M.apply(cm,l);np[k]=q[0];np[k+1]=q[1];np[k+2]=q[2];}
+  out.p=np;return out;}
 function aimInfo(){const p=G.pl,eye=V.add(p.pos,[0,G.pl.eyeY||1.62,0]),d=fwdOf(p.yaw,p.pitch);G.eye=eye;G.fwd=d;let best=null;
   // old man
   const o=G.om,om=[o.x,G.W.H(o.x,o.z)+1.2,o.z];{const to=V.sub(om,eye),dist=V.len(to);if(dist<3.2&&V.dot(V.norm(to),d)>.9)best={kind:'om',t:dist};}
   // the truck's driver door
   if(nearDriverDoor()){const dd=V.dist(M.apply(truckMatrix(),[-1.05,1.1,.2]),eye);if(!best||dd<best.t)best={kind:'truck',t:dd};}
+  // the saw rack on the chipper
+  {const rp=M.apply(chipMatrix(),[-.7,.82,-2.2]);const to=V.sub(rp,eye),dd=V.len(to);if(dd<2.0&&V.dot(V.norm(to),d)>.85&&(G.pl.tool==='saw'||G.saw.racked)&&(!best||dd<best.t))best={kind:'rack',t:dd};}
   // the chipper's tongue coupler
   {const d=nearCoupler();if(d!=null&&(!best||d<best.t))best={kind:'hitch',t:d};}
   // chipper engine
@@ -226,9 +239,10 @@ function aimInfo(){const p=G.pl,eye=V.add(p.pos,[0,G.pl.eyeY||1.62,0]),d=fwdOf(p
 function interact(){const p=G.pl;const a=G.aim;
   if(G.chip.mode==='hand'){hitchAction();return;}
   if(p.carry){if(a&&a.kind==='body'&&p.tool==='hands'&&a.b.piece&&!(a.b.piece.kind==='trunk'&&a.b.piece.limbs.length)&&canAddCarry(a.b)){pickUp(a.b);return;}
-    const hw=hopperWorld();if(V.dist(hw,G.eye)<3.4&&p.carry.brush){feedChipper();return;}dropCarry();return;}
+    const hw=hopperWorld();if(V.dist(hw,G.eye)<3.4&&p.carry.brush&&G.chip.running){feedChipper();return;}dropCarry();return;}
   if(!a)return;
   if(a.kind==='hitch'){hitchAction();return;}
+  if(a.kind==='rack'){rackAction();return;}
   if(a.kind==='om'){talkToEarl();return;}
   if(a.kind==='truck'){enterTruck();return;}
   if(a.kind==='chipper'){toggleChipper();return;}
@@ -338,7 +352,8 @@ function render(cam){const r=RD;r.resize();const asp=r.cv.width/r.cv.height;cons
   const cm=chipMatrix();r.draw(m.chipper,cm);for(const sx of [-1,1])r.draw(m.wheel,M.mul(cm,M.mul(M.T(sx*.78,TRUCK.wheelR-.5+.0,CHIP.axle),M.Rx(G.truck.wheel*0))));
   // tree, stump, pieces
   const tr=G.tree;if(tr.mesh)r.draw(tr.mesh,M.mul(M.QT(tr.q,[tr.x,tr.y0,tr.z]),M.ident()));if(tr.stump)r.draw(tr.stump,M.T(tr.x,tr.y0,tr.z));
-  for(const b of PHYS.bodies){if(b.mode==='gone')continue;let Mo=bodyMatrix(b);if(b.mode==='feed'){const k=clamp(1-(b.feedT-.4)/3,0,1);}r.draw(b.gpu,Mo);}
+  for(const b of PHYS.bodies){if(b.mode==='gone')continue;if(b.mode==='feed'&&b.mb){const fm=RD.upload(foldIntoHopper(b));r.draw(fm);RD.free(fm);continue;}r.draw(b.gpu,bodyMatrix(b));}
+  if(G.saw.racked)r.draw(m.saw,M.mul(cm,M.mul(M.T(-.74,.86,-1.78),M.Rz(-.08))));
   if(G.wedge)r.draw(G.wedge.gpu,bodyMatrix(G.wedge.b));
   // old man
   const om=omMatrices();r.draw(m.om_torso,om.torso);r.draw(m.om_head,om.headR);r.draw(m.om_upper,om.uR);r.draw(m.om_fore,om.fR);r.draw(m.om_upper,om.uL);r.draw(m.om_fore,om.fL);r.draw(m.om_leg,om.legL);r.draw(m.om_leg,om.legR);r.draw(m.om_cane,om.cane);
@@ -410,8 +425,8 @@ function updateHUD(){const a=G.aim,p=G.pl;let t='';
   $('drive').hidden=true;
   if(G.dlg)t='';else if(G.chip.mode==='hand')t=V.dist(couplerWorld(),hitchWorld())<.8?'<b>E</b> Hitch it to the truck':'<b>E</b> Set the tongue down';
   else if(p.carry){const n=p.carryList.length,near=V.dist(hopperWorld(),G.eye)<3.4;const more=a&&a.kind==='body'&&a.b.piece&&canAddCarry(a.b)&&p.tool==='hands';
-    t=more?`<b>E</b> Pick up another · ${lb(carryMass()+a.b.m)} total`:(p.carry.brush&&near?`<b>E</b> Feed the chipper${n>1?` (${n})`:''}`:`<b>E</b> Drop${n>1?' all':''} · <b>Q</b> drop one`)+` · ${lb(carryMass())}`;}
-  else if(a){if(a.kind==='om')t='<b>E</b> Talk to Earl';else if(a.kind==='truck')t='<b>E</b> Get in the truck';else if(a.kind==='hitch')t=G.chip.mode==='truck'?'<b>E</b> Unhitch the chipper':'<b>E</b> Grab the tongue';else if(a.kind==='chipper')t=`<b>E</b> ${G.chip.running?'Stop':'Start'} the chipper`;
+    t=more?`<b>E</b> Pick up another · ${lb(carryMass()+a.b.m)} total`:(p.carry.brush&&near&&G.chip.running?`<b>E</b> Feed the chipper${n>1?` (${n})`:''}`:`<b>E</b> Drop${n>1?' all':''} · <b>Q</b> drop one`)+` · ${lb(carryMass())}`;}
+  else if(a){if(a.kind==='om')t='<b>E</b> Talk to Earl';else if(a.kind==='truck')t='<b>E</b> Get in the truck';else if(a.kind==='rack')t=G.saw.racked?'<b>E</b> Take the saw':'<b>E</b> Hang the saw on the rack';else if(a.kind==='hitch')t=G.chip.mode==='truck'?'<b>E</b> Unhitch the chipper':'<b>E</b> Grab the tongue';else if(a.kind==='chipper')t=`<b>E</b> ${G.chip.running?'Stop':'Start'} the chipper`;
     else if(a.kind==='tree')t=p.tool==='saw'?(G.saw.on?'':'<b>R</b> Pull-start the saw'):'Dead white ash';
     else if(a.kind==='body'){const b=a.b;if(p.tool==='saw')t=G.saw.on?'':'<b>R</b> Pull-start the saw';
       else t=!b.piece?'':b.piece.kind==='trunk'&&b.piece.limbs.length?lb(b.m):(b.m>WOOD.liftMax?lb(b.m):`<b>E</b> Pick up ${b.brush?'brush':'round'} · ${lb(b.m)}`);}}

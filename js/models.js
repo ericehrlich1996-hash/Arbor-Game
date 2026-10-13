@@ -101,6 +101,9 @@ function buildChipper(){const mb=new MeshB();const body=hex('#d9861c'),dk=hex('#
   mb.box(0,p[1],p[2]+.08,.32,.2,.16,shade(body,.85));
   // fenders
   for(const sx of [-1,1]){mb.box(sx*.78,.82,CHIP.axle,.3,.06,.95,dk);}
+  // tool rack on the left side: two brackets, a cradle rail and a lip
+  for(const z of [-1.62,-2.5]){mb.box(-.6,.78,z,.08,.42,.05,dk);mb.box(-.7,.6,z,.2,.05,.05,dk);}
+  mb.box(-.78,.62,-2.06,.04,.08,1.0,steel);mb.box(-.66,.62,-2.06,.04,.04,1.0,steel);mb.box(-.79,.69,-2.06,.02,.08,1.0,yel);
   // warning decals
   mb.box(.551,1.15,-2.45,.01,.18,.5,yel);mb.box(-.551,1.15,-2.45,.01,.18,.5,yel);
   return mb;}

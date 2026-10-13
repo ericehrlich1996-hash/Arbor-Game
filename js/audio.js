@@ -6,9 +6,12 @@
 
 const SND={ctx:null,master:null,on:true};
 function sndInit(){if(SND.ctx)return;const C=window.AudioContext||window.webkitAudioContext;if(!C)return;const ctx=new C();SND.ctx=ctx;
-  SND.master=ctx.createGain();SND.master.gain.value=.7;SND.master.connect(ctx.destination);
+  SND.master=ctx.createGain();SND.master.gain.value=.7;SND.muff=ctx.createBiquadFilter();SND.muff.type='lowpass';SND.muff.frequency.value=20000;SND.muffG=ctx.createGain();SND.muffG.gain.value=1;
+  SND.master.connect(SND.muff);SND.muff.connect(SND.muffG);SND.muffG.connect(ctx.destination);
   const len=ctx.sampleRate*2,buf=ctx.createBuffer(1,len,ctx.sampleRate),d=buf.getChannelData(0);for(let i=0;i<len;i++)d[i]=Math.random()*2-1;SND.noise=buf;
   const cur=new Float32Array(256);for(let i=0;i<256;i++){const x=i/128-1;cur[i]=Math.tanh(x*3);}SND.curve=cur;}
+// ear muffs: cut the highs and drop the level, the way real hearing protection does
+function setMuffs(on){if(!SND.ctx)return;const t=SND.ctx.currentTime;SND.muff.frequency.setTargetAtTime(on?650:20000,t,.08);SND.muffG.gain.setTargetAtTime(on?.38:1,t,.08);}
 function noiseSrc(){const s=SND.ctx.createBufferSource();s.buffer=SND.noise;s.loop=true;return s;}
 // one-shot helper: filtered noise burst
 function sNoise(dur,freq,q,vol,type,delay){if(!SND.ctx)return;const c=SND.ctx,t=c.currentTime+(delay||0);const s=noiseSrc(),f=c.createBiquadFilter(),g=c.createGain();

@@ -33,7 +33,7 @@ function makeBody(samples,pts,caps,q,frameOrigin,extra){let m=0;const c=[0,0,0];
     I[1]-=s.m*d[0]*d[1];I[2]-=s.m*d[0]*d[2];I[5]-=s.m*d[1]*d[2];if(s.I)for(let k=0;k<9;k++)I[k]+=s.I[k];}
   I[3]=I[1];I[6]=I[2];I[7]=I[5];
   const b=Object.assign({m,im:1/m,Ib:I,iIb:M3.inv(I),com:c,q:q.slice(),v:[0,0,0],w:[0,0,0],
-    pts:pts.map(p=>V.sub(p,c)),caps:caps.map(k=>Object.assign({},k,{a:V.sub(k.a,c),b:V.sub(k.b,c)})),sleep:false,still:0,mode:'dyn'},extra||{});
+    pts:pts.map(p=>V.sub(p,c)),ptR:pts.map(p=>p[3]||0),caps:caps.map(k=>Object.assign({},k,{a:V.sub(k.a,c),b:V.sub(k.b,c)})),sleep:false,still:0,mode:'dyn'},extra||{});
   b.pos=V.add(frameOrigin,Q.rot(q,c));
   let rad=0;for(const p of b.pts)rad=Math.max(rad,V.len(p));for(const k of b.caps)rad=Math.max(rad,V.len(k.a)+k.r,V.len(k.b)+k.r);b.rad=rad;
   return b;}
@@ -55,7 +55,7 @@ function physStep(H,extraColliders){const dt=PHYS.dt,B=PHYS.bodies;
   for(let it=0;it<2;it++){
     // terrain contacts
     for(const b of B){if(b.mode!=='dyn'||b.sleep)continue;const iIw=b._iIw;
-      for(const lp of b.pts){const r=M3.vec(b._R,lp),px=b.pos[0]+r[0],py=b.pos[1]+r[1],pz=b.pos[2]+r[2];const gh=H(px,pz),d=gh-py;if(d<-.002)continue;
+      for(let pi=0;pi<b.pts.length;pi++){const lp=b.pts[pi],pr=b.ptR?b.ptR[pi]:0;const r0=M3.vec(b._R,lp),r=[r0[0],r0[1]-pr,r0[2]],px=b.pos[0]+r[0],py=b.pos[1]+r[1],pz=b.pos[2]+r[2];const gh=H(px,pz),d=gh-py;if(d<-.002)continue;
         const e=.3,n=V.norm([H(px-e,pz)-H(px+e,pz),2*e,H(px,pz-e)-H(px,pz+e)]);
         const vp=velAt(b,r),vn=V.dot(vp,n);const bias=Math.max(0,d-PHYS.slop)*PHYS.beta/dt;if(vn>=bias&&d<=0)continue;
         const rn=V.cross(r,n),k=b.im+V.dot(n,V.cross(M3.vec(iIw,rn),r));let jn=(bias-vn)/k;if(jn<=0)continue;
@@ -79,8 +79,8 @@ function physStep(H,extraColliders){const dt=PHYS.dt,B=PHYS.bodies;
       if(V.dist(A.pos,C.pos)>A.rad+C.rad)continue;
       const RA=A._R||M3.fromQ(A.q),RC=C._R||M3.fromQ(C.q),iA=A._iIw||M3.mul(M3.mul(RA,A.iIb),M3.T(RA)),iC=C._iIw||M3.mul(M3.mul(RC,C.iIb),M3.T(RC));
       const capsW=C.caps.map(k=>({a:V.add(C.pos,M3.vec(RC,k.a)),b:V.add(C.pos,M3.vec(RC,k.b)),r:k.r}));
-      for(const lp of A.pts){const rA=M3.vec(RA,lp),p=V.add(A.pos,rA);
-        for(const k of capsW){const [cp]=closestOnSeg(p,k.a,k.b);const dv=V.sub(p,cp),dd=V.len(dv),pen=k.r-dd;if(pen<=0||dd<1e-6)continue;
+      for(let pi=0;pi<A.pts.length;pi++){const lp=A.pts[pi],prA=A.ptR?A.ptR[pi]:0;const rA=M3.vec(RA,lp),p=V.add(A.pos,rA);
+        for(const k of capsW){const [cp]=closestOnSeg(p,k.a,k.b);const dv=V.sub(p,cp),dd=V.len(dv),pen=k.r+prA-dd;if(pen<=0||dd<1e-6)continue;
           const n=V.mul(dv,1/dd),rC=V.sub(cp,C.pos);const dyC=C.mode==='dyn';
           const vr=V.sub(velAt(A,rA),dyC?velAt(C,rC):[0,0,0]),vn=V.dot(vr,n);const bias=Math.max(0,pen-PHYS.slop)*PHYS.beta/dt;if(vn>=bias)continue;
           let k2=A.im+V.dot(n,V.cross(M3.vec(iA,V.cross(rA,n)),rA));if(dyC)k2+=C.im+V.dot(n,V.cross(M3.vec(iC,V.cross(rC,n)),rC));

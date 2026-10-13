@@ -16,6 +16,7 @@ Open `index.html` in a browser (Chrome, Edge or Firefox). No install or build st
 | Right mouse | rev and cut |
 | Mouse wheel | roll the saw (turns the cut plane) |
 | C | crouch |
+| 3 | ear muffs on/off (muffles the saw and chipper) |
 | Q | drop one piece (E drops everything) |
 | E at the driver door | drive the truck (W/S drive, A/D steer, Space brake, V camera, E get out) |
 | H | help |
