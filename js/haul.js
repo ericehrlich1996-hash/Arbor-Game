@@ -21,7 +21,7 @@ function hitchAction(){const c=G.chip;
 function nearCoupler(){const e=G.eye||V.add(G.pl.pos,[0,1.6,0]);const cp=couplerWorld();const to=V.sub(cp,e),d=V.len(to);return d<2.1&&V.dot(V.norm(to),G.fwd||[0,0,-1])>.72?d:null;}
 
 /* ---------- solid boxes for logs: truck cab, bed floor and walls, chipper body ---------- */
-const TRUCK_BOXES=[[[0,1.1,.99],[1.0,.85,1.66]],[[0,.5,-1.69],[.98,.275,.93]],[[-1.0,1.05,-1.69],[.09,.3,.95]],[[1.0,1.05,-1.69],[.09,.3,.95]],[[0,1.0,-2.62],[1.05,.33,.08]],[[0,1.05,-.74],[.98,.28,.04]]];
+const TRUCK_BOXES=[[[0,1.1,.99],[1.0,.85,1.66]],[[0,.5,-1.69],[.98,.3,.93]],[[-1.0,1.05,-1.69],[.09,.3,.95]],[[1.0,1.05,-1.69],[.09,.3,.95]],[[0,1.0,-2.62],[1.05,.33,.08]],[[0,1.05,-.74],[.98,.28,.04]]];
 const CHIP_BOXES=[[[0,1.0,-2.0],[.55,.55,1.0]]];
 function boxesFrom(Mx,list){const ax=[V.norm(M.applyDir(Mx,[1,0,0])),V.norm(M.applyDir(Mx,[0,1,0])),V.norm(M.applyDir(Mx,[0,0,1]))];return list.map(([c,h])=>({c:M.apply(Mx,c),ax,h}));}
 function updateSolidBoxes(){PHYS.boxes=boxesFrom(truckMatrix(),TRUCK_BOXES).concat(boxesFrom(chipMatrix(),CHIP_BOXES));}
@@ -63,3 +63,46 @@ function dustMesh(){const mb=new MeshB(),H=G.W.H;const saw=hex('#e2cfa0'),chip=h
     mb.sphere(c.x+(j-.5)*.04,H(c.x,c.z)-ry*.25,c.z+(j-.5)*.04,rx,ry,rx*(.85+j*.3),shade(c.chip?chip:saw,.9+j*.2),7,3);}
   return mb;}
 function drawDust(r){if(DUST.dirty&&performance.now()-DUST.t>250){DUST.dirty=false;DUST.t=performance.now();if(DUST.mesh)r.free(DUST.mesh);DUST.mesh=DUST.cells.size?r.upload(dustMesh()):null;}if(DUST.mesh)r.draw(DUST.mesh);}
+
+/* ---------- throwing: a log off the shoulder, into the truck bed if you're near it ---------- */
+// is the bed close enough and roughly in front of you to lob something into it?
+function throwTarget(){const p=G.pl;if(!G.eye||!G.fwd)return null;const tm=truckMatrix(),inv=invRigid(tm);
+  const c=M.apply(tm,[0,1.0,-1.7]);const flat=Math.hypot(c[0]-p.pos[0],c[2]-p.pos[2]);if(flat>6.5)return null;
+  const to=V.norm([c[0]-G.eye[0],0,c[2]-G.eye[2]]),fw=V.norm([G.fwd[0],0,G.fwd[2]]);if(!p.onBed&&V.dot(to,fw)<.6)return null;
+  // the emptiest spot in the bed (truck-local), nearest the way you're facing on ties
+  let best=null;for(const x of [-.45,0,.45])for(const z of [-2.25,-1.75,-1.25]){const w=M.apply(tm,[x,1.0,z]);let crowd=0;
+    for(const b of PHYS.bodies){if(b.mode!=='dyn')continue;const l=M.apply(inv,b.pos);if(Math.abs(l[0]-x)<.4&&Math.abs(l[2]-z)<.4)crowd+=1+Math.max(0,l[1]-.8)*3;}
+    const score=crowd*10+V.dist(w,V.add(G.eye,V.mul(fw,2)))*.3;if(!best||score<best.score)best={score,x,z,crowd};}
+  return M.apply(tm,[best.x,1.05+Math.min(.6,best.crowd*.25),best.z]);}
+function throwOne(){const p=G.pl,L=p.carryList;if(!L.length)return;const b=L.pop();const tgt=throwTarget();releaseBody(b);
+  if(tgt){// a lob that comes down in the bed: the quickest flight whose arc clears the bed walls with the piece's thickness to spare
+    const inv=invRigid(truckMatrix()),r=b.piece&&b.piece.kind==='trunk'?G.tree.T.rAt(b.piece.y0)+.06:.15;const d=V.sub(tgt,b.pos);let tf=1.2;
+    for(let t=.4;t<=1.2;t+=.04){let ok=true;for(let i=1;i<20&&ok;i++){const f=i/20;const w=V.add(b.pos,[d[0]*f,d[1]*f+.5*PHYS.g*t*t*f*(1-f),d[2]*f]);const l=M.apply(inv,w);
+        const outside=Math.abs(l[0])>.9-r*.3||l[2]<-2.55||l[2]>-.8;if(outside&&Math.abs(l[0])<1.1+r&&l[2]>-2.75-r&&l[2]<-.6+r&&l[1]<1.36+r)ok=false;}
+      if(ok){tf=t;break;}}
+    b.v=[d[0]/tf,d[1]/tf+.5*PHYS.g*tf,d[2]/tf];}
+  else{const fw=[-Math.sin(p.yaw),0,-Math.cos(p.yaw)];b.v=V.add(V.mul(fw,4.2*(1-Math.min(.5,b.m/120))),[0,2.4,0]);}
+  b.w=[(Math.random()-.5)*2,(Math.random()-.5)*1,(Math.random()-.5)*2];SFX.pick();setTimeout(updateObjectives,1800);}
+
+/* ---------- dragging: logs too heavy to shoulder but under 200 lb ---------- */
+const DRAG_MAX=200/2.205;
+function canDrag(b){return !!(b&&b.piece&&b.mode==='dyn'&&b.m>WOOD.liftMax&&b.m<=DRAG_MAX);}
+function toggleDrag(){const p=G.pl;if(p.drag){stopDrag();return;}if(p.carry||p.inTruck)return;const a=G.aim;
+  if(!a||a.kind!=='body')return;const b=a.b;if(!b.piece)return;
+  if(b.m<=WOOD.liftMax){toast('Light enough to pick up (E).',1600);return;}
+  if(!canDrag(b)){toast(`Too heavy to drag (${lb(b.m)}). Buck it smaller.`,2200);return;}
+  if(p.tool==='saw')equip('hands');
+  // grab whichever end is closer to you
+  let ends;if(b.piece.kind==='trunk')ends=[[0,b.piece.y0,0],[0,b.piece.y1,0]];else{const {ax,butt}=brushAxis(b);ends=[butt,V.add(butt,V.mul(ax,.6))];}
+  const lp=ends.map(e=>V.sub(e,b.com)).sort((u,v)=>V.dist(bodyWorld(b,V.add(u,b.com)),p.pos)-V.dist(bodyWorld(b,V.add(v,b.com)),p.pos))[0];
+  p.drag={b,lp};wake(b);SFX.pick();}
+function stopDrag(){const p=G.pl;if(!p.drag)return;wake(p.drag.b);p.drag=null;SFX.drop();setTimeout(updateObjectives,1500);}
+// a spring from your hands to the grabbed end: the end lifts, the rest drags along the ground
+function stepDrag(dt){const p=G.pl,D=p.drag;if(!D)return;const b=D.b;if(b.mode!=='dyn'||!PHYS.bodies.includes(b)){p.drag=null;return;}
+  wake(b);const R=M3.fromQ(b.q),r=M3.vec(R,D.lp),gp=V.add(b.pos,r);const fw=[-Math.sin(p.yaw),0,-Math.cos(p.yaw)];
+  const rt=[Math.cos(p.yaw),0,-Math.sin(p.yaw)];const tgt=V.add(V.add(V.add(p.pos,V.mul(fw,.45)),V.mul(rt,.42)),[0,.62,0]);const err=V.sub(tgt,gp);   // the end in your right hand, the log trailing behind
+  if(Math.hypot(err[0],err[2])>2.4){stopDrag();return;}
+  let vdes=V.mul(err,6);const vl=V.len(vdes);if(vl>4)vdes=V.mul(vdes,4/vl);
+  const dv=V.sub(vdes,velAt(b,r)),dl=V.len(dv);if(dl<1e-4)return;const n=V.mul(dv,1/dl);const iIw=M3.mul(M3.mul(R,b.iIb),M3.T(R));
+  const k=b.im+V.dot(n,V.cross(M3.vec(iIw,V.cross(r,n)),r));let j=dl/k*Math.min(1,dt*14);j=Math.min(j,1150*dt);   // about what a person can pull
+  applyImpulse(b,iIw,r,V.mul(n,j));b.w=V.mul(b.w,Math.max(0,1-dt*3));}

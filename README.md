@@ -19,6 +19,8 @@ Open `index.html` in a browser (Chrome, Edge or Firefox). No install or build st
 | 3 | ear muffs on/off (muffles the saw and chipper) |
 | Q | drop one piece (E drops everything) |
 | F | kick: shove a log, or snap apart a piece that's nearly cut through |
+| G | throw a log off your shoulder (lands in the truck bed when you're near it) |
+| T | drag a log that's too heavy to lift but under 200 lb (T or E to let go) |
 | E at the tailgate | hop up into the truck bed (E again to hop down) |
 | E at the driver door | drive the truck (W/S drive, A/D steer, Space brake, V camera, E get out) |
 | H | help |
@@ -29,7 +31,7 @@ You pull up the driveway, finish your energy drink and meet Earl, the client. Hi
 
 1. **Drop it.** Cuts are free-form: wherever the bar enters the wood, at whatever angle you hold the saw, is the cut. How you cut decides where it falls, or whether it barber-chairs.
 2. **Limb it** and feed the brush to the chipper. Branches go in butt first, flat along the infeed.
-3. **Buck it** into rounds light enough to lift (132 lb max), and stack them on the pallet by the shed. Rounds ride on your shoulder; wood dropped in the truck bed rides along when you drive.
+3. **Buck it** into rounds light enough to lift (132 lb max), and pile them up behind the shed. Rounds ride on your shoulder (G throws them, into the truck bed when you are near it); heavier pieces under 200 lb can be dragged with T; wood dropped in the truck bed rides along when you drive.
 4. **Get paid.** Clean felling and quick work earn a bonus. A barber chair costs you.
 
 ## Code layout

@@ -68,9 +68,9 @@ function physStep(H,extraColliders){const dt=PHYS.dt,B=PHYS.bodies;
       for(const bx of PHYS.boxes){if(V.dist(b.pos,bx.c)>b.rad+bx.h[0]+bx.h[1]+bx.h[2])continue;
         // push points out through the face on the side the body's centre is on, so a log can't squeeze through a thin wall
         const dc=V.sub(b.pos,bx.c),lc=[V.dot(dc,bx.ax[0]),V.dot(dc,bx.ax[1]),V.dot(dc,bx.ax[2])];
-        for(const lp of b.pts){const r=M3.vec(b._R,lp),p=V.add(b.pos,r),d=V.sub(p,bx.c);const l=[V.dot(d,bx.ax[0]),V.dot(d,bx.ax[1]),V.dot(d,bx.ax[2])];
-          if(Math.abs(l[0])>bx.h[0]||Math.abs(l[1])>bx.h[1]||Math.abs(l[2])>bx.h[2])continue;
-          let k=0,pen=1e9,sg=1;for(let i=0;i<3;i++){const si=Math.abs(lc[i])>bx.h[i]?Math.sign(lc[i]):(Math.sign(l[i])||1);const qq=bx.h[i]-si*l[i];if(qq<pen){pen=qq;k=i;sg=si;}}const n=V.mul(bx.ax[k],sg);
+        for(let pi=0;pi<b.pts.length;pi++){const lp=b.pts[pi],pr=b.ptR?b.ptR[pi]:0;const r=M3.vec(b._R,lp),p=V.add(b.pos,r),d=V.sub(p,bx.c);const l=[V.dot(d,bx.ax[0]),V.dot(d,bx.ax[1]),V.dot(d,bx.ax[2])];
+          if(Math.abs(l[0])>bx.h[0]+pr||Math.abs(l[1])>bx.h[1]+pr||Math.abs(l[2])>bx.h[2]+pr)continue;
+          let k=0,pen=1e9,sg=1;for(let i=0;i<3;i++){const si=Math.abs(lc[i])>bx.h[i]?Math.sign(lc[i]):(Math.sign(l[i])||1);const qq=bx.h[i]+pr-si*l[i];if(qq<pen){pen=qq;k=i;sg=si;}}const n=V.mul(bx.ax[k],sg);
           const vp=velAt(b,r),vn=V.dot(vp,n),bias=Math.max(0,pen-PHYS.slop)*PHYS.beta/dt;if(vn>=bias)continue;
           const kk=b.im+V.dot(n,V.cross(M3.vec(iIw,V.cross(r,n)),r));const jn=(bias-vn)/kk;if(jn<=0)continue;applyImpulse(b,iIw,r,V.mul(n,jn));b._contact++;
           const vp2=velAt(b,r),vt=V.sub(vp2,V.mul(n,V.dot(vp2,n))),lt=V.len(vt);if(lt>1e-5){const t=V.mul(vt,1/lt),kt=b.im+V.dot(t,V.cross(M3.vec(iIw,V.cross(r,t)),r));applyImpulse(b,iIw,r,V.mul(t,-Math.min(lt/kt,PHYS.mu*jn)));}}}}

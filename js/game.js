@@ -22,7 +22,7 @@ function newLevel(seed){
   const mk=mb=>RD.upload(mb);
   G.meshes={terrain:mk(buildTerrain(W)),roads:mk(buildRoads(W)),house:mk(buildHouse(W)),woods:mk(buildWoods(W)),wheel:mk(buildWheel()),chipper:mk(buildChipper()),
     saw:mk(buildChainsaw()),gloveR:mk(buildGlove(1)),gloveL:mk(buildGlove(-1)),fistR:mk(buildFist(1)),fistL:mk(buildFist(-1)),arm:mk(buildArm()),can:mk(buildCan()),handCan:mk(buildRightHandCan()),forearm:mk(buildForearm()),shadow:mk(new MeshB().disk(0,0,0,1,[0,0,0],20))};
-  const tk=buildTruck(R);G.meshes.truck=mk(tk.mesh);G.meshes.door=mk(buildTruckDoor(tk.c1,tk.c2));
+  const tk=buildTruck(R);G.meshes.truck=mk(tk.mesh);G.meshes.tailgate=mk(tk.tailgate);G.meshes.door=mk(buildTruckDoor(tk.c1,tk.c2));
   const om=buildOldMan();for(const k in om)G.meshes['om_'+k]=mk(om[k]);
   // truck path for the intro: along the road, then up the gravel drive
   const s=W.s;const ctrl=[[s*70,W.roadZ-1.8],[s*40,W.roadZ-1.8],[s*22,W.roadZ-1.6],...W.drive.slice(0,5)];
@@ -159,7 +159,7 @@ function talkToEarl(){const o=G.om;
     {who:OM_NAME,text:"Well it's about dang time! You the tree fella? You look like a tree fella."},
     {who:OM_NAME,text:"That ash out back's deader'n disco. Them little green beetles got it. Emerald ash borers, the TV called 'em."},
     {who:OM_NAME,text:"It creaks at me every night. Every. Night. Like it's plottin' somethin'."},
-    {who:OM_NAME,text:"Here's the deal: drop it, chip the branches, and cut the trunk into rounds I can lift. Stack 'em on the pallet by my shed."},
+    {who:OM_NAME,text:"Here's the deal: drop it, chip the branches, and cut the trunk into rounds I can lift. Pile 'em up out behind my shed."},
     {who:OM_NAME,text:"Four hundred bucks, cash. From my mattress. Don't ask about the mattress."},
     {who:OM_NAME,text:"Go on, git! And don't drop it on my house."}],()=>{G.objs.talk=true;o.state='idle';updateObjectives();});return;}
   if(G.objs.felled&&G.objs.limbed&&G.objs.stacked&&!G.objs.paid){payday();return;}
@@ -180,7 +180,7 @@ function updateObjectives(){const o=G.objs;let brush=0;for(const b of PHYS.bodie
   if(o.felled){o.limbed=brush===0;o.stacked=o.limbed&&rounds.length>0&&heavy===0&&inPile===rounds.length;}
   const li=(done,txt)=>`<li class="${done?'done':''}">${txt}</li>`;
   $('objList').innerHTML=li(o.talk,'Talk to Earl')+li(o.felled,'Drop the dead ash')+li(o.limbed,`Limb it and chip the brush${o.felled&&!o.limbed?` · ${brush} left`:''}`)
-    +li(o.stacked,`Buck the stem into liftable rounds and stack them on the pallet${o.felled&&rounds.length?` · ${inPile}/${rounds.length}${heavy?` · ${heavy} too heavy`:''}`:''}`)+li(o.paid,'Get paid');
+    +li(o.stacked,`Buck the stem into liftable rounds and pile them behind the shed${o.felled&&rounds.length?` · ${inPile}/${rounds.length}${heavy?` · ${heavy} too heavy`:''}`:''}`)+li(o.paid,'Get paid');
   G.counts={brush,rounds:rounds.length,inPile,heavy};
   if(o.limbed&&o.stacked&&!o.paid&&!G.flags.callPay){G.flags.callPay=true;SFX.ding();omBark("Hey! Looks done to me! Come get your money!",6000);toast('Job done. Talk to Earl to get paid.');}}
 function inPileZone(b){const p=G.W.pile;return Math.abs(b.pos[0]-p.x)<p.w/2+.6&&Math.abs(b.pos[2]-p.z)<p.d/2+.6;}
@@ -201,6 +201,8 @@ function onKey(e,down){const k=e.code;G.keys[k]=down;if(!down)return;
   else if(k==='Digit2')equip('saw');
   else if(k==='Digit3')toggleMuffs();
   else if(k==='KeyF')kick();
+  else if(k==='KeyG'&&G.pl.carry)throwOne();
+  else if(k==='KeyT')toggleDrag();
   else if(k==='KeyR'&&G.pl.tool==='saw')pullStart();
   else if(k==='KeyH'){$('help').hidden=!$('help').hidden;}
   else if(k==='KeyC'||k==='ControlLeft'){G.pl.crouch=!G.pl.crouch;}
@@ -214,7 +216,7 @@ function sawOff(){const s=G.saw;s.on=false;if(s.engine){s.engine.stop();s.engine
 /* ================= interaction ================= */
 function hopTruck(){const p=G.pl,tm=truckMatrix();if(p.carryList.length>1)dropCarry();
   if(p.onBed){const o=M.apply(tm,[0,0,-3.7]);p.pos=[o[0],G.W.H(o[0],o[2]),o[2]];p.onBed=false;}
-  else{const o=M.apply(tm,[0,.775,-2.1]);p.pos=o;p.onBed=true;p.vy=0;}SFX.step();}
+  else{const o=M.apply(tm,[0,.8,-2.1]);p.pos=o;p.onBed=true;p.vy=0;}SFX.step();}
 // a boot to whatever you're looking at: shoves it, and snaps a piece that is nearly cut through
 function kick(){const p=G.pl;if(p.carry||p.inTruck)return;const eye=V.add(p.pos,[0,p.eyeY||1.62,0]),d=fwdOf(p.yaw,Math.min(p.pitch,-.15));
   const h=rayBodies(eye,d,1.9,b=>b.mode==='dyn'&&!!b.piece);G.kickT=performance.now();if(!h){SFX.step();return;}const b=h.b;wake(b);
@@ -251,7 +253,7 @@ function aimInfo(){const p=G.pl,eye=V.add(p.pos,[0,G.pl.eyeY||1.62,0]),d=fwdOf(p
   // pieces
   const rb=rayBodies(eye,d,2.4,b=>b!==G.pl.carry&&b.mode==='dyn');if(rb&&(!best||rb.t<best.t))best={kind:'body',t:rb.t,p:rb.p,b:rb.b,cap:rb.cap};
   return best;}
-function interact(){const p=G.pl;const a=G.aim;
+function interact(){const p=G.pl;const a=G.aim;if(p.drag){stopDrag();return;}
   if(G.chip.mode==='hand'){hitchAction();return;}
   if(p.carry){if(a&&a.kind==='body'&&p.tool==='hands'&&a.b.piece&&!(a.b.piece.kind==='trunk'&&a.b.piece.limbs.length)&&canAddCarry(a.b)){pickUp(a.b);return;}
     const hw=hopperWorld();if(V.dist(hw,G.eye)<3.4&&p.carry.brush&&G.chip.running){feedChipper();return;}dropCarry();return;}
@@ -262,7 +264,7 @@ function interact(){const p=G.pl;const a=G.aim;
   if(a.kind==='om'){talkToEarl();return;}
   if(a.kind==='truck'){enterTruck();return;}
   if(a.kind==='chipper'){toggleChipper();return;}
-  if(a.kind==='body'&&p.tool==='hands'){const b=a.b;if(b.m>WOOD.liftMax){toast(`Too heavy to lift (${lb(b.m)}).`);return;}
+  if(a.kind==='body'&&p.tool==='hands'){const b=a.b;if(b.m>WOOD.liftMax){toast(canDrag(b)?`Too heavy to lift (${lb(b.m)}). T to drag it.`:`Too heavy to lift (${lb(b.m)}).`);return;}
     if(b.piece&&b.piece.kind==='trunk'&&b.piece.limbs.length){toast("Can't lift that.");return;}
     pickUp(b);return;}
   if(a.kind==='body'&&p.tool==='saw'&&!G.saw.on)toast('The saw is off.');}
@@ -290,7 +292,7 @@ function obbPush(p,cx,cz,yaw,hx,hz,r){const c=Math.cos(yaw),s=Math.sin(yaw);cons
 function stepPlayer(dt){const p=G.pl,K=G.keys,W=G.W;p.eyeY=lerp(p.eyeY||1.62,p.crouch?.98:1.62,Math.min(1,dt*8));if(G.dlg)return;
   const f=[-Math.sin(p.yaw),0,-Math.cos(p.yaw)],r=[Math.cos(p.yaw),0,-Math.sin(p.yaw)];let mv=[0,0,0];
   if(K.KeyW)mv=V.add(mv,f);if(K.KeyS)mv=V.sub(mv,f);if(K.KeyD)mv=V.add(mv,r);if(K.KeyA)mv=V.sub(mv,r);
-  const carryM=carryMass();const sp=(K.ShiftLeft&&!p.carry&&!p.crouch?5.6:p.crouch?1.4:3.3)*(1-carryM/WOOD.liftMax*.45)*(G.chip.mode==='hand'?.55:1);
+  const carryM=carryMass();const sp=(K.ShiftLeft&&!p.carry&&!p.crouch?5.6:p.crouch?1.4:3.3)*(1-carryM/WOOD.liftMax*.45)*(G.chip.mode==='hand'?.55:1)*(p.drag?.5:1);
   const moving=V.len(mv)>0;if(moving){mv=V.mul(V.norm(mv),sp*dt);p.pos[0]+=mv[0];p.pos[2]+=mv[2];p.stepT+=sp*dt;p.bob+=dt*sp*2.2;if(p.stepT>1.3&&p.ground){p.stepT=0;SFX.step();}}
   // collisions
   const rad=.34;for(const c of W.colliders){if(c.t==='circle'){const dx=p.pos[0]-c.x,dz=p.pos[2]-c.z,d=Math.hypot(dx,dz),m=c.r+rad;if(d<m&&d>1e-5){p.pos[0]=c.x+dx/d*m;p.pos[2]=c.z+dz/d*m;}}else obbPush(p.pos,c.x,c.z,0,c.hx,c.hz,rad);}
@@ -310,7 +312,7 @@ function stepPlayer(dt){const p=G.pl,K=G.keys,W=G.W;p.eyeY=lerp(p.eyeY||1.62,p.c
       if(d<m&&d>1e-5){if(cp[1]+k.r<p.pos[1]+.45&&k.r<.35){continue;}  // small stuff: step over it
         p.pos[0]=cp[0]+dx/d*m;p.pos[2]=cp[2]+dz/d*m;if(moving&&b.m<900){wake(b);const push=V.mul([-dx/d,0,-dz/d],Math.min(1.8,260/b.m)*dt*6);b.v=V.add(b.v,push);}}}}
   // ground + gravity
-  let gh=W.H(p.pos[0],p.pos[2]);if(p.onBed){const l=M.apply(tinv,p.pos);gh=M.apply(tmx,[l[0],.775,l[2]])[1];}p.vy-=9.81*dt;p.pos[1]+=p.vy*dt;if(p.pos[1]<=gh){p.pos[1]=gh;p.vy=0;p.ground=true;}
+  let gh=W.H(p.pos[0],p.pos[2]);if(p.onBed){const l=M.apply(tinv,p.pos);gh=M.apply(tmx,[l[0],.8,l[2]])[1];}p.vy-=9.81*dt;p.pos[1]+=p.vy*dt;if(p.pos[1]<=gh){p.pos[1]=gh;p.vy=0;p.ground=true;}
   // world bounds
   p.pos[0]=clamp(p.pos[0],-120,120);p.pos[2]=clamp(p.pos[2],-110,120);
   stepCarry(dt);}
@@ -362,7 +364,22 @@ function endIntro(){const I=G.intro;if(I.eng){I.eng.stop();I.eng=null;}G.truck.d
 
 /* ================= rendering ================= */
 function render(cam){const r=RD;r.resize();const asp=r.cv.width/r.cv.height;const P=M.persp(1.2,asp,.05,700);const Vw=M.view(cam.eye,cam.yaw,cam.pitch,cam.roll);const VP=M.mul(P,Vw);G.VP=VP;
-  r.begin(VP,cam.eye,true);const m=G.meshes;
+  r.begin(VP,cam.eye,true);drawScene(r);
+  G.camEye=cam.eye;if(G.phase==='play'&&G.pl.inTruck&&!G.drive.chase)drawMirror(r,VP);
+  // first-person view model
+  drawViewModel(cam);
+  // speech bubble over Earl
+  const bub=$('bubble');const o=G.om;if(o.bubble&&performance.now()<o.bubbleT){const hp=[o.x,G.W.H(o.x,o.z)+2.05,o.z];const v=[VP[0]*hp[0]+VP[4]*hp[1]+VP[8]*hp[2]+VP[12],VP[1]*hp[0]+VP[5]*hp[1]+VP[9]*hp[2]+VP[13],VP[3]*hp[0]+VP[7]*hp[1]+VP[11]*hp[2]+VP[15]];
+    if(v[2]>.1){bub.hidden=false;bub.textContent=o.bubble;const bw=bub.offsetWidth||200,vw=innerWidth,vh=innerHeight;bub.style.left=clamp((v[0]/v[2]*.5+.5)*vw,bw/2+8,vw-bw/2-8)+'px';bub.style.top=clamp((1-(v[1]/v[2]*.5+.5))*vh,(bub.offsetHeight||60)+8,vh-20)+'px';}else bub.hidden=true;}else bub.hidden=true;}
+// the rear-view mirror: the scene again, from just behind the cab looking back, flipped left-right, drawn into the mirror glass
+function drawMirror(r,VP){const gl=r.gl,tm=truckMatrix(),W=r.cv.width,H=r.cv.height;let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  for(const c of [[-.18,1.73,.465],[.18,1.73,.465],[-.18,1.85,.465],[.18,1.85,.465]]){const w=M.apply(tm,c);const cx=VP[0]*w[0]+VP[4]*w[1]+VP[8]*w[2]+VP[12],cy=VP[1]*w[0]+VP[5]*w[1]+VP[9]*w[2]+VP[13],cw=VP[3]*w[0]+VP[7]*w[1]+VP[11]*w[2]+VP[15];
+    if(cw<.05)return;const sx=(cx/cw*.5+.5)*W,sy=(cy/cw*.5+.5)*H;x0=Math.min(x0,sx);x1=Math.max(x1,sx);y0=Math.min(y0,sy);y1=Math.max(y1,sy);}
+  x0=Math.max(0,Math.round(x0));y0=Math.max(0,Math.round(y0));x1=Math.min(W,Math.round(x1));y1=Math.min(H,Math.round(y1));const w=x1-x0,h=y1-y0;if(w<8||h<4)return;
+  const eye=M.apply(tm,[0,2.05,-.85]),tk=G.truck;const P=M.mul(M.S(-1,1,1),M.persp(.42,w/h,.1,400));const VPm=M.mul(P,M.view(eye,tk.yaw,-.1-tk.pitch,0));
+  gl.enable(gl.SCISSOR_TEST);gl.scissor(x0,y0,w,h);gl.viewport(x0,y0,w,h);r.begin(VPm,eye,true);drawScene(r,true);
+  gl.disable(gl.SCISSOR_TEST);gl.viewport(0,0,W,H);r.begin(VP,G.camEye||eye,false);}
+function drawScene(r,mirror){const m=G.meshes;
   r.draw(m.terrain);r.draw(m.roads);drawDust(r);r.draw(m.house);r.draw(m.woods);
   // truck + wheels + door
   const tm=truckMatrix();r.draw(m.truck,tm);
@@ -385,6 +402,7 @@ function render(cam){const r=RD;r.resize();const asp=r.cv.width/r.cv.height;cons
     sh(G.om.x,G.om.z,.38,.38,0,.35);
     if(G.phase==='play'&&!G.pl.inTruck)sh(G.pl.pos[0],G.pl.pos[2],.34,.34,0,.3);
     for(const b of PHYS.bodies){if(b.mode==='gone'||b.round===false&&b.brush)continue;const gh=H(b.pos[0],b.pos[2]);if(b.pos[1]-gh>2)continue;sh(b.pos[0],b.pos[2],Math.min(1.2,b.rad*.7),Math.min(1.2,b.rad*.7),0,.22);}
+    r.draw(m.tailgate,tm,[1,1,1,.28]);   // see-through tailgate, so you can see what's in the bed
     gl.depthMask(true);gl.disable(gl.BLEND);}
   // the saw lives in the world: where the bar is inside the wood, the wood hides it
   if(G.phase==='play'&&!G.pl.inTruck&&G.pl.tool==='saw'&&!G.pl.carry&&G.saw.poseW){const sw=G.saw.poseW,CW=G.saw.CW;r.draw(m.saw,sw);
@@ -393,11 +411,7 @@ function render(cam){const r=RD;r.resize();const asp=r.cv.width/r.cv.height;cons
     drawArm(r,M.apply(rH,[0,.02,.06]),M.apply(CW,[.26,-.55,.12]),.042);drawArm(r,M.apply(lH,[0,.02,.06]),M.apply(CW,[-.42,-.5,.08]),.042);}
   // particles
   if(G.parts.length){const pm=RD.upload(partMesh());r.draw(pm);RD.free(pm);}
-  // first-person view model
-  drawViewModel(cam);
-  // speech bubble over Earl
-  const bub=$('bubble');const o=G.om;if(o.bubble&&performance.now()<o.bubbleT){const hp=[o.x,G.W.H(o.x,o.z)+2.05,o.z];const c=M.mul(VP,M.ident());const v=[VP[0]*hp[0]+VP[4]*hp[1]+VP[8]*hp[2]+VP[12],VP[1]*hp[0]+VP[5]*hp[1]+VP[9]*hp[2]+VP[13],VP[3]*hp[0]+VP[7]*hp[1]+VP[11]*hp[2]+VP[15]];
-    if(v[2]>.1){bub.hidden=false;bub.textContent=o.bubble;const bw=bub.offsetWidth||200,vw=innerWidth,vh=innerHeight;bub.style.left=clamp((v[0]/v[2]*.5+.5)*vw,bw/2+8,vw-bw/2-8)+'px';bub.style.top=clamp((1-(v[1]/v[2]*.5+.5))*vh,(bub.offsetHeight||60)+8,vh-20)+'px';}else bub.hidden=true;}else bub.hidden=true;}
+}
 function drawArm(r,a,b,rad){const d=V.sub(b,a),L=V.len(d);if(L<1e-3)return;const q=Q.between([0,1,0],V.mul(d,1/L));r.draw(G.meshes.arm,M.mul(M.QT(q,a),M.S(rad,L,rad)));}
 function drawViewModel(cam){const r=RD,gl=r.gl,m=G.meshes;const asp=r.cv.width/r.cv.height;r.clearDepth();
   const P=M.persp(1.0,asp,.01,10);const Vw=M.view(cam.eye,cam.yaw,cam.pitch,cam.roll);const sunCam=V.norm(M.applyDir(Vw,r.env.sun));const keep=r.env.sun;r.env.sun=sunCam;r.begin(P,[0,0,0],false);r.env.sun=keep;
@@ -430,7 +444,7 @@ function tick(dt,now){let cam;
     updateOldMan(dt);const tr=G.tree;
     // physics with the hinge driven in the same sub-steps
     const sub=Math.max(1,Math.round(dt/PHYS.dt));for(let i=0;i<sub;i++){if(tr.state==='hinge')hingeStep(dt/sub);}
-    if(G.chip.mode==='hand')settleTrailer(false);updateSolidBoxes();physUpdate(dt,G.W.H,G.stumpCol);if(tr.state==='down')breakUnderLimbs();
+    if(G.chip.mode==='hand')settleTrailer(false);updateSolidBoxes();stepDrag(dt);physUpdate(dt,G.W.H,G.stumpCol);if(tr.state==='down')breakUnderLimbs();
     if(tr.state==='down'&&!G.objs.felled&&tr.body&&(tr.body.sleep||performance.now()-tr.downT>6000)){G.objs.felled=true;updateObjectives();SFX.ding();}
     stepFeed(dt);stepParts(dt);
     // saw engine
@@ -441,16 +455,17 @@ function tick(dt,now){let cam;
     if(G.objs.felled&&!G.objs.paid&&now-(G.lastObj||0)>800){G.lastObj=now;updateObjectives();}}
   render(cam);
   if(G.toastT&&now>G.toastT){$('toast').classList.remove('on');G.toastT=0;}}
-function updateHUD(){const a=G.aim,p=G.pl;let t='';
+function updateHUD(){const a=G.aim,p=G.pl;let t='';$('objectives').style.visibility=p.inTruck&&!G.drive.chase?'hidden':'';   // out of the way of the rear-view mirror
   if(p.inTruck){$('prompt').innerHTML='';$('drive').hidden=false;$('drive').innerHTML=`<div><b>W/S</b> drive · <b>A/D</b> steer · <b>Space</b> brake · <b>V</b> camera · <b>E</b> get out</div><span>${Math.abs(G.drive.v*2.237).toFixed(0)} mph</span>`;$('barTilt').hidden=true;$('money').textContent='$'+G.money;return;}
   $('drive').hidden=true;
   if(G.dlg)t='';else if(G.chip.mode==='hand')t=V.dist(couplerWorld(),hitchWorld())<.8?'<b>E</b> Hitch it to the truck':'<b>E</b> Set the tongue down';
   else if(p.carry){const n=p.carryList.length,near=V.dist(hopperWorld(),G.eye)<3.4;const more=a&&a.kind==='body'&&a.b.piece&&canAddCarry(a.b)&&p.tool==='hands';
-    t=more?`<b>E</b> Pick up another · ${lb(carryMass()+a.b.m)} total`:(p.carry.brush&&near&&G.chip.running?`<b>E</b> Feed the chipper${n>1?` (${n})`:''}`:`<b>E</b> Drop${n>1?' all':''} · <b>Q</b> drop one`)+` · ${lb(carryMass())}`;}
+    t=more?`<b>E</b> Pick up another · ${lb(carryMass()+a.b.m)} total`:(p.carry.brush&&near&&G.chip.running?`<b>E</b> Feed the chipper${n>1?` (${n})`:''}`:`<b>E</b> Drop${n>1?' all':''} · <b>Q</b> drop one`)+` · <b>G</b> ${throwTarget()?'Throw in the truck':'Toss one'} · ${lb(carryMass())}`;}
+  else if(p.drag)t=`Dragging · ${lb(p.drag.b.m)} · <b>T</b> let go`;
   else if(a){if(a.kind==='om')t='<b>E</b> Talk to Earl';else if(a.kind==='truck')t='<b>E</b> Get in the truck';else if(a.kind==='tailgate')t=p.onBed?'<b>E</b> Hop down':'<b>E</b> Hop in the back';else if(a.kind==='rack')t=G.saw.racked?'<b>E</b> Take the saw':'<b>E</b> Hang the saw on the rack';else if(a.kind==='hitch')t=G.chip.mode==='truck'?'<b>E</b> Unhitch the chipper':'<b>E</b> Grab the tongue';else if(a.kind==='chipper')t=`<b>E</b> ${G.chip.running?'Stop':'Start'} the chipper`;
     else if(a.kind==='tree')t=p.tool==='saw'?(G.saw.on?'':'<b>R</b> Pull-start the saw'):'Dead white ash';
     else if(a.kind==='body'){const b=a.b;if(p.tool==='saw')t=G.saw.on?'':'<b>R</b> Pull-start the saw';
-      else t=!b.piece?'':b.piece.kind==='trunk'&&b.piece.limbs.length?lb(b.m):(b.m>WOOD.liftMax?lb(b.m):`<b>E</b> Pick up ${b.brush?'brush':'round'} · ${lb(b.m)}`);}}
+      else t=!b.piece?'':b.piece.kind==='trunk'&&b.piece.limbs.length?lb(b.m):(b.m>WOOD.liftMax?(canDrag(b)?`<b>T</b> Drag · ${lb(b.m)}`:`${lb(b.m)} · too heavy`):`<b>E</b> Pick up ${b.brush?'brush':'round'} · ${lb(b.m)}`);}}
   $('prompt').innerHTML=t;
   const bt=$('barTilt');bt.hidden=p.tool!=='saw';if(!bt.hidden){const deg=Math.round(G.saw.roll*180/Math.PI);bt.querySelector('i').style.transform=`rotate(${90-deg}deg)`;bt.querySelector('span').textContent=`${deg}°`;}
   $('sawState').textContent=p.tool==='saw'?(G.saw.on?'Saw: running':'Saw: off · R to start'):'';

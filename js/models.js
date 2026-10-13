@@ -55,20 +55,20 @@ function buildTruck(R){const mb=new MeshB();const [c1,c2]=R.pick(TRUCK_PAINT).ma
   mb.box(0,.72,-.3,1.84,.16,.5,vinyl);mb.box(0,1.05,-.56,1.84,.62,.14,shade(vinyl,.95));
   for(let k=0;k<6;k++)mb.box(-.75+k*.3,1.05,-.485,.02,.56,.01,shade(vinyl,.82));
   mb.box(0,yt-.06,-.08,1.88,.02,1.18,hex('#9a8f80'));                                    // headliner
-  mb.box(0,1.88,.48,.18,.06,.02,hex('#2a2d30'));                                          // rear-view mirror
+  mb.box(0,1.86,.5,.06,.08,.03,hex('#2a2d30'));mb.box(0,1.79,.48,.38,.13,.03,hex('#2a2d30'));                // rear-view mirror (the glass is drawn live)
   mb.box(.94,.98,.04,.03,.5,1.3,shade(vinyl,.8));                                         // passenger door card
   // ---------- bed ----------
   const bz0=-2.62,bz1=cz0-.08;
   for(const sx of [-1,1]){mb.box(sx*.97,1.0,(bz0+bz1)/2,.07,.62,bz1-bz0,c1);mb.box(sx*.98,.98,(bz0+bz1)/2,.03,.3,bz1-bz0,c2);mb.box(sx*.97,1.33,(bz0+bz1)/2,.1,.04,bz1-bz0,shade(c1,1.1));}
   mb.box(0,.74,(bz0+bz1)/2,1.9,.06,bz1-bz0,hex('#3a3632'));                               // bed floor
   for(let k=0;k<7;k++)mb.box(-.75+k*.25,.78,(bz0+bz1)/2,.04,.02,bz1-bz0,hex('#4a4540'));
-  mb.box(0,1.0,bz1+.02,1.9,.62,.05,c1);mb.box(0,1.0,bz0,2.0,.62,.07,c1);mb.box(0,.98,bz0-.03,1.6,.08,.02,chrome);   // front wall, tailgate
+  mb.box(0,1.0,bz1+.02,1.9,.62,.05,c1);const tg=new MeshB();tg.box(0,1.0,bz0,2.0,.62,.07,c1);tg.box(0,.98,bz0-.03,1.6,.08,.02,chrome);   // front wall; the tailgate is its own see-through mesh
   for(const sx of [-1,1]){mb.box(sx*.92,.92,bz0-.04,.14,.24,.03,hex('#b8281e'));}      // tail lights
   mb.box(0,.56,bz0-.14,2.0,.18,.14,chrome);                                              // rear bumper
   mb.box(0,.5,bz0-.32,.1,.06,.36,dark);mb.sphere(0,.58,TRUCK.hitch[2],.05,.05,.05,chrome,8,6);   // hitch + ball
   // chassis
   mb.box(0,.5,0,1.1,.18,4.6,black);
-  return {mesh:mb,c1,c2};}
+  return {mesh:mb,c1,c2,tailgate:tg};}
 function buildWheel(){const mb=new MeshB();mb.push(M.Rz(Math.PI/2));
   mb.cyl(0,-.14,0,.4,.4,.28,hex('#1a1a1a'),18,true,hex('#1a1a1a'));
   mb.cyl(0,.141,0,.24,.24,.005,hex('#d8dadc'),14,true);mb.cyl(0,.146,0,.1,.1,.01,hex('#9aa0a6'),10,true);

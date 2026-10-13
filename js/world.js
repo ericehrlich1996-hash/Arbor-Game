@@ -21,10 +21,10 @@ function makeWorld(seed){
   W.house={x:s*-9,z:12,w:R.range(12,14),d:R.range(8.5,9.5),wall:2.7,rot:0,
     siding:hex(R.pick(SIDING)),roof:hex(R.pick(ROOFS)),door:hex(R.pick(DOORS))};
   W.shed={x:s*-21,z:R.range(16,24),w:3.2,d:2.6};
-  W.pile={x:W.shed.x+s*3.4,z:W.shed.z-0.2,w:3.2,d:2.2};   // woodpile drop zone beside the shed
+  W.pile={x:W.shed.x,z:W.shed.z+W.shed.d/2+2.1,w:3.6,d:2.6};   // the woodpile goes behind the shed
   // ---- terrain height (gentle rolls, flattened around the house, drive and road) ----
   const raw=(x,z)=>(nA(x/38,z/38)-.5)*2.4+(nB(x/11,z/11)-.5)*.5;
-  W.flat.push({x:W.house.x,z:W.house.z,r:13},{x:W.shed.x,z:W.shed.z,r:6},{x:W.park[0],z:W.park[2],r:9});
+  W.flat.push({x:W.house.x,z:W.house.z,r:13},{x:W.shed.x,z:W.shed.z,r:6},{x:W.pile.x,z:W.pile.z,r:3.5},{x:W.park[0],z:W.park[2],r:9});
   W.H=(x,z)=>{let h=raw(x,z);const base=raw(W.house.x,W.house.z);
     for(const f of W.flat){const d=Math.hypot(x-f.x,z-f.z);if(d<f.r*1.6){const t=smooth(clamp((f.r*1.6-d)/(f.r*.6),0,1));h=lerp(h,base,t);}}
     const dr=Math.abs(z-W.roadZ);if(dr<9){h=lerp(h,base-.15,smooth(clamp((9-dr)/5,0,1)));}
@@ -141,10 +141,8 @@ function buildHouse(W){const mb=new MeshB(),h=W.house,y0=W.H(h.x,h.z),R=RNG(W.se
   mb.push(M.T(0,2.2,0));mb.face([[-sh.w/2-.3,0,-sh.d/2-.3],[sh.w/2+.3,0,-sh.d/2-.3],[sh.w/2+.3,.9,0],[-sh.w/2-.3,.9,0]].reverse(),roof);mb.face([[-sh.w/2-.3,0,sh.d/2+.3],[-sh.w/2-.3,.9,0],[sh.w/2+.3,.9,0],[sh.w/2+.3,0,sh.d/2+.3]].reverse(),roof);
   for(const sx of [-1,1]){const x=sx*sh.w/2;const a=mb.v([x,0,-sh.d/2],[sx,0,0],sc),b=mb.v([x,0,sh.d/2],[sx,0,0],sc),c=mb.v([x,.85,0],[sx,0,0],sc);mb.tri(a,b,c);mb.tri(a,c,b);}
   mb.pop();mb.box(0,1,-sh.d/2-.06,1.1,1.9,.04,shade(sc,.7));mb.pop();
-  // woodpile area: pallet + a few old split pieces + stakes with orange flagging
+  // woodpile spot behind the shed: four stakes with orange flagging, nothing else; you build the pile
   const p=W.pile,py=W.H(p.x,p.z);mb.push(M.T(p.x,py,p.z));
-  const wood=hex('#a88a62');for(let k=0;k<5;k++)mb.box(-p.w/2+.2+k*(p.w-.4)/4,.12,0,.14,.04,p.d,wood);for(const z of [-p.d/2+.1,0,p.d/2-.1])mb.box(0,.05,z,p.w,.1,.12,shade(wood,.85));
-  for(let k=0;k<6;k++){const x=-p.w/2+.6+(k%3)*.5,z=p.d/2-.25-Math.floor(k/3)*.3;mb.push(M.T(x,.32,z));mb.tf(M.Rx(Math.PI/2));mb.cyl(0,-.2,0,.12,.12,.4,hex('#7a5a3a'),6,true,hex('#c9a878'));mb.pop();}
   for(const [x,z] of [[-p.w/2,-p.d/2],[p.w/2,-p.d/2],[p.w/2,p.d/2],[-p.w/2,p.d/2]]){mb.box(x,.45,z,.05,.9,.05,hex('#c9a878'));mb.box(x,.82,z,.07,.14,.02,hex('#ff6a1a'));}
   mb.pop();
   // mailbox
