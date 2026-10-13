@@ -25,7 +25,7 @@ function camWorld(cam){return M.mul(M.mul(M.T(cam.eye[0],cam.eye[1],cam.eye[2]),
 
 /* ---------- saw pose: idle at the hip, engaged with the bar out in front ---------- */
 function sawPose(cam,dt){const s=G.saw,p=G.pl;
-  const want=(s.on&&G.mouse.l&&!p.carry)?1:0;s.eng=lerp(s.eng||0,want,Math.min(1,dt*9));
+  const want=(s.on&&G.mouse.r&&!p.carry)?1:0;s.eng=lerp(s.eng||0,want,Math.min(1,dt*9));
   const bob=[Math.sin(p.bob)*.012,-Math.abs(Math.cos(p.bob))*.012];let pullY=0,pullR=0;if(s.pull>0){const k=Math.sin((1-s.pull/.5)*Math.PI);pullY=-.06*k;pullR=.25*k;}
   // idle pose (camera space)
   const iq=Q.mul(Q.mul(Q.axis([0,1,0],.55),Q.axis([1,0,0],.1+pullR)),Q.axis([0,0,1],-.22));
@@ -62,7 +62,7 @@ function cutWorld(c){if(c.kind==='tree'){const tr=G.tree,base=[tr.x,tr.y0,tr.z];
 /* ---------- cutting, every frame ---------- */
 function stepSaw(dt){const s=G.saw,tr=G.tree;s.cutting=false;s.bind=false;
   if(G.pl.tool!=='saw'||!s.on||G.pl.carry){s.cut=null;return;}
-  if(!G.mouse.l||s.k<.96){s.cut=null;return;}
+  if(!G.mouse.r||s.k<.96){s.cut=null;return;}
   if(!s.cut){const h=woodHit(s.B,s.f,SAWC.barL+.02);if(!h||h.t>SAWC.barL+.01)return;s.cut=startCut(h);if(!s.cut)return;}
   const c=s.cut,W=cutWorld(c);if(!W){s.cut=null;return;}
   // the saw has to stay in its kerf: turning or rolling it out of line binds the bar
@@ -214,7 +214,9 @@ function buildStumpMesh2(T,cuts,A,y0,barberDir){const mb=new MeshB(),seg=36;cons
       row.push(mb.v([x,Math.min(y,top),z],[Math.cos(a),0,Math.sin(a)],barkCol(T,y,a)));}rows.push(row);}
   for(let j=0;j<rows.length-1;j++)for(let s=0;s<seg;s++)mb.quad(rows[j][s],rows[j][s+1],rows[j+1][s+1],rows[j+1][s]);
   capField(mb,T,A.R*1.0,capY,1,lowAt);
-  if(barberDir){const r=T.rAt(y0);mb.push(M.T(-barberDir[0]*r*.55,y0,-barberDir[2]*r*.55));mb.tf(M.Ry(Math.atan2(barberDir[0],barberDir[2])));mb.box(0,.8,0,r*1.3,1.6,r*.5,SAP);mb.box(0,.8,-r*.26,r*1.32,1.6,.02,BARK);mb.pop();}
+  if(barberDir){const r=T.rAt(y0);mb.push(M.T(-barberDir[0]*r*.55,y0,-barberDir[2]*r*.55));mb.tf(M.Ry(Math.atan2(barberDir[0],barberDir[2])));const w=r*1.3,hh=1.5;const out=[[-w/2,0],[w/2,0],[w*.42,hh*.45],[w*.2,hh*.62],[w*.26,hh*.78],[w*.02,hh],[-w*.12,hh*.82],[-w*.3,hh*.66],[-w*.42,hh*.38]];
+    mb.prism(out,-r*.22,r*.22,SAP,shade(SAP,.85));mb.prism(out.map(([x,y])=>[x*1.02,y*.97]),-r*.26,-r*.2,BARK,BARK);
+    for(let k=0;k<7;k++){const x=-w/2+k*w/6;mb.tube([x,hh*(.3+.08*(k%3)),r*.22],[x+.01,hh*(.52+.1*(k%2)),r*.25],.008,.002,SAP,4);}mb.pop();}
   return mb;}
 // polar grid cap whose height follows a field; up = +1 for a top face, −1 for a bottom face
 function capField(mb,T,R,hy,up,cutAt){const NR=7,NS=36;const grid=[];

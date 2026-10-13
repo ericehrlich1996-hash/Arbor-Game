@@ -13,10 +13,11 @@ Open `index.html` in a browser (Chrome, Edge or Firefox). No install or build st
 | E | talk, pick up, start the chipper, feed the chipper |
 | 1 / 2 | hands / chainsaw |
 | R | pull-start or stop the saw |
-| Left mouse | rev and cut |
+| Right mouse | rev and cut |
 | Mouse wheel | roll the saw (turns the cut plane) |
 | C | crouch |
 | Q | drop what you carry |
+| E at the driver door | drive the truck (W/S drive, A/D steer, Space brake, V camera, E get out) |
 | H | help |
 
 ## Level 1: Earl's dead ash
@@ -37,6 +38,7 @@ You pull up the driveway, finish your energy drink and meet Earl, the client. Hi
 | `js/models.js` | truck (with cab interior), chipper, Earl, chainsaw, hands |
 | `js/physics.js` | rigid-body physics for logs and limbs (terrain and body contacts, sleeping, ray casts) |
 | `js/tree.js` | the tree: shape, limbs, mass and contact points for every piece |
+| `js/drive.js` | driving the truck with the chipper in tow; limbs snapping under a felled stem |
 | `js/saw.js` | the chainsaw: bar in the world, free-form cut planes, open faces, hinge analysis, stump and butt faces, chipper feeding |
 | `js/audio.js` | all sounds, synthesized with Web Audio |
 | `js/game.js` | the level: intro, player, Earl and dialogue, felling, cutting, chipper, objectives, HUD |

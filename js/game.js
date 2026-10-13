@@ -61,7 +61,8 @@ function hitchWorld(){return M.apply(truckMatrix(),TRUCK.hitch);}
 function settleTrailer(reset){const c=G.chip,h=hitchWorld();const L=-CHIP.axle;
   if(reset){const tk=G.truck;c.yaw=tk.yaw;}
   // axle trails behind the hitch at fixed distance
-  let ax=[h[0]-Math.sin(c.yaw)*L,0,h[2]-Math.cos(c.yaw)*L];const d=[h[0]-ax[0],h[2]-ax[2]];c.yaw=Math.atan2(d[0],d[1]);
+  // the axle stays where it was and the tongue swings to point at the new hitch position
+  let ax=(!reset&&c.axle)?c.axle:[h[0]-Math.sin(c.yaw)*L,0,h[2]-Math.cos(c.yaw)*L];const d=[h[0]-ax[0],h[2]-ax[2]];c.yaw=Math.atan2(d[0],d[1]);
   ax=[h[0]-Math.sin(c.yaw)*L,0,h[2]-Math.cos(c.yaw)*L];c.pos=[h[0],h[1]-.5,h[2]];c.axle=[ax[0],G.W.H(ax[0],ax[2]),ax[2]];
   c.pitch=Math.atan2(c.pos[1]+.0-c.axle[1],L);}
 function chipMatrix(){const c=G.chip;return M.mul(M.mul(M.T(c.pos[0],c.pos[1],c.pos[2]),M.Ry(c.yaw)),M.Rx(c.pitch*.0));}
@@ -82,11 +83,11 @@ function buckBody(b,y){const P=b.piece;if(y-P.y0<.18||P.y1-y<.18){toast('Too clo
   const o=frameOrigin(b),q=b.q;const A={kind:'trunk',y0:P.y0,y1:y,limbs:P.limbs.filter(id=>G.tree.T.limbs[id].y<y),stubs:(P.stubs||[]).slice(),cutBottom:P.cutBottom,butt:P.butt};
   const Bp={kind:'trunk',y0:y,y1:P.y1,limbs:P.limbs.filter(id=>G.tree.T.limbs[id].y>=y),stubs:(P.stubs||[]).slice(),cutBottom:true};
   removeBody(b);const nb=[];for(const Pn of [A,Bp]){const g=pieceGeom(G.tree.T,Pn);let c=[0,0,0],m=0;for(const s of g.S){c=V.add(c,V.mul(s.p,s.m));m+=s.m;}c=V.mul(c,1/m);
-    const wc=V.add(o,Q.rot(q,c));nb.push(spawnPiece(Pn,q,o,velAtWorld(b,wc),b.w));}
+    const wc=V.add(o,Q.rot(q,c));nb.push(spawnPiece(Pn,q,o,velAtWorld(b,wc),b.w));}if(G.tree.body===b)G.tree.body=nb[0];
   nb.forEach(wake);SFX.crunch();return true;}
 function limbBody(b,id){const P=b.piece;const o=frameOrigin(b),q=b.q;
   const rest=Object.assign({},P,{limbs:P.limbs.filter(x=>x!==id),stubs:[...(P.stubs||[]),id]});
-  removeBody(b);const tb=spawnPiece(rest,q,o,b.v,b.w);const lb=spawnPiece({kind:'limb',limb:id},q,o,b.v,b.w);
+  removeBody(b);const tb=spawnPiece(rest,q,o,b.v,b.w);if(G.tree.body===b)G.tree.body=tb;const lb=spawnPiece({kind:'limb',limb:id},q,o,b.v,b.w);
   // nudge the limb away from the stem so it drops clear
   const L=G.tree.T.limbs[id];const away=V.norm(Q.rot(q,[L.dir[0],0,L.dir[2]]));lb.v=V.add(lb.v,V.mul(away,.4));wake(tb);wake(lb);SFX.crunch();return lb;}
 
@@ -114,7 +115,7 @@ const OM_NAME='Earl';
 const OM_IDLE=["Did I ever tell ya about the squirrel that robbed me? Took a whole bag of peanuts. Looked me dead in the eye.","Them little green beetles came all the way here just to ruin MY tree. I take that personal.","My cousin Del didn't watch his hinge. Now he sells insurance.","Don't mind the chickens. Wait, I don't have chickens. Whose chickens are those?","That tree's been creakin' at me every night for two years. Plottin', I tell ya.","You want a coffee? I don't have coffee. Just askin' if you WANT one.","Back in my day we cut trees with a butter knife and a positive attitude."];
 function omBark(text,ms){const o=G.om;o.bubble=text;o.bubbleT=performance.now()+(ms||3000);}
 function updateOldMan(dt){const o=G.om,P=G.pl.pos;o.t+=dt;
-  if(o.walkTo){const dx=o.walkTo[0]-o.x,dz=o.walkTo[1]-o.z,d=Math.hypot(dx,dz);if(d<.15){o.walkTo=null;o.state=o.after||'idle';}else{const sp=1.1*dt;o.x+=dx/d*Math.min(sp,d);o.z+=dz/d*Math.min(sp,d);o.yaw=Math.atan2(dx,dz);o.state='walk';}}
+  if(o.walkTo){const dx=o.walkTo[0]-o.x,dz=o.walkTo[1]-o.z,d=Math.hypot(dx,dz);if(d<.15){o.walkTo=null;o.state=o.after||'idle';}else{const sp=(o.dodgeT&&performance.now()-o.dodgeT<3000?1.8:1.1)*dt;o.x+=dx/d*Math.min(sp,d);o.z+=dz/d*Math.min(sp,d);o.yaw=Math.atan2(dx,dz);o.state='walk';}}
   else{const want=Math.atan2(P[0]-o.x,P[2]-o.z);let dy=want-o.yaw;while(dy>Math.PI)dy-=Math.PI*2;while(dy<-Math.PI)dy+=Math.PI*2;if(G.phase==='play'||o.state==='wave')o.yaw+=dy*Math.min(1,dt*3);}
   // safety: once the saw is running near the tree he heads for the porch
   if(G.phase==='play'&&G.objs.talk&&!o.toPorch&&G.saw.on&&Math.hypot(P[0]-G.tree.x,P[2]-G.tree.z)<G.tree.T.H){o.toPorch=true;o.walkTo=G.W.porch.slice();o.after='idle';omBark("I'll be on the porch! If that thing lands on my house I'm keepin' your truck!",4000);}
@@ -183,6 +184,7 @@ function onKey(e,down){const k=e.code;G.keys[k]=down;if(!down)return;
   if(G.phase==='intro'&&(k==='Space'||k==='Enter'||k==='Escape')){G.introSkip=true;return;}
   if(G.phase!=='play')return;
   if(G.dlg){if(k==='KeyE'||k==='Space'||k==='Enter')advanceDialog();return;}
+  if(G.pl.inTruck){if(k==='KeyE')exitTruck();else if(k==='KeyV')G.drive.chase=!G.drive.chase;else if(k==='KeyH')$('help').hidden=!$('help').hidden;return;}
   if(k==='KeyE')interact();
   else if(k==='KeyQ'&&G.pl.carry)dropCarry();
   else if(k==='Digit1')equip('hands');
@@ -201,6 +203,8 @@ function sawOff(){const s=G.saw;s.on=false;if(s.engine){s.engine.stop();s.engine
 function aimInfo(){const p=G.pl,eye=V.add(p.pos,[0,G.pl.eyeY||1.62,0]),d=fwdOf(p.yaw,p.pitch);G.eye=eye;G.fwd=d;let best=null;
   // old man
   const o=G.om,om=[o.x,G.W.H(o.x,o.z)+1.2,o.z];{const to=V.sub(om,eye),dist=V.len(to);if(dist<3.2&&V.dot(V.norm(to),d)>.9)best={kind:'om',t:dist};}
+  // the truck's driver door
+  if(nearDriverDoor()){const dd=V.dist(M.apply(truckMatrix(),[-1.05,1.1,.2]),eye);if(!best||dd<best.t)best={kind:'truck',t:dd};}
   // chipper engine
   const ce=M.apply(chipMatrix(),[0,1.1,-1.6]);{const to=V.sub(ce,eye),dist=V.len(to);if(dist<2.4&&V.dot(V.norm(to),d)>.82&&(!best||dist<best.t))best={kind:'chipper',t:dist};}
   // standing tree
@@ -213,6 +217,7 @@ function interact(){const p=G.pl;
   if(p.carry){const hw=hopperWorld();if(V.dist(hw,G.eye)<3.4&&p.carry.brush){feedChipper();return;}dropCarry();return;}
   const a=G.aim;if(!a)return;
   if(a.kind==='om'){talkToEarl();return;}
+  if(a.kind==='truck'){enterTruck();return;}
   if(a.kind==='chipper'){toggleChipper();return;}
   if(a.kind==='body'&&p.tool==='hands'){const b=a.b;if(b.m>WOOD.liftMax){toast(`Too heavy to lift (${b.m.toFixed(0)} kg).`);return;}
     if(b.piece&&b.piece.kind==='trunk'&&b.piece.limbs.length){toast("Can't lift that.");return;}
@@ -317,7 +322,7 @@ function render(cam){const r=RD;r.resize();const asp=r.cv.width/r.cv.height;cons
   r.draw(m.terrain);r.draw(m.roads);r.draw(m.house);r.draw(m.woods);
   // truck + wheels + door
   const tm=truckMatrix();r.draw(m.truck,tm);
-  for(const [x,z] of [[-TRUCK.track,TRUCK.frontAxle],[TRUCK.track,TRUCK.frontAxle],[-TRUCK.track,TRUCK.rearAxle],[TRUCK.track,TRUCK.rearAxle]])r.draw(m.wheel,M.mul(tm,M.mul(M.T(x*1.05,TRUCK.wheelR,z),M.Rx(G.truck.wheel))));
+  const stA=G.drive?G.drive.steer:0;for(const [x,z] of [[-TRUCK.track,TRUCK.frontAxle],[TRUCK.track,TRUCK.frontAxle],[-TRUCK.track,TRUCK.rearAxle],[TRUCK.track,TRUCK.rearAxle]])r.draw(m.wheel,M.mul(tm,M.mul(M.T(x*1.05,TRUCK.wheelR,z),M.mul(M.Ry(z>0?stA:0),M.Rx(G.truck.wheel)))));
   r.draw(m.door,M.mul(tm,M.mul(M.T(-.97,0,.78),M.Ry(G.truck.door))));
   if(G.truck.canOnSeat)r.draw(m.can,M.mul(tm,M.mul(M.T(.45,.82,-.32),M.mul(M.Rz(Math.PI/2),M.S(1,.55,1)))));
   // chipper
@@ -333,11 +338,11 @@ function render(cam){const r=RD;r.resize();const asp=r.cv.width/r.cv.height;cons
     const sh=(x,z,sx,sz,yaw,a)=>r.draw(m.shadow,M.mul(M.mul(M.T(x,H(x,z)+.04,z),M.Ry(yaw||0)),M.S(sx,1,sz)),[0,0,0,a||.32]);
     sh(G.truck.pos[0],G.truck.pos[2],1.25,2.9,G.truck.yaw,.38);const cc=M.apply(cm,[0,0,-2.3]);sh(cc[0],cc[2],.8,1.7,G.chip.yaw,.3);
     sh(G.om.x,G.om.z,.38,.38,0,.35);
-    if(G.phase==='play')sh(G.pl.pos[0],G.pl.pos[2],.34,.34,0,.3);
+    if(G.phase==='play'&&!G.pl.inTruck)sh(G.pl.pos[0],G.pl.pos[2],.34,.34,0,.3);
     for(const b of PHYS.bodies){if(b.mode==='gone'||b.round===false&&b.brush)continue;const gh=H(b.pos[0],b.pos[2]);if(b.pos[1]-gh>2)continue;sh(b.pos[0],b.pos[2],Math.min(1.2,b.rad*.7),Math.min(1.2,b.rad*.7),0,.22);}
     gl.depthMask(true);gl.disable(gl.BLEND);}
   // the saw lives in the world: where the bar is inside the wood, the wood hides it
-  if(G.phase==='play'&&G.pl.tool==='saw'&&!G.pl.carry&&G.saw.poseW){const sw=G.saw.poseW;r.gl.clear(0);r.draw(m.saw,sw);r.draw(m.gloveR,M.mul(sw,M.mul(M.T(0,.08,.04),M.Rx(.3))));r.draw(m.gloveL,M.mul(sw,M.mul(M.T(-.04,.17,-.23),M.mul(M.Ry(.4),M.Rx(.5)))));}
+  if(G.phase==='play'&&!G.pl.inTruck&&G.pl.tool==='saw'&&!G.pl.carry&&G.saw.poseW){const sw=G.saw.poseW;r.gl.clear(0);r.draw(m.saw,sw);r.draw(m.gloveR,M.mul(sw,M.mul(M.T(0,.08,.04),M.Rx(.3))));r.draw(m.gloveL,M.mul(sw,M.mul(M.T(-.04,.17,-.23),M.mul(M.Ry(.4),M.Rx(.5)))));}
   // particles
   if(G.parts.length){const pm=RD.upload(partMesh());r.draw(pm);RD.free(pm);}
   // first-person view model
@@ -354,7 +359,7 @@ function drawViewModel(cam){const r=RD,gl=r.gl,m=G.meshes;const asp=r.cv.width/r
     if(dt0>3.6){const k=clamp((dt0-3.6)/.6,0,1);pos=V.lerp([.22,-.28,-.42],[.55,-.5,-.35],k);pos[1]+=Math.sin(k*Math.PI)*.12;rz=lerp(.15,2.5,k);}
     if(dt0<0){pos[1]+=Math.sin(I.t*7)*.004;}
     const Mo=M.mul(M.T(pos[0],pos[1],pos[2]),M.mul(M.Rx(rx),M.mul(M.Rz(rz),M.S(1,sc,1))));r.draw(m.can,M.mul(Mo,M.T(0,-.02,0)));if(dt0<3.6){r.draw(m.handCan,M.mul(M.T(pos[0],pos[1],pos[2]),M.mul(M.Rx(rx),M.mul(M.Rz(rz),M.Ry(-Math.PI/2)))));r.draw(m.forearm,M.T(pos[0],pos[1]-Math.sin(rx)*.03,pos[2]));}return;}
-  if(G.phase!=='play')return;const p=G.pl;const bobX=Math.sin(p.bob)*.012,bobY=-Math.abs(Math.cos(p.bob))*.012;
+  if(G.phase!=='play'||G.pl.inTruck)return;const p=G.pl;const bobX=Math.sin(p.bob)*.012,bobY=-Math.abs(Math.cos(p.bob))*.012;
   if(p.tool==='saw'&&!p.carry){return;const s=G.saw;let y=-.33,rx=-.06,ry=.1;if(s.pull>0){const k=Math.sin((1-s.pull/.5)*Math.PI);y-=.06*k;rx+=.25*k;}
     const vib=s.on?(s.cutting?.006:.0025):0;const jx=(Math.random()-.5)*vib,jy=(Math.random()-.5)*vib;
     const cutting=s.cutting;const base=M.mul(M.T(.3+bobX+jx,-.36+(y+.33)+bobY+jy+(cutting?.05:0),-.42+(cutting?-.08:0)),M.mul(M.Ry(.55+(cutting?.08:0)),M.mul(M.Rx(.1+(cutting?.06:0)),M.Rz(-.22))));
@@ -370,24 +375,27 @@ function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;G.t+=dt;
 function tick(dt,now){let cam;
   if(G.phase==='title'){const a=now/1000*.05;const c=[G.W.tree.x,0,G.W.tree.z];cam={eye:[c[0]+Math.sin(a)*45,G.W.H(c[0],c[2])+18,c[2]+Math.cos(a)*45],yaw:a,pitch:-.33,roll:0};}
   else if(G.phase==='intro'){stepIntro(dt);updateOldMan(dt);cam=introCamera();}
-  else{if(G.phase==='play'){stepPlayer(dt);G.aim=aimInfo();const pc=G.pl;sawPose({eye:V.add(pc.pos,[0,pc.eyeY||1.62,0]),yaw:pc.yaw,pitch:pc.pitch,roll:0},dt);stepSaw(dt);stepStanding(dt);stepDialog(dt);checkCrush();}
+  else{if(G.phase==='play'&&G.pl.inTruck){stepDrive(dt);G.aim=null;stepDialog(dt);}
+    else if(G.phase==='play'){stepPlayer(dt);G.aim=aimInfo();const pc=G.pl;sawPose({eye:V.add(pc.pos,[0,pc.eyeY||1.62,0]),yaw:pc.yaw,pitch:pc.pitch,roll:0},dt);stepSaw(dt);stepStanding(dt);stepDialog(dt);checkCrush();}
     updateOldMan(dt);const tr=G.tree;
     // physics with the hinge driven in the same sub-steps
     const sub=Math.max(1,Math.round(dt/PHYS.dt));for(let i=0;i<sub;i++){if(tr.state==='hinge')hingeStep(dt/sub);}
-    physUpdate(dt,G.W.H,G.stumpCol);
+    physUpdate(dt,G.W.H,G.stumpCol);if(tr.state==='down')breakUnderLimbs();
     if(tr.state==='down'&&!G.objs.felled&&tr.body&&(tr.body.sleep||performance.now()-tr.downT>6000)){G.objs.felled=true;updateObjectives();SFX.ding();}
     stepFeed(dt);stepParts(dt);
     // saw engine
-    const s=G.saw;if(s.pull>0)s.pull=Math.max(0,s.pull-dt);if(s.on){s.rpm=lerp(s.rpm,G.mouse.l?1:.05,Math.min(1,dt*(G.mouse.l?6:3)));if(s.engine)s.engine.set(s.rpm*(s.cutting?.82:1),s.cutting?1:0,.42);}
+    const s=G.saw;if(s.pull>0)s.pull=Math.max(0,s.pull-dt);if(s.on){s.rpm=lerp(s.rpm,G.mouse.r?1:.05,Math.min(1,dt*(G.mouse.r?6:3)));if(s.engine)s.engine.set(s.rpm*(s.cutting?.82:1),s.cutting?1:0,.42);}
     const c=G.chip;if(c.engine){c.load=Math.max(0,(c.load||0)-dt*1.5);const d=V.dist(G.pl.pos,c.pos);c.engine.set(.5+c.load*.4,c.load,clamp(1-d/60,.05,1)*.55);}
-    const p=G.pl;cam={eye:V.add(p.pos,[0,(p.eyeY||1.62)+(p.ground?Math.abs(Math.sin(p.bob))*.025:0),0]),yaw:p.yaw,pitch:p.pitch,roll:0};
+    const p=G.pl;if(p.inTruck)cam=driveCamera();else cam={eye:V.add(p.pos,[0,(p.eyeY||1.62)+(p.ground?Math.abs(Math.sin(p.bob))*.025:0),0]),yaw:p.yaw,pitch:p.pitch,roll:0};
     if(G.phase==='play')updateHUD();
     if(G.objs.felled&&!G.objs.paid&&now-(G.lastObj||0)>800){G.lastObj=now;updateObjectives();}}
   render(cam);
   if(G.toastT&&now>G.toastT){$('toast').classList.remove('on');G.toastT=0;}}
 function updateHUD(){const a=G.aim,p=G.pl;let t='';
+  if(p.inTruck){$('prompt').innerHTML='';$('drive').hidden=false;$('drive').innerHTML=`<div><b>W/S</b> drive · <b>A/D</b> steer · <b>Space</b> brake · <b>V</b> camera · <b>E</b> get out</div><span>${Math.abs(G.drive.v*2.237).toFixed(0)} mph</span>`;$('barTilt').hidden=true;$('money').textContent='$'+G.money;return;}
+  $('drive').hidden=true;
   if(G.dlg)t='';else if(p.carry){const near=V.dist(hopperWorld(),G.eye)<3.4;t=p.carry.brush&&near?'<b>E</b> Feed the chipper':'<b>E</b> or <b>Q</b> Drop'+` · ${p.carry.m.toFixed(0)} kg`;}
-  else if(a){if(a.kind==='om')t='<b>E</b> Talk to Earl';else if(a.kind==='chipper')t=`<b>E</b> ${G.chip.running?'Stop':'Start'} the chipper`;
+  else if(a){if(a.kind==='om')t='<b>E</b> Talk to Earl';else if(a.kind==='truck')t='<b>E</b> Get in the truck';else if(a.kind==='chipper')t=`<b>E</b> ${G.chip.running?'Stop':'Start'} the chipper`;
     else if(a.kind==='tree')t=p.tool==='saw'?(G.saw.on?'':'<b>R</b> Pull-start the saw'):'Dead white ash';
     else if(a.kind==='body'){const b=a.b;if(p.tool==='saw')t=G.saw.on?'':'<b>R</b> Pull-start the saw';
       else t=!b.piece?'':b.piece.kind==='trunk'&&b.piece.limbs.length?`${b.m.toFixed(0)} kg`:(b.m>WOOD.liftMax?`${b.m.toFixed(0)} kg`:`<b>E</b> Pick up ${b.brush?'brush':'round'} · ${b.m.toFixed(0)} kg`);}}
@@ -401,12 +409,13 @@ function showError(e){const el=$('err');el.hidden=false;el.textContent='Somethin
 function boot(){const cv=$('cv');try{RD=new Renderer(cv);}catch(e){showError(e);return;}
   G.money=loadCareer().money;newLevel(1+Math.floor(Math.random()*1e6));
   window.addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();onKey(e,true);});window.addEventListener('keyup',e=>onKey(e,false));
-  cv.addEventListener('mousedown',e=>{if(G.phase!=='play')return;if(G.dlg){advanceDialog();return;}if(document.pointerLockElement!==cv){cv.requestPointerLock&&cv.requestPointerLock();return;}if(e.button===0)G.mouse.l=true;});
-  window.addEventListener('mouseup',e=>{if(e.button===0)G.mouse.l=false;});
+  cv.addEventListener('mousedown',e=>{if(G.phase!=='play')return;if(G.dlg){advanceDialog();return;}if(document.pointerLockElement!==cv){cv.requestPointerLock&&cv.requestPointerLock();return;}if(e.button===2)G.mouse.r=true;});
+  cv.addEventListener('contextmenu',e=>e.preventDefault());
+  window.addEventListener('mouseup',e=>{if(e.button===2)G.mouse.r=false;});
   $('dialog').addEventListener('click',()=>advanceDialog());
-  document.addEventListener('mousemove',e=>{if(document.pointerLockElement!==cv||G.phase!=='play'||G.dlg)return;const p=G.pl;const k=G.saw.cut?.25:1;p.yaw-=e.movementX*.0022*k;p.pitch=clamp(p.pitch-e.movementY*.0022*k,-1.45,1.45);});
+  document.addEventListener('mousemove',e=>{if(document.pointerLockElement!==cv||G.phase!=='play'||G.dlg)return;const p=G.pl;if(p.inTruck){const D=G.drive;D.lookYaw=clamp(D.lookYaw-e.movementX*.0022,-2.2,2.2);D.lookPitch=clamp(D.lookPitch-e.movementY*.0022,-.9,.6);return;}const k=G.saw.cut?.25:1;p.yaw-=e.movementX*.0022*k;p.pitch=clamp(p.pitch-e.movementY*.0022*k,-1.45,1.45);});
   window.addEventListener('wheel',e=>{if(G.phase!=='play'||G.pl.tool!=='saw')return;e.preventDefault();const st=Math.PI/12;G.saw.roll=clamp(G.saw.roll+(e.deltaY>0?st:-st),0,Math.PI);},{passive:false});
-  document.addEventListener('pointerlockchange',()=>{G.lock=document.pointerLockElement===cv;$('clickHint').hidden=G.lock||G.phase!=='play';if(!G.lock)G.mouse.l=false;});
+  document.addEventListener('pointerlockchange',()=>{G.lock=document.pointerLockElement===cv;$('clickHint').hidden=G.lock||G.phase!=='play';if(!G.lock)G.mouse.r=false;});
   $('btnNew').addEventListener('click',()=>{startIntro();});
   $('btnAgain').addEventListener('click',()=>{location.reload();});
   $('btnRetry').addEventListener('click',()=>{$('dead').hidden=true;newLevel(G.seed);G.phase='play';endIntroQuick();});
