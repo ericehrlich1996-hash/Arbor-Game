@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arbor Simulator</title>
+<meta name="description" content="Arbor Simulator: a physics-based tree work game. Start with a chainsaw, a chipper and an old square-body truck.">
+<style>
+:root{--ink:#f4efe4;--dim:#c9c1ae;--panel:rgba(20,22,18,.78);--line:rgba(255,255,255,.14);--orange:#f07a1a;--green:#7cc96b;--f:'Trebuchet MS',system-ui,-apple-system,'Segoe UI',sans-serif;--fd:Impact,'Arial Narrow Bold','Haettenschweiler',sans-serif}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:#9fb3bf;overflow:hidden;font:15px/1.4 var(--f);color:var(--ink)}
+#cv{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+[hidden]{display:none!important}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;backdrop-filter:blur(4px)}
+/* title */
+#title{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,rgba(10,14,10,.25),rgba(10,14,10,.7));z-index:20}
+.tcard{text-align:center;padding:36px 44px;max-width:560px}
+.tcard h1{font:400 64px/0.95 var(--fd);letter-spacing:2px;margin:0;color:#ffe9c2;text-shadow:0 3px 0 #6b3a12,0 6px 18px rgba(0,0,0,.5)}
+.tcard h1 span{display:block;font-size:30px;letter-spacing:9px;color:var(--orange);text-shadow:0 2px 0 #3a1c06}
+.tcard p{color:var(--dim);margin:14px 0 22px}
+.btn{font:700 17px var(--f);letter-spacing:.5px;padding:12px 26px;border-radius:8px;border:0;background:var(--orange);color:#1b0f04;cursor:pointer;box-shadow:0 4px 0 #8a3f08}
+.btn:hover{filter:brightness(1.08)}.btn:active{transform:translateY(2px);box-shadow:0 2px 0 #8a3f08}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);box-shadow:none}
+.keys{margin-top:22px;font-size:13px;color:var(--dim);display:grid;grid-template-columns:auto auto;gap:4px 14px;justify-content:center;text-align:left}
+.keys b{color:var(--ink);font-family:ui-monospace,monospace;background:rgba(255,255,255,.1);border-radius:4px;padding:0 6px}
+#bankLine{margin-top:10px;color:var(--green);font-weight:700}
+/* HUD */
+#hud{position:fixed;inset:0;pointer-events:none;z-index:5}
+#cross{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:#fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.5)}
+#prompt{position:absolute;left:50%;top:calc(50% + 26px);transform:translateX(-50%);text-align:center;font-weight:600;text-shadow:0 1px 3px #000,0 0 8px rgba(0,0,0,.6);max-width:520px}
+#prompt b{background:#f4efe4;color:#1b1b1b;border-radius:4px;padding:0 6px;text-shadow:none;margin-right:4px}
+#cutbar{position:absolute;left:50%;top:calc(50% + 60px);width:180px;height:7px;transform:translateX(-50%);background:rgba(0,0,0,.45);border-radius:4px;overflow:hidden}
+#cutbar i{display:block;height:100%;background:var(--orange)}
+#objectives{position:absolute;left:16px;top:16px;padding:12px 16px 12px 14px;max-width:360px}
+#objectives h3{margin:0 0 6px;font:400 19px var(--fd);letter-spacing:1px;color:#ffe9c2}
+#objList{list-style:none;margin:0;padding:0;font-size:14px}
+#objList li{padding:3px 0 3px 24px;position:relative;color:var(--ink)}
+#objList li::before{content:"";position:absolute;left:2px;top:7px;width:12px;height:12px;border:2px solid var(--dim);border-radius:3px}
+#objList li.done{color:var(--dim);text-decoration:line-through}
+#objList li.done::before{background:var(--green);border-color:var(--green)}
+#money{position:absolute;right:18px;top:14px;font:400 30px var(--fd);letter-spacing:1px;color:#b9f2a4;text-shadow:0 2px 0 #1d3a12}
+#sawState{position:absolute;right:18px;top:52px;font-size:13px;color:var(--dim)}
+#hotbar{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:flex;gap:8px}
+.slot{width:112px;padding:8px 10px;border-radius:8px;background:var(--panel);border:2px solid var(--line);font-size:13px}
+.slot b{display:inline-block;background:rgba(255,255,255,.15);border-radius:4px;padding:0 6px;margin-right:6px}
+.slot.on{border-color:var(--orange)}
+#toast{position:absolute;left:50%;bottom:86px;transform:translate(-50%,10px);padding:10px 16px;opacity:0;transition:.25s;max-width:560px;text-align:center}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+#shout{position:absolute;left:50%;top:22%;transform:translateX(-50%);font:400 68px var(--fd);letter-spacing:3px;color:#ffcf4a;text-shadow:0 4px 0 #6b3a12,0 0 30px rgba(0,0,0,.6);opacity:0}
+#shout.on{animation:shout 2.2s ease-out}
+@keyframes shout{0%{opacity:0;transform:translateX(-50%) scale(.6)}12%{opacity:1;transform:translateX(-50%) scale(1.08)}75%{opacity:1}100%{opacity:0;transform:translateX(-50%) scale(1)}}
+#bubble{position:absolute;transform:translate(-50%,-100%);width:max-content;background:#fffdf4;color:#2a2418;padding:8px 12px;border-radius:12px;max-width:280px;font-size:14px;font-weight:600;box-shadow:0 3px 12px rgba(0,0,0,.35)}
+#bubble::after{content:"";position:absolute;left:50%;bottom:-8px;margin-left:-8px;border:8px solid transparent;border-bottom:0;border-top-color:#fffdf4}
+#gaugeBox{position:absolute;right:16px;bottom:16px;padding:10px;width:220px;text-align:center}
+#gauge{width:150px;height:150px}
+#gaugeTxt{font-size:13px;line-height:1.5}#gaugeTxt span{color:var(--dim)}
+#gaugeBox h4{margin:0 0 4px;font:400 16px var(--fd);letter-spacing:1px;color:#ffe9c2}
+#clickHint{position:absolute;left:50%;top:38%;transform:translateX(-50%);padding:10px 16px}
+#introHint{position:absolute;right:18px;bottom:18px;font-size:13px;color:var(--dim);text-shadow:0 1px 2px #000}
+#introCard{position:absolute;left:40px;bottom:60px;opacity:0;transition:opacity 1.2s}
+#introCard.on{opacity:1}
+#introCard .big{font:400 54px/0.95 var(--fd);letter-spacing:2px;color:#ffe9c2;text-shadow:0 3px 0 #6b3a12,0 6px 18px rgba(0,0,0,.6)}
+#introCard .sub{font-size:17px;color:#fff;text-shadow:0 1px 3px #000;margin-top:6px}
+/* dialogue */
+#dialog{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);width:min(720px,calc(100% - 32px));padding:16px 20px 12px;z-index:8;cursor:pointer;pointer-events:auto}
+#dlgName{font:400 20px var(--fd);letter-spacing:1px;color:var(--orange)}
+#dlgText{font-size:17px;min-height:50px;margin-top:4px}
+#dlgHint{font-size:12px;color:var(--dim);text-align:right;min-height:16px}
+/* end screens */
+.modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(8,10,8,.55);z-index:30}
+.mcard{width:min(520px,calc(100% - 32px));padding:24px 26px}
+.mcard h2{margin:0 0 4px;font:400 36px var(--fd);letter-spacing:1px;color:#ffe9c2}
+.mcard .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)}
+.mcard .row b{color:var(--green)}.mcard .row b.neg{color:#ff8a6a}
+.mcard .row.total{font-size:19px;border-bottom:0;padding-top:10px}
+.mcard ul{color:var(--dim);font-size:14px;padding-left:18px}
+.mcard .btns{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+#help{position:fixed;right:16px;top:90px;padding:14px 16px;z-index:6;font-size:13px}
+#help .keys{margin-top:0}
+#err{position:fixed;left:16px;bottom:16px;z-index:40;background:#5a1a12;padding:10px 14px;border-radius:8px}
+#fade{position:fixed;inset:0;background:#000;z-index:25;pointer-events:none;opacity:0;transition:opacity 1.2s}
+#fade.out{animation:fadein 1.6s ease-out}
+@keyframes fadein{0%{opacity:1}100%{opacity:0}}
+@media (max-width:760px){.tcard h1{font-size:46px}#objectives{max-width:240px;font-size:12px}#gaugeBox{display:none}}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="title">
+  <div class="tcard panel">
+    <h1>Arbor<span>Simulator</span></h1>
+    <p>You've got a chainsaw, a wood chipper, and an old square-body truck with a cracked dash. Time to make a living.</p>
+    <button class="btn" id="btnNew">New game</button>
+    <div id="bankLine"></div>
+    <div class="keys">
+      <b>WASD</b><span>walk (Shift to run)</span><b>Mouse</b><span>look (click to capture)</span>
+      <b>E</b><span>talk, pick up, use</span><b>1 / 2</b><span>hands / chainsaw</span>
+      <b>R</b><span>pull-start the saw</span><b>Left mouse</b><span>rev and cut</span>
+      <b>Q</b><span>drop</span><b>H</b><span>help</span>
+    </div>
+  </div>
+</div>
+
+<div id="hud" hidden>
+  <div id="cross"></div><div id="prompt"></div><div id="cutbar" hidden><i></i></div>
+  <div id="objectives" class="panel" hidden><h3>Job 1 · Earl's dead ash</h3><ul id="objList"></ul></div>
+  <div id="money"></div><div id="sawState"></div>
+  <div id="hotbar" hidden><div class="slot on" data-t="hands"><b>1</b>Hands</div><div class="slot" data-t="saw"><b>2</b>Chainsaw</div></div>
+  <div id="toast" class="panel"></div><div id="shout"></div><div id="bubble" hidden></div>
+  <div id="gaugeBox" class="panel" hidden><h4>Felling cut · top view</h4><canvas id="gauge" width="150" height="150"></canvas><div id="gaugeTxt"></div></div>
+  <div id="clickHint" class="panel" hidden>Click to look around</div>
+  <div id="introHint" hidden>Space: skip</div>
+  <div id="introCard"><div class="big">ARBOR SIMULATOR</div><div class="sub">Job 1 · A dead ash, a crazy old man, and $400 cash</div></div>
+</div>
+
+<div id="dialog" class="panel" hidden><div id="dlgName"></div><div id="dlgText"></div><div id="dlgHint"></div></div>
+
+<div id="help" class="panel" hidden>
+  <div class="keys">
+    <b>WASD</b><span>walk · Shift run · Space jump</span><b>E</b><span>talk / pick up / feed chipper</span>
+    <b>1 / 2</b><span>hands / chainsaw</span><b>R</b><span>pull-start or stop the saw</span>
+    <b>Left mouse</b><span>rev and cut</span><b>Q</b><span>drop what you carry</span>
+  </div>
+  <p style="max-width:300px;color:#c9c1ae;margin:10px 0 0">Felling: cut the <b style="color:#fff">notch</b> on the side you want the tree to fall, about ⅓ through. Walk around and <b style="color:#fff">back-cut</b> from the other side, slightly higher, until about 10% of the diameter is left as the <b style="color:#fff">hinge</b>. Then get clear.</p>
+</div>
+
+<div id="summary" class="modal" hidden><div class="mcard panel"><h2>Payday</h2><div id="sumRows"></div><ul id="sumNotes"></ul><div id="sumBank" style="color:#b9f2a4;font-weight:700"></div>
+  <div class="btns"><button class="btn" id="btnAgain">Next job: new property</button></div><p style="color:#c9c1ae;font-size:13px;margin:12px 0 0">More jobs, hiring a crew and bigger equipment are coming. This is level 1.</p></div></div>
+<div id="dead" class="modal" hidden><div class="mcard panel"><h2>Crushed</h2><p>The tree came down on you. Never stand in the line of fall: once the back cut is done, retreat at a 45° angle away from the stump, opposite the direction of fall.</p><div class="btns"><button class="btn" id="btnRetry">Try again</button></div></div></div>
+<div id="err" hidden></div>
+<div id="fade"></div>
+
+<script src="js/engine.js"></script>
+<script src="js/world.js"></script>
+<script src="js/models.js"></script>
+<script src="js/physics.js"></script>
+<script src="js/tree.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
