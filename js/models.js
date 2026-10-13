@@ -168,3 +168,15 @@ function buildRightHandCan(){const mb=new MeshB();const skin=hex('#e0b090'),slee
 // forearm for the drink animation: hangs down from the wrist so it never swings through the camera
 function buildForearm(){const mb=new MeshB();const skin=hex('#e0b090'),sleeve=hex('#5a6a3a');
   mb.tube([.04,-.01,.02],[.1,-.22,.1],.038,.05,skin,7);mb.tube([.1,-.22,.1],[.18,-.6,.2],.06,.08,sleeve,8);for(let k=0;k<3;k++)mb.cyl(.1,-.25-k*.03,.1,.062,.062,.012,shade(sleeve,.8),8,false);return mb;}
+
+/* ---------- gloved fist gripping a bar that runs along local X through the origin ---------- */
+function buildFist(side){const mb=new MeshB();const glove=hex('#c9a46a'),gD=hex('#a8844c'),cuff=hex('#8a6a3a');
+  // back of the hand sits over the bar, knuckles toward −Z, fingers curl down and under it
+  mb.sphere(0,.028,.012,.042,.022,.036,glove,10,6);
+  for(let k=0;k<4;k++){const x=-.033+k*.022;const a=[x,.03,-.022],b=[x,.004,-.03],c=[x,-.022,-.012],d=[x,-.018,.012];
+    mb.tube(a,b,.0105,.0102,shade(glove,.97),6);mb.tube(b,c,.0102,.0098,glove,6);mb.tube(c,d,.0098,.009,shade(glove,.94),6);mb.sphere(x,.03,-.02,.012,.012,.012,gD,6,4);}
+  mb.tube([side*.045,.02,.01],[side*.05,-.005,-.02],.012,.011,glove,6);mb.tube([side*.05,-.005,-.02],[side*.03,-.022,-.028],.011,.01,glove,6);   // thumb wraps the far side
+  mb.tube([0,.026,.03],[0,.02,.07],.036,.04,cuff,9);                                                                                      // gauntlet cuff
+  return mb;}
+// a unit sleeve from (0,0,0) to (0,1,0); scaled per frame to run from the wrist toward the shoulder
+function buildArm(){const mb=new MeshB();const sleeve=hex('#5a6a3a');mb.cyl(0,0,0,1,1.15,1,sleeve,10,false);for(let k=0;k<2;k++)mb.cyl(0,.12+k*.05,0,1.04,1.04,.02,shade(sleeve,.75),10,false);return mb;}

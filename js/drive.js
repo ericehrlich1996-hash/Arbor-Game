@@ -82,9 +82,9 @@ function driveCamera(){const D=G.drive,tk=G.truck,tm=truckMatrix();
 
 /* ---------- limbs that snap under a felled stem ---------- */
 function breakUnderLimbs(){const tr=G.tree,b=tr.body;if(!b||!PHYS.bodies.includes(b)||b.sleep||b.mode!=='dyn'||!b.piece.limbs.length)return;const T=tr.T,H=G.W.H;
-  for(const id of b.piece.limbs){const L=T.limbs[id];const tip=bodyWorld(b,limbPt(L,1)),mid=bodyWorld(b,limbPt(L,.55)),base=bodyWorld(b,L.base);const dW=Q.rot(b.q,L.dir);
+  for(const id of b.piece.limbs){const L=T.limbs[id];const te=limbSpan(b.piece,id)[1];const tip=bodyWorld(b,limbPt(L,te)),mid=bodyWorld(b,limbPt(L,te*.55)),base=bodyWorld(b,L.base);const dW=Q.rot(b.q,L.dir);
     // any point of the limb or its side branches on the ground
-    const pts=[tip,mid,bodyWorld(b,limbPt(L,.3)),...L.subs.map(sb=>{const o=limbPt(L,sb.t);return bodyWorld(b,V.add(o,V.mul(sb.dir,sb.len)));})];
+    const pts=[tip,mid,bodyWorld(b,limbPt(L,.3)),...L.subs.filter(sb=>sb.t<=te).map(sb=>{const o=limbPt(L,sb.t);return bodyWorld(b,V.add(o,V.mul(sb.dir,sb.len)));})];
     const tipDown=pts.some(q=>q[1]-H(q[0],q[2])<.22);
     const stemUp=base[1]-H(base[0],base[2])>T.rAt(L.y)+.12;                                   // and the stem is still held up off the ground
     if(tipDown&&(dW[1]<-.15||stemUp)){

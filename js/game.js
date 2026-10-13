@@ -21,7 +21,7 @@ function newLevel(seed){
   G.seed=seed;const W=makeWorld(seed);G.W=W;const R=RNG(seed+99);
   const mk=mb=>RD.upload(mb);
   G.meshes={terrain:mk(buildTerrain(W)),roads:mk(buildRoads(W)),house:mk(buildHouse(W)),woods:mk(buildWoods(W)),wheel:mk(buildWheel()),chipper:mk(buildChipper()),
-    saw:mk(buildChainsaw()),gloveR:mk(buildGlove(1)),gloveL:mk(buildGlove(-1)),can:mk(buildCan()),handCan:mk(buildRightHandCan()),forearm:mk(buildForearm()),shadow:mk(new MeshB().disk(0,0,0,1,[0,0,0],20))};
+    saw:mk(buildChainsaw()),gloveR:mk(buildGlove(1)),gloveL:mk(buildGlove(-1)),fistR:mk(buildFist(1)),fistL:mk(buildFist(-1)),arm:mk(buildArm()),can:mk(buildCan()),handCan:mk(buildRightHandCan()),forearm:mk(buildForearm()),shadow:mk(new MeshB().disk(0,0,0,1,[0,0,0],20))};
   const tk=buildTruck(R);G.meshes.truck=mk(tk.mesh);G.meshes.door=mk(buildTruckDoor(tk.c1,tk.c2));
   const om=buildOldMan();for(const k in om)G.meshes['om_'+k]=mk(om[k]);
   // truck path for the intro: along the road, then up the gravel drive
@@ -79,15 +79,21 @@ function frameOrigin(b){return V.sub(b.pos,Q.rot(b.q,b.com));}
 function removeBody(b){b.mode='gone';const i=PHYS.bodies.indexOf(b);if(i>=0)PHYS.bodies.splice(i,1);if(b.gpu)RD.free(b.gpu);}
 function velAtWorld(b,p){const r=V.sub(p,b.pos);return V.add(b.v,V.cross(b.w,r));}
 
-function buckBody(b,y){const P=b.piece;if(y-P.y0<.18||P.y1-y<.18){toast('Too close to the end of the piece.');return false;}
-  const o=frameOrigin(b),q=b.q;const A={kind:'trunk',y0:P.y0,y1:y,limbs:P.limbs.filter(id=>G.tree.T.limbs[id].y<y),stubs:(P.stubs||[]).slice(),cutBottom:P.cutBottom,butt:P.butt};
-  const Bp={kind:'trunk',y0:y,y1:P.y1,limbs:P.limbs.filter(id=>G.tree.T.limbs[id].y>=y),stubs:(P.stubs||[]).slice(),cutBottom:true};
+function buckBody(b,y){const P=b.piece;if(y-P.y0<.03||P.y1-y<.03)return false;
+  const o=frameOrigin(b),q=b.q;const A={kind:'trunk',y0:P.y0,y1:y,limbs:P.limbs.filter(id=>G.tree.T.limbs[id].y<y),stubs:(P.stubs||[]).slice(),cutBottom:P.cutBottom,butt:P.butt,lt:P.lt};
+  const Bp={kind:'trunk',y0:y,y1:P.y1,limbs:P.limbs.filter(id=>G.tree.T.limbs[id].y>=y),stubs:(P.stubs||[]).slice(),cutBottom:true,lt:P.lt};
   removeBody(b);const nb=[];for(const Pn of [A,Bp]){const g=pieceGeom(G.tree.T,Pn);let c=[0,0,0],m=0;for(const s of g.S){c=V.add(c,V.mul(s.p,s.m));m+=s.m;}c=V.mul(c,1/m);
     const wc=V.add(o,Q.rot(q,c));nb.push(spawnPiece(Pn,q,o,velAtWorld(b,wc),b.w));}if(G.tree.body===b)G.tree.body=nb[0];
   nb.forEach(wake);SFX.crunch();return true;}
+// cut a limb part way out: the stretch beyond t falls, a stub stays on the stem
+function cutLimbAt(b,id,t){const P=b.piece;const o=frameOrigin(b),q=b.q;const [ta,tb]=limbSpan(P,id);
+  const rest=Object.assign({},P,{lt:Object.assign({},P.lt||{},{[id]:t})});removeBody(b);const tb2=spawnPiece(rest,q,o,b.v,b.w);if(G.tree.body===b)G.tree.body=tb2;
+  const lb=spawnPiece({kind:'limb',limb:id,t0:t,t1:tb},q,o,b.v,b.w);wake(tb2);wake(lb);SFX.crunch();return lb;}
+function splitLimbPiece(b,t){const P=b.piece;const o=frameOrigin(b),q=b.q;removeBody(b);
+  const A=spawnPiece({kind:'limb',limb:P.limb,t0:P.t0||0,t1:t},q,o,b.v,b.w),B=spawnPiece({kind:'limb',limb:P.limb,t0:t,t1:P.t1==null?1:P.t1},q,o,b.v,b.w);wake(A);wake(B);SFX.crunch();}
 function limbBody(b,id){const P=b.piece;const o=frameOrigin(b),q=b.q;
   const rest=Object.assign({},P,{limbs:P.limbs.filter(x=>x!==id),stubs:[...(P.stubs||[]),id]});
-  removeBody(b);const tb=spawnPiece(rest,q,o,b.v,b.w);if(G.tree.body===b)G.tree.body=tb;const lb=spawnPiece({kind:'limb',limb:id},q,o,b.v,b.w);
+  removeBody(b);const tb=spawnPiece(rest,q,o,b.v,b.w);if(G.tree.body===b)G.tree.body=tb;const lb=spawnPiece({kind:'limb',limb:id,t0:0,t1:limbSpan(P,id)[1]},q,o,b.v,b.w);
   // nudge the limb away from the stem so it drops clear
   const L=G.tree.T.limbs[id];const away=V.norm(Q.rot(q,[L.dir[0],0,L.dir[2]]));lb.v=V.add(lb.v,V.mul(away,.4));wake(tb);wake(lb);SFX.crunch();return lb;}
 
@@ -229,7 +235,7 @@ function toggleChipper(){const c=G.chip;if(c.running){c.running=false;if(c.engin
 function feedChipper(){const c=G.chip,b=G.pl.carry;if(!c.running){toast("The chipper isn't running.");return;}
   G.pl.carry=null;b.mode='feed';b.feedT=0;b.feedFrom=b.pos.slice();c.feed=b;}
 function stepFeed(dt){const c=G.chip,b=c.feed;if(!b)return;b.feedT+=dt;const cm=chipMatrix();const throat=M.apply(cm,[0,1.0,-2.95]),mouth=M.apply(cm,[0,1.0,-4.25]);
-  const ax=V.norm(V.sub(throat,mouth)),{ax:axL,butt}=brushAxis(b);const len=b.piece&&b.piece.kind==='limb'?G.tree.T.limbs[b.piece.limb].len:(b.piece?b.piece.y1-b.piece.y0:1);
+  const ax=V.norm(V.sub(throat,mouth)),{ax:axL,butt}=brushAxis(b);const len=b.piece&&b.piece.kind==='limb'?G.tree.T.limbs[b.piece.limb].len*((b.piece.t1==null?1:b.piece.t1)-(b.piece.t0||0)):(b.piece?b.piece.y1-b.piece.y0:1);
   const tipL=V.add(butt,V.mul(axL,len));
   if(b.feedT<.7){// swing it level, butt toward the rollers, and set the butt in the mouth
     b.q=orientAxis(b.q,axL,V.mul(ax,-1),Math.min(1,dt*7));const want=V.sub(mouth,Q.rot(b.q,V.sub(butt,b.com)));b.pos=V.lerp(b.pos,want,Math.min(1,dt*7));}
@@ -342,7 +348,10 @@ function render(cam){const r=RD;r.resize();const asp=r.cv.width/r.cv.height;cons
     for(const b of PHYS.bodies){if(b.mode==='gone'||b.round===false&&b.brush)continue;const gh=H(b.pos[0],b.pos[2]);if(b.pos[1]-gh>2)continue;sh(b.pos[0],b.pos[2],Math.min(1.2,b.rad*.7),Math.min(1.2,b.rad*.7),0,.22);}
     gl.depthMask(true);gl.disable(gl.BLEND);}
   // the saw lives in the world: where the bar is inside the wood, the wood hides it
-  if(G.phase==='play'&&!G.pl.inTruck&&G.pl.tool==='saw'&&!G.pl.carry&&G.saw.poseW){const sw=G.saw.poseW;r.gl.clear(0);r.draw(m.saw,sw);r.draw(m.gloveR,M.mul(sw,M.mul(M.T(0,.08,.04),M.Rx(.3))));r.draw(m.gloveL,M.mul(sw,M.mul(M.T(-.04,.17,-.23),M.mul(M.Ry(.4),M.Rx(.5)))));}
+  if(G.phase==='play'&&!G.pl.inTruck&&G.pl.tool==='saw'&&!G.pl.carry&&G.saw.poseW){const sw=G.saw.poseW,CW=G.saw.CW;r.draw(m.saw,sw);
+    // right hand on the rear handle (bar runs along the saw's Z), left hand on the top of the wrap handle (bar along X)
+    const rH=M.mul(sw,M.mul(M.T(0,.098,.035),M.Ry(Math.PI/2))),lH=M.mul(sw,M.mul(M.T(-.05,.172,-.233),M.Ry(-.3)));r.draw(m.fistR,rH);r.draw(m.fistL,lH);
+    drawArm(r,M.apply(rH,[0,.02,.06]),M.apply(CW,[.26,-.55,.12]),.042);drawArm(r,M.apply(lH,[0,.02,.06]),M.apply(CW,[-.42,-.5,.08]),.042);}
   // particles
   if(G.parts.length){const pm=RD.upload(partMesh());r.draw(pm);RD.free(pm);}
   // first-person view model
@@ -350,6 +359,7 @@ function render(cam){const r=RD;r.resize();const asp=r.cv.width/r.cv.height;cons
   // speech bubble over Earl
   const bub=$('bubble');const o=G.om;if(o.bubble&&performance.now()<o.bubbleT){const hp=[o.x,G.W.H(o.x,o.z)+2.05,o.z];const c=M.mul(VP,M.ident());const v=[VP[0]*hp[0]+VP[4]*hp[1]+VP[8]*hp[2]+VP[12],VP[1]*hp[0]+VP[5]*hp[1]+VP[9]*hp[2]+VP[13],VP[3]*hp[0]+VP[7]*hp[1]+VP[11]*hp[2]+VP[15]];
     if(v[2]>.1){bub.hidden=false;bub.textContent=o.bubble;const bw=bub.offsetWidth||200,vw=innerWidth,vh=innerHeight;bub.style.left=clamp((v[0]/v[2]*.5+.5)*vw,bw/2+8,vw-bw/2-8)+'px';bub.style.top=clamp((1-(v[1]/v[2]*.5+.5))*vh,(bub.offsetHeight||60)+8,vh-20)+'px';}else bub.hidden=true;}else bub.hidden=true;}
+function drawArm(r,a,b,rad){const d=V.sub(b,a),L=V.len(d);if(L<1e-3)return;const q=Q.between([0,1,0],V.mul(d,1/L));r.draw(G.meshes.arm,M.mul(M.QT(q,a),M.S(rad,L,rad)));}
 function drawViewModel(cam){const r=RD,gl=r.gl,m=G.meshes;const asp=r.cv.width/r.cv.height;r.clearDepth();
   const P=M.persp(1.0,asp,.01,10);const Vw=M.view(cam.eye,cam.yaw,cam.pitch,cam.roll);const sunCam=V.norm(M.applyDir(Vw,r.env.sun));const keep=r.env.sun;r.env.sun=sunCam;r.begin(P,[0,0,0],false);r.env.sun=keep;
   gl.uniform2f(r.u.fogR,1e4,2e4);const now=performance.now()/1000;
@@ -364,8 +374,9 @@ function drawViewModel(cam){const r=RD,gl=r.gl,m=G.meshes;const asp=r.cv.width/r
     const vib=s.on?(s.cutting?.006:.0025):0;const jx=(Math.random()-.5)*vib,jy=(Math.random()-.5)*vib;
     const cutting=s.cutting;const base=M.mul(M.T(.3+bobX+jx,-.36+(y+.33)+bobY+jy+(cutting?.05:0),-.42+(cutting?-.08:0)),M.mul(M.Ry(.55+(cutting?.08:0)),M.mul(M.Rx(.1+(cutting?.06:0)),M.Rz(-.22))));
     r.draw(m.saw,base);r.draw(m.gloveR,M.mul(base,M.mul(M.T(0,.08,.04),M.Rx(.3))));r.draw(m.gloveL,M.mul(base,M.mul(M.T(-.04,.17,-.23),M.mul(M.Ry(.4),M.Rx(.5)))));}
-  else if(p.carry){r.draw(m.gloveR,M.mul(M.T(.24,-.3+bobY,-.55),M.Rx(.7)));r.draw(m.gloveL,M.mul(M.T(-.24,-.3+bobY,-.55),M.Rx(.7)));}
-  else{r.draw(m.gloveR,M.mul(M.T(.26+bobX,-.34+bobY,-.5),M.Rx(.35)));r.draw(m.gloveL,M.mul(M.T(-.26-bobX,-.34+bobY,-.5),M.Rx(.35)));}}
+  const hand=(x,y,z,rx)=>{const Mo=M.mul(M.T(x,y,z),M.mul(M.Rx(rx),M.Ry(Math.PI/2)));r.draw(x>0?m.fistR:m.fistL,Mo);drawArm(r,M.apply(Mo,[0,.02,.06]),[x*1.2,-.6,.12],.042);};
+  if(p.carry){hand(.24,-.3+bobY,-.55,-.5);hand(-.24,-.3+bobY,-.55,-.5);}
+  else{hand(.25+bobX,-.3+bobY,-.5,-.3);hand(-.25-bobX,-.3+bobY,-.5,-.3);}}
 
 /* ================= main loop ================= */
 let last=performance.now();
