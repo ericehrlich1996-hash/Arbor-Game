@@ -234,7 +234,7 @@ function buildStandingMesh(T,cuts,wedges){const mb=new MeshB(),seg=36;
     for(let s=0;s<=seg;s++){const a=s/seg*Math.PI*2;let p=[Math.cos(a)*r,y,Math.sin(a)*r],col=null;
       if(band){for(const w of wedges){if(inWedge(w,p)){const d1=V.dot(w.c1.n,V.sub(p,w.c1.e)),d2=V.dot(w.c2.n,V.sub(p,w.c2.e));const c=Math.abs(d1)<Math.abs(d2)?w.c1:w.c2,d=c===w.c1?d1:d2;p=V.sub(p,V.mul(c.n,d));col=SAP;break;}}
         if(!col)for(const c of live){const g=kerfGroove(p,c,r);if(g){p=g;col=KERF;break;}}}
-      row.push(mb.v(p,V.norm([Math.cos(a),.1,Math.sin(a)]),col||barkCol(T,y,a)));}rows.push(row);}
+      row.push(mb.v(p,V.norm([Math.cos(a),.1,Math.sin(a)]),col||barkGrid(T,y,a,-.4,T.H)));}rows.push(row);}
   for(let j=0;j<rows.length-1;j++)for(let s=0;s<seg;s++)mb.quad(rows[j][s],rows[j][s+1],rows[j+1][s+1],rows[j+1][s]);
   mb.sphere(0,T.H,0,T.rAt(T.H),.04,T.rAt(T.H),BARK,6,3);
   appendLimbs(mb,T,T.limbs.map(l=>l.id));
@@ -250,7 +250,7 @@ function buildStumpMesh2(T,cuts,R,y0,barberDir,partial){partial=(partial||[]).fi
   const Y=[-.35,0];for(let y=.05;y<tMax+.03;y+=partial.length?.006:.015)Y.push(y);
   const rows=[];for(const y of Y){const r=T.rAt(Math.max(y,0)),row=[];for(let s2=0;s2<=seg;s2++){const a=s2/seg*Math.PI*2;const x=Math.cos(a)*r,z=Math.sin(a)*r;
       let pp=[x,Math.min(y,top(x,z)),z],col=null;for(const k of partial){const g=kerfGroove(pp,k,r);if(g){pp=g;col=KERF;break;}}
-      row.push(mb.v(pp,[Math.cos(a),0,Math.sin(a)],col||barkCol(T,y,a)));}rows.push(row);}
+      row.push(mb.v(pp,[Math.cos(a),0,Math.sin(a)],col||barkGrid(T,y,a,-.4,T.H)));}rows.push(row);}
   for(let j=0;j<rows.length-1;j++)for(let s2=0;s2<seg;s2++)mb.quad(rows[j][s2],rows[j][s2+1],rows[j+1][s2+1],rows[j+1][s2]);
   capField(mb,T,R,top,1,lowAt);
   if(barberDir){const r=T.rAt(y0);mb.push(M.T(-barberDir[0]*r*.55,y0,-barberDir[2]*r*.55));mb.tf(M.Ry(Math.atan2(barberDir[0],barberDir[2])));

@@ -55,6 +55,9 @@ function pieceGeom(T,P){const S=[],pts=[],caps=[];const rho=WOOD.rho;
 const BARK=hex('#7c766c'),BARK_D=hex('#58534b'),BLOND=hex('#c4ae88'),SAP=hex('#e6d3a6'),HEART=hex('#c8ad78'),KERF=hex('#1a1209');
 function barkCol(T,y,a,cut){const n=Math.sin(a*7+y*9.3)*Math.sin(a*3-y*13.1);let c=n>.25?BARK_D:BARK;
   const bl=Math.sin(a*2+y*1.7+T.seed)*Math.sin(y*.9-T.seed*.3);if(y>3&&bl>.55)c=mixc(c,BLOND,.8);return cut?SAP:c;}
+// bark colour sampled on a coarse grid (step .3 from y0) and blended between, so a mesh with extra fine rings
+// around a cut looks exactly like the plain one: no stripe running all the way round the stem
+function barkGrid(T,y,a,y0,y1){const k=Math.floor((y-y0)/.3+1e-6),ya=y0+k*.3,yb=y1!=null?Math.min(ya+.3,y1):ya+.3;const t=yb>ya?clamp((y-ya)/(yb-ya),0,1):0;return mixc(barkCol(T,ya,a),barkCol(T,yb,a),t);}
 function addEndCap(mb,T,y,r,up,seg){const cc=mb.v([0,y,0],[0,up,0],HEART);const rings=[.35,.7,.985],cols=[HEART,shade(HEART,1.08),SAP];
   let inner=[cc];for(let ri=0;ri<rings.length;ri++){const ring=[];for(let s=0;s<=seg;s++){const a=s/seg*Math.PI*2;ring.push(mb.v([Math.cos(a)*r*rings[ri],y,Math.sin(a)*r*rings[ri]],[0,up,0],ri===1?shade(cols[ri],.9):cols[ri]));}
     for(let s=0;s<seg;s++){if(inner.length===1)mb.tri(cc,ring[s+1],ring[s]);else mb.quad(inner[s],inner[s+1],ring[s+1],ring[s]);}inner=ring;}
@@ -76,7 +79,7 @@ function buildPieceMesh(T,P,cuts){const mb=new MeshB(),seg=P.kerfs&&P.kerfs.leng
     const yLo=P.y0;
     const Y=[...new Set(ys.map(y=>+y.toFixed(4)))].filter(y=>y>=yLo&&y<=P.y1).sort((a,b)=>a-b);
     // bark colour sampled on the coarse rows only, so the extra rings around a kerf don't show as a stripe all the way round
-    const barkAt=(y,a)=>{const k=Math.floor((y-P.y0)/.3+1e-6),ya=P.y0+k*.3,yb=Math.min(ya+.3,P.y1);const t=yb>ya?clamp((y-ya)/(yb-ya),0,1):0;return mixc(barkCol(T,ya,a),barkCol(T,yb,a),t);};
+    const barkAt=(y,a)=>barkGrid(T,y,a,P.y0,P.y1);
     const rows=[];for(const y of Y){const r=T.rAt(y),row=[];
       for(let s=0;s<=seg;s++){const a=s/seg*Math.PI*2;const x=Math.cos(a)*r,z=Math.sin(a)*r;let yy=y;
         if(hiAt&&y<=hiMax+.001){const h=hiAt(x,z);if(yy<h)yy=h;}
