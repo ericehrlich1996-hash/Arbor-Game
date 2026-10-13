@@ -198,6 +198,7 @@ function onKey(e,down){const k=e.code;G.keys[k]=down;if(!down)return;
   else if(k==='Digit1')equip('hands');
   else if(k==='Digit2')equip('saw');
   else if(k==='Digit3')toggleMuffs();
+  else if(k==='KeyF')kick();
   else if(k==='KeyR'&&G.pl.tool==='saw')pullStart();
   else if(k==='KeyH'){$('help').hidden=!$('help').hidden;}
   else if(k==='KeyC'||k==='ControlLeft'){G.pl.crouch=!G.pl.crouch;}
@@ -209,6 +210,16 @@ function pullStart(){const s=G.saw;if(s.on){sawOff();return;}if(s.pull>0)return;
 function sawOff(){const s=G.saw;s.on=false;if(s.engine){s.engine.stop();s.engine=null;}s.cutting=false;}
 
 /* ================= interaction ================= */
+function hopTruck(){const p=G.pl,tm=truckMatrix();if(p.carryList.length>1)dropCarry();
+  if(p.onBed){const o=M.apply(tm,[0,0,-3.7]);p.pos=[o[0],G.W.H(o[0],o[2]),o[2]];p.onBed=false;}
+  else{const o=M.apply(tm,[0,.775,-2.1]);p.pos=o;p.onBed=true;p.vy=0;}SFX.step();}
+// a boot to whatever you're looking at: shoves it, and snaps a piece that is nearly cut through
+function kick(){const p=G.pl;if(p.carry||p.inTruck)return;const eye=V.add(p.pos,[0,p.eyeY||1.62,0]),d=fwdOf(p.yaw,Math.min(p.pitch,-.15));
+  const h=rayBodies(eye,d,1.9,b=>b.mode==='dyn'&&!!b.piece);G.kickT=performance.now();if(!h){SFX.step();return;}const b=h.b;wake(b);
+  const k=(b.piece.kerfs||[]).filter(k=>k.s<k.exit&&k.s/k.exit>.72).sort((a,c)=>c.s/c.exit-a.s/a.exit)[0];
+  if(k){k.b=b;k.s=k.exit+.01;SFX.crack();finishPieceCut(k);emit(h.p,[0,1.2,0],12,hex('#c4ae88'),2,1,.04,true);return;}
+  const J=V.add(V.mul([d[0],0,d[2]],Math.min(220,b.m*3)),[0,Math.min(60,b.m*.8),0]);const r=V.sub(h.p,b.pos);b.v=V.add(b.v,V.mul(J,b.im));
+  const R=M3.fromQ(b.q);const iIw=M3.mul(M3.mul(R,b.iIb),M3.T(R));b.w=V.add(b.w,M3.vec(iIw,V.cross(r,J)));SFX.thud(3);}
 function rackAction(){const s=G.saw;if(s.racked){s.racked=false;G.pl.tool='hands';equip('saw');SFX.pick();return;}
   if(G.pl.tool!=='saw')return;sawOff();s.racked=true;G.pl.tool='hands';document.querySelectorAll('.slot[data-t]').forEach(x=>x.classList.toggle('on',x.dataset.t==='hands'));SFX.clank();}
 function toggleMuffs(){G.muffs=!G.muffs;setMuffs(G.muffs);$('muffSlot').classList.toggle('on',G.muffs);SFX.pick();}
@@ -224,6 +235,8 @@ function aimInfo(){const p=G.pl,eye=V.add(p.pos,[0,G.pl.eyeY||1.62,0]),d=fwdOf(p
   const o=G.om,om=[o.x,G.W.H(o.x,o.z)+1.2,o.z];{const to=V.sub(om,eye),dist=V.len(to);if(dist<3.2&&V.dot(V.norm(to),d)>.9)best={kind:'om',t:dist};}
   // the truck's driver door
   if(nearDriverDoor()){const dd=V.dist(M.apply(truckMatrix(),[-1.05,1.1,.2]),eye);if(!best||dd<best.t)best={kind:'truck',t:dd};}
+  // the tailgate: hop up into the bed, or back down
+  {const tg=M.apply(truckMatrix(),[0,1.1,-2.62]);const to=V.sub(tg,eye),dd=V.len(to);if(dd<2.3&&V.dot(V.norm(to),d)>.55&&(!best||dd<best.t))best={kind:'tailgate',t:dd};}
   // the saw rack on the chipper
   {const rp=M.apply(chipMatrix(),[-.7,.82,-2.2]);const to=V.sub(rp,eye),dd=V.len(to);if(dd<2.0&&V.dot(V.norm(to),d)>.85&&(G.pl.tool==='saw'||G.saw.racked)&&(!best||dd<best.t))best={kind:'rack',t:dd};}
   // the chipper's tongue coupler
@@ -242,6 +255,7 @@ function interact(){const p=G.pl;const a=G.aim;
     const hw=hopperWorld();if(V.dist(hw,G.eye)<3.4&&p.carry.brush&&G.chip.running){feedChipper();return;}dropCarry();return;}
   if(!a)return;
   if(a.kind==='hitch'){hitchAction();return;}
+  if(a.kind==='tailgate'){hopTruck();return;}
   if(a.kind==='rack'){rackAction();return;}
   if(a.kind==='om'){talkToEarl();return;}
   if(a.kind==='truck'){enterTruck();return;}
@@ -278,8 +292,13 @@ function stepPlayer(dt){const p=G.pl,K=G.keys,W=G.W;p.eyeY=lerp(p.eyeY||1.62,p.c
   const moving=V.len(mv)>0;if(moving){mv=V.mul(V.norm(mv),sp*dt);p.pos[0]+=mv[0];p.pos[2]+=mv[2];p.stepT+=sp*dt;p.bob+=dt*sp*2.2;if(p.stepT>1.3&&p.ground){p.stepT=0;SFX.step();}}
   // collisions
   const rad=.34;for(const c of W.colliders){if(c.t==='circle'){const dx=p.pos[0]-c.x,dz=p.pos[2]-c.z,d=Math.hypot(dx,dz),m=c.r+rad;if(d<m&&d>1e-5){p.pos[0]=c.x+dx/d*m;p.pos[2]=c.z+dz/d*m;}}else obbPush(p.pos,c.x,c.z,0,c.hx,c.hz,rad);}
-  const tk=G.truck;obbPush(p.pos,tk.pos[0],tk.pos[2],-tk.yaw,1.02,2.72,rad);
-  const cm=chipMatrix(),cc=M.apply(cm,[0,0,-2.4]);obbPush(p.pos,cc[0],cc[2],-G.chip.yaw,.6,1.6,rad);
+  const tk=G.truck,tmx=truckMatrix(),tinv=invRigid(tmx);
+  // standing in the bed: the floor holds you up and the bed walls keep you in unless you jump over them
+  {const l=M.apply(tinv,p.pos);const overBed=Math.abs(l[0])<.95&&l[2]>-2.6&&l[2]<-.78;
+    if(p.onBed){if(!overBed||l[1]>1.3&&!overBed)p.onBed=false;else if(l[1]<1.25){l[0]=clamp(l[0],-.62,.62);l[2]=clamp(l[2],-2.3,-1.05);const w=M.apply(tmx,l);p.pos[0]=w[0];p.pos[2]=w[2];}}
+    else if(overBed&&l[1]>.7)p.onBed=true;
+    if(!p.onBed)obbPush(p.pos,tk.pos[0],tk.pos[2],tk.yaw,1.02,2.72,rad);}
+  const cm=chipMatrix(),cc=M.apply(cm,[0,0,-2.4]);obbPush(p.pos,cc[0],cc[2],G.chip.yaw,.6,1.6,rad);
   const o=G.om;{const dx=p.pos[0]-o.x,dz=p.pos[2]-o.z,d=Math.hypot(dx,dz);if(d<.7&&d>1e-5){p.pos[0]=o.x+dx/d*.7;p.pos[2]=o.z+dz/d*.7;}}
   const tr=G.tree;{const rr=(tr.state==='stand'?tr.T.rAt(.5):tr.stumpH>0.6?tr.T.rAt(.5):0)+rad;if(tr.state==='stand'||tr.stumpH>.6){const dx=p.pos[0]-tr.x,dz=p.pos[2]-tr.z,d=Math.hypot(dx,dz);if(d<rr&&d>1e-5){p.pos[0]=tr.x+dx/d*rr;p.pos[2]=tr.z+dz/d*rr;}}}
   // logs: block the player, and get shoved when walked into
@@ -289,7 +308,7 @@ function stepPlayer(dt){const p=G.pl,K=G.keys,W=G.W;p.eyeY=lerp(p.eyeY||1.62,p.c
       if(d<m&&d>1e-5){if(cp[1]+k.r<p.pos[1]+.45&&k.r<.35){continue;}  // small stuff: step over it
         p.pos[0]=cp[0]+dx/d*m;p.pos[2]=cp[2]+dz/d*m;if(moving&&b.m<900){wake(b);const push=V.mul([-dx/d,0,-dz/d],Math.min(1.8,260/b.m)*dt*6);b.v=V.add(b.v,push);}}}}
   // ground + gravity
-  const gh=W.H(p.pos[0],p.pos[2]);p.vy-=9.81*dt;p.pos[1]+=p.vy*dt;if(p.pos[1]<=gh){p.pos[1]=gh;p.vy=0;p.ground=true;}
+  let gh=W.H(p.pos[0],p.pos[2]);if(p.onBed){const l=M.apply(tinv,p.pos);gh=M.apply(tmx,[l[0],.775,l[2]])[1];}p.vy-=9.81*dt;p.pos[1]+=p.vy*dt;if(p.pos[1]<=gh){p.pos[1]=gh;p.vy=0;p.ground=true;}
   // world bounds
   p.pos[0]=clamp(p.pos[0],-120,120);p.pos[2]=clamp(p.pos[2],-110,120);
   stepCarry(dt);}
@@ -426,7 +445,7 @@ function updateHUD(){const a=G.aim,p=G.pl;let t='';
   if(G.dlg)t='';else if(G.chip.mode==='hand')t=V.dist(couplerWorld(),hitchWorld())<.8?'<b>E</b> Hitch it to the truck':'<b>E</b> Set the tongue down';
   else if(p.carry){const n=p.carryList.length,near=V.dist(hopperWorld(),G.eye)<3.4;const more=a&&a.kind==='body'&&a.b.piece&&canAddCarry(a.b)&&p.tool==='hands';
     t=more?`<b>E</b> Pick up another · ${lb(carryMass()+a.b.m)} total`:(p.carry.brush&&near&&G.chip.running?`<b>E</b> Feed the chipper${n>1?` (${n})`:''}`:`<b>E</b> Drop${n>1?' all':''} · <b>Q</b> drop one`)+` · ${lb(carryMass())}`;}
-  else if(a){if(a.kind==='om')t='<b>E</b> Talk to Earl';else if(a.kind==='truck')t='<b>E</b> Get in the truck';else if(a.kind==='rack')t=G.saw.racked?'<b>E</b> Take the saw':'<b>E</b> Hang the saw on the rack';else if(a.kind==='hitch')t=G.chip.mode==='truck'?'<b>E</b> Unhitch the chipper':'<b>E</b> Grab the tongue';else if(a.kind==='chipper')t=`<b>E</b> ${G.chip.running?'Stop':'Start'} the chipper`;
+  else if(a){if(a.kind==='om')t='<b>E</b> Talk to Earl';else if(a.kind==='truck')t='<b>E</b> Get in the truck';else if(a.kind==='tailgate')t=p.onBed?'<b>E</b> Hop down':'<b>E</b> Hop in the back';else if(a.kind==='rack')t=G.saw.racked?'<b>E</b> Take the saw':'<b>E</b> Hang the saw on the rack';else if(a.kind==='hitch')t=G.chip.mode==='truck'?'<b>E</b> Unhitch the chipper':'<b>E</b> Grab the tongue';else if(a.kind==='chipper')t=`<b>E</b> ${G.chip.running?'Stop':'Start'} the chipper`;
     else if(a.kind==='tree')t=p.tool==='saw'?(G.saw.on?'':'<b>R</b> Pull-start the saw'):'Dead white ash';
     else if(a.kind==='body'){const b=a.b;if(p.tool==='saw')t=G.saw.on?'':'<b>R</b> Pull-start the saw';
       else t=!b.piece?'':b.piece.kind==='trunk'&&b.piece.limbs.length?lb(b.m):(b.m>WOOD.liftMax?lb(b.m):`<b>E</b> Pick up ${b.brush?'brush':'round'} · ${lb(b.m)}`);}}

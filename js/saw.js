@@ -86,12 +86,12 @@ function startCut(h){const s=G.saw;
   if(h.kind==='tree'){const tr=G.tree,base=[tr.x,tr.y0,tr.z],qi=Q.conj(tr.q);
     const e=Q.rot(qi,V.sub(h.p,base)),f=Q.rot(qi,s.f),n=Q.rot(qi,s.n);
     // continue an existing kerf if the bar is back in it
-    for(const c of tr.cuts){if(Math.abs(V.dot(c.n,n))>.995&&Math.abs(V.dot(c.n,V.sub(e,c.e)))<.012&&V.dot(c.f,f)>.97)return c;}
+    for(const c of tr.cuts){if(Math.abs(V.dot(c.n,n))>.985&&Math.abs(V.dot(c.n,V.sub(e,c.e)))<.025&&V.dot(c.f,f)>.9)return c;}
     const c={kind:'tree',e,f,n,s:0,exit:chordTree(e,f)};tr.cuts.push(c);return c;}
   const b=h.b,qi=Q.conj(b.q);const e=bodyLocal(b,h.p),f=Q.rot(qi,s.f),n=Q.rot(qi,s.n);
   const c={kind:'body',b,e,f,n,s:0,limb:h.cap.limb!=null?h.cap.limb:null,sub:h.cap.sub,cap:h.cap};
   // a cut already started on this piece at the same place picks up where it left off
-  if(c.limb==null&&b.piece.kerfs){for(const k of b.piece.kerfs){if(Math.abs(V.dot(k.n,n))>.99&&Math.abs(V.dot(k.n,V.sub(e,k.e)))<.015&&V.dot(k.f,f)>.95){k.b=b;k.cap=h.cap;return k;}}}
+  if(c.limb==null&&b.piece.kerfs){for(const k of b.piece.kerfs){if(Math.abs(V.dot(k.n,n))>.985&&Math.abs(V.dot(k.n,V.sub(e,k.e)))<.025&&V.dot(k.f,f)>.9){k.b=b;k.cap=h.cap;return k;}}}
   // distance through the wood along the bar
   const capW={a:bodyWorld(b,V.add(h.cap.a,b.com)),b:bodyWorld(b,V.add(h.cap.b,b.com)),r:h.cap.r};
   const [tIn,tOut]=chord(t=>{const p=V.add(h.p,V.mul(s.f,t));const [cp]=closestOnSeg(p,capW.a,capW.b);return V.dist(p,cp)<=capW.r;},-.05,1.4);

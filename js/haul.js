@@ -21,7 +21,7 @@ function hitchAction(){const c=G.chip;
 function nearCoupler(){const e=G.eye||V.add(G.pl.pos,[0,1.6,0]);const cp=couplerWorld();const to=V.sub(cp,e),d=V.len(to);return d<2.1&&V.dot(V.norm(to),G.fwd||[0,0,-1])>.72?d:null;}
 
 /* ---------- solid boxes for logs: truck cab, bed floor and walls, chipper body ---------- */
-const TRUCK_BOXES=[[[0,1.1,.99],[1.0,.85,1.66]],[[0,.5,-1.69],[.98,.275,.93]],[[-.965,1.05,-1.69],[.045,.28,.93]],[[.965,1.05,-1.69],[.045,.28,.93]],[[0,1.0,-2.6],[.98,.33,.04]],[[0,1.05,-.74],[.98,.28,.04]]];
+const TRUCK_BOXES=[[[0,1.1,.99],[1.0,.85,1.66]],[[0,.5,-1.69],[.98,.275,.93]],[[-1.0,1.05,-1.69],[.09,.3,.95]],[[1.0,1.05,-1.69],[.09,.3,.95]],[[0,1.0,-2.62],[1.05,.33,.08]],[[0,1.05,-.74],[.98,.28,.04]]];
 const CHIP_BOXES=[[[0,1.0,-2.0],[.55,.55,1.0]]];
 function boxesFrom(Mx,list){const ax=[V.norm(M.applyDir(Mx,[1,0,0])),V.norm(M.applyDir(Mx,[0,1,0])),V.norm(M.applyDir(Mx,[0,0,1]))];return list.map(([c,h])=>({c:M.apply(Mx,c),ax,h}));}
 function updateSolidBoxes(){PHYS.boxes=boxesFrom(truckMatrix(),TRUCK_BOXES).concat(boxesFrom(chipMatrix(),CHIP_BOXES));}

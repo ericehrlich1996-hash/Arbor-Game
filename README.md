@@ -18,6 +18,8 @@ Open `index.html` in a browser (Chrome, Edge or Firefox). No install or build st
 | C | crouch |
 | 3 | ear muffs on/off (muffles the saw and chipper) |
 | Q | drop one piece (E drops everything) |
+| F | kick: shove a log, or snap apart a piece that's nearly cut through |
+| E at the tailgate | hop up into the truck bed (E again to hop down) |
 | E at the driver door | drive the truck (W/S drive, A/D steer, Space brake, V camera, E get out) |
 | H | help |
 
