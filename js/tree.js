@@ -73,8 +73,10 @@ function buildPieceMesh(T,P,cuts){const mb=new MeshB(),seg=P.kerfs&&P.kerfs.leng
       for(let i=0;i<=10;i++)for(let j=0;j<=10;j++){const x=(i/10*2-1)*R0,z=(j/10*2-1)*R0;if(x*x+z*z>R0*R0)continue;const h=hiAt(x,z);hiMin=Math.min(hiMin,h);hiMax=Math.max(hiMax,h);}
       for(let y=hiMin-.01;y<=hiMax+.02;y+=.015)ys.push(y);}
     // live kerfs: fine rings across the band each cut plane sweeps through the stem
-    const kerfs=(P.kerfs||[]).filter(k=>k.s>.002&&Math.abs(k.n[1])>.3);
-    for(const k of kerfs){const yk=k.e[1]+(k.n[0]*k.e[0]+k.n[2]*k.e[2])/k.n[1];const ext=Math.min(.4,T.rAt(clamp(yk,0,T.H))*Math.hypot(k.n[0],k.n[2])/Math.abs(k.n[1])+SAWC.kerf*2);
+    // a kerf only shows as a groove when its whole band sits inside the piece; one that runs into an end is sawn-through wood
+    const kerfY=k=>k.e[1]+(k.n[0]*k.e[0]+k.n[2]*k.e[2])/k.n[1],kerfExt=k=>Math.min(.4,T.rAt(clamp(kerfY(k),0,T.H))*Math.hypot(k.n[0],k.n[2])/Math.abs(k.n[1])+SAWC.kerf*2);
+    const kerfs=(P.kerfs||[]).filter(k=>k.s>.002&&k.s<k.exit&&Math.abs(k.n[1])>.3&&kerfY(k)-kerfExt(k)>P.y0+.01&&kerfY(k)+kerfExt(k)<P.y1-.01);
+    for(const k of kerfs){const yk=kerfY(k);const ext=kerfExt(k);
       for(let y=yk-ext;y<=yk+ext;y+=.005)if(y>P.y0&&y<P.y1)ys.push(y);}
     const yLo=P.y0;
     const Y=[...new Set(ys.map(y=>+y.toFixed(4)))].filter(y=>y>=yLo&&y<=P.y1).sort((a,b)=>a-b);

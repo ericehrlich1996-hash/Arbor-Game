@@ -108,13 +108,17 @@ function buildHouse(W){const mb=new MeshB(),h=W.house,y0=W.H(h.x,h.z),R=RNG(W.se
   const boards=14;for(let b=0;b<boards;b++){const yy=.45+b*(h.wall/boards);mb.box(0,yy+h.wall/boards/2,0,h.w+(b%2?.02:0),h.wall/boards,h.d+(b%2?.02:0),shade(sid,b%2?.96:1.02));}
   const top=.45+h.wall;
   // gable roof along X
-  const ov=.5,rh=2.3,hw=h.w/2+ov,hd=h.d/2+ov;const roof=h.roof;
-  mb.face([[-hw,top-.05,-hd],[hw,top-.05,-hd],[hw,top+rh,0],[-hw,top+rh,0]].reverse(),roof);
-  mb.face([[-hw,top-.05,hd],[-hw,top+rh,0],[hw,top+rh,0],[hw,top-.05,hd]].reverse(),shade(roof,.92));
-  // gable ends (siding triangles)
-  for(const sx of [-1,1]){const x=sx*h.w/2;const a=mb.v([x,top,-h.d/2],[sx,0,0],sid),b=mb.v([x,top,h.d/2],[sx,0,0],sid),c=mb.v([x,top+rh-.35,0],[sx,0,0],sid);mb.tri(a,b,c);mb.tri(a,c,b);}
-  // fascia trim
-  mb.box(0,top-.1,-hd,h.w+2*ov,.18,.06,trim);mb.box(0,top-.1,hd,h.w+2*ov,.18,.06,trim);
+  // the roof plane passes exactly through the top of the walls, then runs on past them as the overhang
+  const ov=.5,ridge=top+2.1,hw=h.w/2+ov,hd=h.d/2+ov;const roof=h.roof;const slope=(ridge-top)/(h.d/2),eave=top-slope*ov;
+  mb.face([[-hw,eave,-hd],[hw,eave,-hd],[hw,ridge,0],[-hw,ridge,0]].reverse(),roof);
+  mb.face([[-hw,eave,hd],[-hw,ridge,0],[hw,ridge,0],[hw,eave,hd]].reverse(),shade(roof,.92));
+  mb.box(0,ridge+.02,0,2*hw,.08,.16,shade(roof,.8));                                   // ridge cap
+  // gable ends (siding triangles) right up under the roof
+  for(const sx of [-1,1]){const x=sx*h.w/2;const a=mb.v([x,top,-h.d/2],[sx,0,0],sid),b=mb.v([x,top,h.d/2],[sx,0,0],sid),c=mb.v([x,ridge-.02,0],[sx,0,0],sid);mb.tri(a,b,c);mb.tri(a,c,b);
+    // rake trim along the sloped gable edges
+    for(const sz of [-1,1]){const p0=[sx*(hw-.03),eave,sz*hd],p1=[sx*(hw-.03),ridge,0];mb.tube(p0,p1,.06,.06,trim,4);}}
+  // soffits closing the underside of the eaves, and fascia boards on the edges
+  for(const sz of [-1,1]){mb.box(0,eave-.03,sz*(h.d/2+ov/2),h.w+2*ov,.05,ov,trim);mb.box(0,eave-.06,sz*hd,h.w+2*ov,.2,.06,trim);}
   // windows on front and back
   const win=(x,z,face)=>{mb.box(x,1.75,z,1.3,1.2,.08,trim);mb.box(x,1.75,z+face*.03,1.1,1.0,.06,glass);mb.box(x,1.75,z+face*.05,.05,1.0,.02,trim);mb.box(x,1.75,z+face*.05,1.1,.05,.02,trim);
     mb.box(x-.85,1.75,z,.35,1.2,.05,shade(h.door,.9));mb.box(x+.85,1.75,z,.35,1.2,.05,shade(h.door,.9));};   // shutters
@@ -126,8 +130,12 @@ function buildHouse(W){const mb=new MeshB(),h=W.house,y0=W.H(h.x,h.z),R=RNG(W.se
   const dx=h.w*.18;mb.box(dx,1.5,fz-.02,1.1,2.25,.1,trim);mb.box(dx,1.47,fz-.06,.92,2.1,.06,h.door);mb.box(dx+.32,1.45,fz-.11,.07,.07,.07,hex('#c9a640'));
   mb.box(dx,.28,fz-1.3,3.2,.32,2.4,hex('#9a958c'));                 // porch slab
   mb.box(dx,.06,fz-2.8,1.4,.18,.6,hex('#9a958c'));                   // step
-  for(const px of [-1.4,1.4])mb.box(dx+px,1.75,fz-2.35,.14,2.6,.14,trim);
-  mb.push(M.T(dx,top+.15,fz-1.25));mb.face([[-1.8,0,-1.3],[1.8,0,-1.3],[1.8,.55,.1],[-1.8,.55,.1]].reverse(),roof);mb.pop();
+  // porch roof: hung off the wall just under the main eave, sloping down to the posts
+  const pIn=eave-.12,pOut=pIn-.5,pz0=fz,pz1=fz-2.6,postZ=fz-2.35,postTop=pIn+(pOut-pIn)*((postZ-pz0)/(pz1-pz0));
+  for(const px of [-1.4,1.4])mb.box(dx+px,(.44+postTop)/2,postZ,.14,postTop-.44,.14,trim);
+  mb.box(dx,postTop-.06,postZ,3.0,.14,.14,trim);                                                   // beam on the posts
+  mb.face([[dx-1.8,pOut,pz1],[dx+1.8,pOut,pz1],[dx+1.8,pIn,pz0],[dx-1.8,pIn,pz0]].reverse(),roof);
+  mb.box(dx,pIn-.04,pz0-.04,3.6,.1,.08,trim);mb.box(dx,pOut-.05,pz1,3.6,.14,.05,trim);                  // ledger on the wall, fascia on the edge
   // brick chimney
   const cx=-h.w*.3;for(let r=0;r<12;r++)mb.box(cx,top+.2+r*.25,h.d*.18,.8,.25,.8,shade(hex('#8a4a36'),r%2?.92:1.05));
   mb.box(cx,top+3.25,h.d*.18,.9,.1,.9,hex('#5a5a5a'));
