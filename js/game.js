@@ -32,13 +32,13 @@ function newLevel(seed){
   placeTruckAt(G.pathLen[G.pathLen.length-1]);settleTrailer(true);
   // the problem tree
   const tdef=W.tree;const T=makeTreeDef(tdef);const ld=[Math.cos(tdef.leanDir),0,Math.sin(tdef.leanDir)];
-  G.tree={T,x:tdef.x,z:tdef.z,y0:W.H(tdef.x,tdef.z),q:Q.axis(V.cross([0,1,0],ld),tdef.lean),leanDir:ld,notch:{depth:0,h:0,dx:0,dz:0},back:{depth:0,h:0,dx:0,dz:0},state:'stand',dirty:true};
+  G.tree={T,x:tdef.x,z:tdef.z,y0:W.H(tdef.x,tdef.z),q:Q.axis(V.cross([0,1,0],ld),tdef.lean),leanDir:ld,cuts:[],freed:{},state:'stand'};
   rebuildStanding();
   // old man
   G.om={x:W.oldMan.x,z:W.oldMan.z,yaw:0,state:'wave',t:0,talked:false,walkTo:null,bubble:null,bubbleT:0,lastBark:0};
   // player
   G.pl={pos:[0,0,0],yaw:0,pitch:0,vy:0,ground:true,tool:'hands',carry:null,stepT:0,bob:0};
-  G.saw={on:false,rpm:0,pull:0,pulls:0,engine:null,cutting:false};
+  G.saw={on:false,rpm:0,pull:0,pulls:0,engine:null,cutting:false,roll:Math.PI/2,eng:0,cut:null};
   G.cut=null;G.parts=[];G.wedge=null;G.objs={talk:false,felled:false,limbed:false,stacked:false,paid:false};G.grade=null;G.startT=performance.now();G.flags={};
   G.dlg=null;G.toastT=0;
   updateObjectives();
@@ -68,12 +68,6 @@ function chipMatrix(){const c=G.chip;return M.mul(M.mul(M.T(c.pos[0],c.pos[1],c.
 function hopperWorld(){return M.apply(chipMatrix(),[0,1.0,-3.6]);}
 function chuteWorld(){return M.apply(chipMatrix(),[0,2.45,-.9]);}
 
-/* ---------------- standing tree mesh ---------------- */
-function rebuildStanding(){const tr=G.tree;if(tr.mesh)RD.free(tr.mesh);
-  // cuts are drawn in the wood frame; the lean is tiny so world directions are close enough
-  const P={kind:'trunk',y0:-.4,y1:tr.T.H,limbs:tr.T.limbs.map(l=>l.id)};
-  tr.mesh=RD.upload(buildPieceMesh(tr.T,P,{notch:tr.notch.depth>0?tr.notch:null,back:tr.back.depth>0?tr.back:null}));tr.dirty=false;tr.lastBuild=performance.now();}
-
 /* ================= bodies (felled stem, limbs, rounds) ================= */
 function spawnPiece(P,q,origin,v,w){const T=G.tree.T;const g=pieceGeom(T,P);const b=makeBody(g.S,g.pts,g.caps,q,origin,{piece:P});
   b.gpu=RD.upload(buildPieceMesh(T,P,null));if(v)b.v=v.slice();if(w)b.w=w.slice();PHYS.bodies.push(b);classify(b);return b;}
@@ -85,7 +79,7 @@ function removeBody(b){b.mode='gone';const i=PHYS.bodies.indexOf(b);if(i>=0)PHYS
 function velAtWorld(b,p){const r=V.sub(p,b.pos);return V.add(b.v,V.cross(b.w,r));}
 
 function buckBody(b,y){const P=b.piece;if(y-P.y0<.18||P.y1-y<.18){toast('Too close to the end of the piece.');return false;}
-  const o=frameOrigin(b),q=b.q;const A={kind:'trunk',y0:P.y0,y1:y,limbs:P.limbs.filter(id=>G.tree.T.limbs[id].y<y),stubs:(P.stubs||[]).slice(),cutBottom:P.cutBottom};
+  const o=frameOrigin(b),q=b.q;const A={kind:'trunk',y0:P.y0,y1:y,limbs:P.limbs.filter(id=>G.tree.T.limbs[id].y<y),stubs:(P.stubs||[]).slice(),cutBottom:P.cutBottom,butt:P.butt};
   const Bp={kind:'trunk',y0:y,y1:P.y1,limbs:P.limbs.filter(id=>G.tree.T.limbs[id].y>=y),stubs:(P.stubs||[]).slice(),cutBottom:true};
   removeBody(b);const nb=[];for(const Pn of [A,Bp]){const g=pieceGeom(G.tree.T,Pn);let c=[0,0,0],m=0;for(const s of g.S){c=V.add(c,V.mul(s.p,s.m));m+=s.m;}c=V.mul(c,1/m);
     const wc=V.add(o,Q.rot(q,c));nb.push(spawnPiece(Pn,q,o,velAtWorld(b,wc),b.w));}
@@ -98,27 +92,6 @@ function limbBody(b,id){const P=b.piece;const o=frameOrigin(b),q=b.q;
 
 /* ================= felling ================= */
 function treeD(h){return 2*G.tree.T.rAt(h);}
-function startFall(kind){const tr=G.tree,T=tr.T,n=tr.notch,h=n.depth>0?n.h:tr.back.h;const D=treeD(h);const hinge=D-n.depth-tr.back.depth;
-  let fd;const nd=[n.dx,0,n.dz];
-  if(kind==='barber'){fd=tr.leanDir.slice();}
-  else if(hinge<.04*D){fd=V.norm(V.add(V.mul(nd,.5),V.mul(tr.leanDir,1.0)));}
-  else{const j=(Math.random()-.5)*.08;fd=V.norm([n.dx*Math.cos(j)-n.dz*Math.sin(j),0,n.dz*Math.cos(j)+n.dx*Math.sin(j)]);}
-  tr.state='hinge';tr.fd=fd;
-  const err=Math.acos(clamp(V.dot(fd,nd.length?nd:fd),-1,1))*180/Math.PI;
-  tr.grade={notchPct:n.depth/D,hingePct:hinge/D,hingeIn:hinge*39.37,dirErr:n.depth?err:180,barber:kind==='barber'};
-  // the felled stem as a physics body, pivoting on the hinge first
-  const P={kind:'trunk',y0:h,y1:T.H,limbs:T.limbs.map(l=>l.id),cutBottom:true};const base=[tr.x,tr.y0,tr.z];
-  const b=spawnPiece(P,tr.q,base);b.mode='hinge';
-  const R0=T.rAt(h);const piv=V.add(base,V.add(V.mul(fd,Math.max(0,R0-n.depth)),[0,h,0]));
-  tr.hinge={axis:V.norm(V.cross([0,1,0],fd)),P:piv,Pc:V.add(base,[0,h,0]),th:0,td:kind==='barber'?.35:.12,q0:b.q.slice(),pos0:b.pos.slice(),body:b,t:0};
-  tr.body=b;RD.free(tr.mesh);tr.mesh=null;
-  tr.stump=RD.upload(buildStumpMesh(T,h,kind==='barber'?{dx:fd[0],dz:fd[2]}:null));tr.stumpH=h;
-  G.stumpCol=[{x:tr.x,z:tr.z,r:T.rAt(h),y0:tr.y0-2,y1:tr.y0+h}];
-  SFX.creak();setTimeout(()=>SFX.crack(),600);
-  shout(kind==='barber'?'BARBER CHAIR! GET BACK!':'TIMBER!');
-  if(kind==='barber')omBark("Holy smokes! It split right up the middle! That's a barber chair, son!",3500);
-  else setTimeout(()=>omBark(['WHOOO-EE! Did ya feel that in your boots?!','Timber! I always wanted to yell that.','Lord, that was louder than my ex-wife.'][Math.floor(Math.random()*3)],3500),2600);
-  G.saw.cutting=false;G.cut=null;}
 function hingeStep(dt){const tr=G.tree,hg=tr.hinge,b=hg.body;if(!hg||b.mode!=='hinge')return;
   const R=M3.fromQ(b.q),Iw=M3.mul(M3.mul(R,b.Ib),M3.T(R));const a=hg.axis;
   const rc=V.sub(b.pos,hg.Pc),tau=V.dot(V.cross(rc,[0,-PHYS.g*b.m,0]),a);
@@ -177,15 +150,11 @@ function talkToEarl(){const o=G.om;
     {who:OM_NAME,text:"It creaks at me every night. Every. Night. Like it's plottin' somethin'."},
     {who:OM_NAME,text:"Here's the deal: drop it, chip the branches, and cut the trunk into rounds I can lift. Stack 'em on the pallet by my shed."},
     {who:OM_NAME,text:"Four hundred bucks, cash. From my mattress. Don't ask about the mattress."},
-    {who:'You',text:"Notch on the side I want it to fall, back-cut from the other side, leave a hinge. Got it."},
-    {who:OM_NAME,text:"Big words. I like big words. Go on, git!"}],()=>{G.objs.talk=true;o.state='idle';updateObjectives();toast('Equip the chainsaw with 2, then press R to pull-start it.');});return;}
+    {who:OM_NAME,text:"Go on, git! And don't drop it on my house."}],()=>{G.objs.talk=true;o.state='idle';updateObjectives();});return;}
   if(G.objs.felled&&G.objs.limbed&&G.objs.stacked&&!G.objs.paid){payday();return;}
-  const tips=[];if(!G.objs.felled)tips.push("Remember: notch faces where ya want it to land. About a third through. Then back-cut from behind, a hair higher, and leave a hinge!");
-  else if(!G.objs.limbed)tips.push("Cut them branches off and feed 'em to that chipper. Gotta start it first. Big orange box, can't miss it.");
-  else tips.push("Rounds go on the pallet by my shed. If it's too heavy to lift, cut it shorter. Or roll it, I ain't your boss. Well, I am today.");
-  startDialog([{who:OM_NAME,text:OM_IDLE[Math.floor(Math.random()*OM_IDLE.length)]},{who:OM_NAME,text:tips[0]}]);}
+  startDialog([{who:OM_NAME,text:OM_IDLE[Math.floor(Math.random()*OM_IDLE.length)]}]);}
 function payday(){const g=G.tree.grade||{};const lines=[];let total=400;const rows=[['Job: drop, limb, chip and stack',400]];
-  const clean=!g.barber&&g.notchPct>=.18&&g.notchPct<=.45&&g.hingePct>=.05&&g.hingePct<=.16&&g.dirErr<15;
+  const clean=g.open&&!g.barber&&g.notchPct>=.18&&g.notchPct<=.45&&g.notchAngle>=40&&g.hingePct>=.05&&g.hingePct<=.18&&g.dirErr<15;
   if(clean){rows.push(['Textbook felling (notch, hinge, aim)',50]);total+=50;}
   if(g.barber){rows.push(['Barber chair (Earl is shaken)',-100]);total-=100;}
   const mins=(performance.now()-G.startT)/60000;if(mins<15){rows.push(['Quick work (under 15 min)',25]);total+=25;}
@@ -199,37 +168,16 @@ function updateObjectives(){const o=G.objs;let brush=0;for(const b of PHYS.bodie
   const rounds=PHYS.bodies.filter(b=>b.mode!=='gone'&&b.round);const inPile=rounds.filter(inPileZone).length;const heavy=rounds.filter(b=>b.m>WOOD.liftMax).length;
   if(o.felled){o.limbed=brush===0;o.stacked=o.limbed&&rounds.length>0&&heavy===0&&inPile===rounds.length;}
   const li=(done,txt)=>`<li class="${done?'done':''}">${txt}</li>`;
-  $('objList').innerHTML=li(o.talk,'Talk to Earl')+li(o.felled,'Fell the dead ash (notch, then back cut)')+li(o.limbed,`Limb it and chip the brush${o.felled&&!o.limbed?` · ${brush} left`:''}`)
+  $('objList').innerHTML=li(o.talk,'Talk to Earl')+li(o.felled,'Drop the dead ash')+li(o.limbed,`Limb it and chip the brush${o.felled&&!o.limbed?` · ${brush} left`:''}`)
     +li(o.stacked,`Buck the stem into liftable rounds and stack them on the pallet${o.felled&&rounds.length?` · ${inPile}/${rounds.length}${heavy?` · ${heavy} too heavy`:''}`:''}`)+li(o.paid,'Get paid');
   G.counts={brush,rounds:rounds.length,inPile,heavy};
   if(o.limbed&&o.stacked&&!o.paid&&!G.flags.callPay){G.flags.callPay=true;SFX.ding();omBark("Hey! Looks done to me! Come get your money!",6000);toast('Job done. Talk to Earl to get paid.');}}
 function inPileZone(b){const p=G.W.pile;return Math.abs(b.pos[0]-p.x)<p.w/2+.6&&Math.abs(b.pos[2]-p.z)<p.d/2+.6;}
 function showSummary(rows,total,g){const el=$('summary');el.hidden=false;
   $('sumRows').innerHTML=rows.map(([k,v])=>`<div class="row"><span>${k}</span><b class="${v<0?'neg':''}">${v<0?'−':'+'}$${Math.abs(v)}</b></div>`).join('')+`<div class="row total"><span>Total</span><b>$${total}</b></div>`;
-  const notes=[];if(g&&g.notchPct!=null){notes.push(`Notch depth: ${(g.notchPct*100).toFixed(0)}% of the diameter (aim for about 25–35%).`);notes.push(`Hinge: ${g.hingeIn.toFixed(1)} in, ${(g.hingePct*100).toFixed(0)}% of the diameter (aim for about 10%).`);
-    if(!g.barber)notes.push(`Fell direction: ${g.dirErr.toFixed(0)}° off your notch.`);else notes.push('Barber chair: always cut a proper notch before the back cut.');}
+  const notes=[];if(g&&g.notchPct!=null){if(g.open){notes.push(`Notch: ${(g.notchPct*100).toFixed(0)}% of the diameter deep, ${g.notchAngle.toFixed(0)}° open.`);notes.push(`Hinge: ${g.hingeIn.toFixed(1)} in, ${(g.hingePct*100).toFixed(0)}% of the diameter.`);notes.push(`Fell direction: ${g.dirErr.toFixed(0)}° off the notch.`);}
+    else notes.push(g.barber?'The stem split up the back (barber chair).':'No notch was cut.');}
   $('sumNotes').innerHTML=notes.map(n=>`<li>${n}</li>`).join('');$('sumBank').textContent=`Bank: $${loadCareer().money}`;try{document.exitPointerLock();}catch(e){}}
-function drawCutGauge(){const cv=$('gauge'),tr=G.tree;const show=G.phase==='play'&&tr.state==='stand'&&G.pl.tool==='saw'&&(G.cut&&G.cut.kind!=='buck'&&G.cut.kind!=='limb'||G.aimTree||tr.notch.depth>0)&&Math.hypot(G.pl.pos[0]-tr.x,G.pl.pos[2]-tr.z)<6;
-  cv.parentElement.hidden=!show;if(!show)return;const g=cv.getContext('2d'),W=cv.width,Hh=cv.height,cx=W/2,cy=Hh/2-6,R=W*.34;g.clearRect(0,0,W,Hh);
-  const n=tr.notch,bk=tr.back,h=n.depth>0?n.h:(G.cut&&G.cut.h)||1,D=treeD(h),rad=D/2,sc=R/rad;
-  // top view: rotate so the player is at the bottom of the gauge
-  const pd=V.norm([G.pl.pos[0]-tr.x,0,G.pl.pos[2]-tr.z]);const ang=Math.atan2(pd[2],pd[0]);const rot=(x,z)=>{const a=Math.atan2(z,x)-ang+Math.PI/2,l=Math.hypot(x,z);return [cx+Math.cos(a)*l*sc,cy+Math.sin(a)*l*sc];};
-  g.fillStyle='#c8ad78';g.strokeStyle='#5a4a32';g.lineWidth=3;g.beginPath();g.arc(cx,cy,R,0,Math.PI*2);g.fill();g.stroke();
-  if(n.depth>0){const c=Math.max(0,rad-n.depth),half=Math.sqrt(Math.max(0,rad*rad-c*c));const t=[-n.dz,n.dx];
-    const p1=rot(n.dx*c+t[0]*half,n.dz*c+t[1]*half),p2=rot(n.dx*c-t[0]*half,n.dz*c-t[1]*half);const a1=Math.atan2(p1[1]-cy,p1[0]-cx),a2=Math.atan2(p2[1]-cy,p2[0]-cx);
-    g.fillStyle='#1d2a22';g.beginPath();g.moveTo(p1[0],p1[1]);g.lineTo(p2[0],p2[1]);g.arc(cx,cy,R,a2,a1,false);g.closePath();g.fill();
-    // fall arrow
-    const tip=rot(n.dx*rad*1.9,n.dz*rad*1.9),st=rot(n.dx*rad*1.1,n.dz*rad*1.1);g.strokeStyle='#ffcf4a';g.lineWidth=3;g.beginPath();g.moveTo(st[0],st[1]);g.lineTo(tip[0],tip[1]);g.stroke();
-    g.fillStyle='#ffcf4a';g.beginPath();g.arc(tip[0],tip[1],4,0,7);g.fill();}
-  if(bk.depth>0){const c=rad-bk.depth,half=Math.sqrt(Math.max(0,rad*rad-c*c));const bd=[-n.dx||bk.dx,-n.dz||bk.dz];const t=[-bd[1],bd[0]];
-    const p1=rot(bd[0]*c+t[0]*half,bd[1]*c+t[1]*half),p2=rot(bd[0]*c-t[0]*half,bd[1]*c-t[1]*half),e1=rot(bd[0]*rad+t[0]*half,bd[1]*rad+t[1]*half),e2=rot(bd[0]*rad-t[0]*half,bd[1]*rad-t[1]*half);
-    g.strokeStyle='#e8eef2';g.lineWidth=2;g.beginPath();g.moveTo(p1[0],p1[1]);g.lineTo(p2[0],p2[1]);g.stroke();g.globalAlpha=.25;g.fillStyle='#000';g.beginPath();g.moveTo(p1[0],p1[1]);g.lineTo(p2[0],p2[1]);g.lineTo(e2[0],e2[1]);g.lineTo(e1[0],e1[1]);g.fill();g.globalAlpha=1;}
-  const hinge=D-n.depth-bk.depth;
-  if(n.depth>0){const hl=rot(n.dx*(rad-n.depth),n.dz*(rad-n.depth)),hb=rot(-n.dx*(rad-bk.depth),-n.dz*(rad-bk.depth));const ok=hinge/D>=.05&&hinge/D<=.16;g.strokeStyle=ok?'#59d07a':'#ff7a5a';g.lineWidth=5;g.beginPath();g.moveTo(hl[0],hl[1]);g.lineTo(hb[0],hb[1]);g.stroke();}
-  g.fillStyle='#fff';g.font='600 12px system-ui,sans-serif';g.textAlign='center';g.fillText('you',cx,Hh-8);
-  const inch=x=>(x*39.37).toFixed(1)+'"';
-  $('gaugeTxt').innerHTML=`Diameter ${inch(D)}<br>Notch <b>${inch(n.depth)}</b> <span>${n.depth?Math.round(n.depth/D*100)+'%':'–'}</span> · aim ⅓<br>Hinge <b>${n.depth||bk.depth?inch(Math.max(0,hinge)):'–'}</b> <span>${n.depth||bk.depth?Math.round(Math.max(0,hinge)/D*100)+'%':''}</span> · aim 10%`;}
-
 /* ================= input ================= */
 function onKey(e,down){const k=e.code;G.keys[k]=down;if(!down)return;
   if(G.phase==='intro'&&(k==='Space'||k==='Enter'||k==='Escape')){G.introSkip=true;return;}
@@ -241,15 +189,16 @@ function onKey(e,down){const k=e.code;G.keys[k]=down;if(!down)return;
   else if(k==='Digit2')equip('saw');
   else if(k==='KeyR'&&G.pl.tool==='saw')pullStart();
   else if(k==='KeyH'){$('help').hidden=!$('help').hidden;}
+  else if(k==='KeyC'||k==='ControlLeft'){G.pl.crouch=!G.pl.crouch;}
   else if(k==='Space'&&G.pl.ground){G.pl.vy=4.2;G.pl.ground=false;}}
 function equip(t){const p=G.pl;if(p.carry)dropCarry();if(t===p.tool)return;p.tool=t;if(t!=='saw'&&G.saw.on){sawOff();}
   document.querySelectorAll('.slot').forEach(s=>s.classList.toggle('on',s.dataset.t===t));if(t==='saw'&&!G.saw.on)toast('Press R to pull-start the saw.',2200);}
 function pullStart(){const s=G.saw;if(s.on){sawOff();return;}if(s.pull>0)return;s.pull=.5;s.pulls++;SFX.pull();
-  setTimeout(()=>{if(G.pl.tool!=='saw')return;if(s.pulls>=2&&Math.random()<.6||s.pulls>=4){s.on=true;s.pulls=0;s.engine=makeEngine('saw');toast('Saw running. Hold left mouse to rev and cut. R to stop.',2600);}else{SFX.sputter();toast(s.pulls===1?'Choke is on. Pull again.':'Sputter… pull again.',1400);}},380);}
+  setTimeout(()=>{if(G.pl.tool!=='saw')return;if(s.pulls>=2&&Math.random()<.6||s.pulls>=4){s.on=true;s.pulls=0;s.engine=makeEngine('saw');toast('Saw running.',1800);}else{SFX.sputter();toast(s.pulls===1?'Choke is on. Pull again.':'Sputter… pull again.',1400);}},380);}
 function sawOff(){const s=G.saw;s.on=false;if(s.engine){s.engine.stop();s.engine=null;}s.cutting=false;}
 
 /* ================= interaction ================= */
-function aimInfo(){const p=G.pl,eye=V.add(p.pos,[0,1.62,0]),d=fwdOf(p.yaw,p.pitch);G.eye=eye;G.fwd=d;let best=null;
+function aimInfo(){const p=G.pl,eye=V.add(p.pos,[0,G.pl.eyeY||1.62,0]),d=fwdOf(p.yaw,p.pitch);G.eye=eye;G.fwd=d;let best=null;
   // old man
   const o=G.om,om=[o.x,G.W.H(o.x,o.z)+1.2,o.z];{const to=V.sub(om,eye),dist=V.len(to);if(dist<3.2&&V.dot(V.norm(to),d)>.9)best={kind:'om',t:dist};}
   // chipper engine
@@ -265,64 +214,34 @@ function interact(){const p=G.pl;
   const a=G.aim;if(!a)return;
   if(a.kind==='om'){talkToEarl();return;}
   if(a.kind==='chipper'){toggleChipper();return;}
-  if(a.kind==='body'&&p.tool==='hands'){const b=a.b;if(b.m>WOOD.liftMax){toast(`${b.m.toFixed(0)} kg is too heavy to lift. Cut it shorter, or push it to roll it.`);return;}
-    if(b.piece&&b.piece.kind==='trunk'&&b.piece.limbs.length){toast('Limb it first: cut the branches off with the saw.');return;}
+  if(a.kind==='body'&&p.tool==='hands'){const b=a.b;if(b.m>WOOD.liftMax){toast(`Too heavy to lift (${b.m.toFixed(0)} kg).`);return;}
+    if(b.piece&&b.piece.kind==='trunk'&&b.piece.limbs.length){toast("Can't lift that.");return;}
     p.carry=b;b.mode='held';b.sleep=false;b.holdQ=Q.mul(Q.conj(Q.axis([0,1,0],p.yaw)),b.q);SFX.pick();return;}
-  if(a.kind==='body'&&p.tool==='saw'&&!G.saw.on)toast('Pull-start the saw first (R).');}
+  if(a.kind==='body'&&p.tool==='saw'&&!G.saw.on)toast('The saw is off.');}
 function dropCarry(){const b=G.pl.carry;if(!b)return;b.mode='dyn';b.sleep=false;b.still=0;b.w=[0,0,0];b.v=V.add(V.mul(G.fwd,1.0),[0,.5,0]);G.pl.carry=null;SFX.drop();setTimeout(updateObjectives,1500);}
 function toggleChipper(){const c=G.chip;if(c.running){c.running=false;if(c.engine){c.engine.stop();c.engine=null;}toast('Chipper off.');return;}
-  SFX.pull();setTimeout(()=>{c.running=true;c.engine=makeEngine('chipper');toast('Chipper running. Carry brush to the infeed and press E.');},500);}
-function feedChipper(){const c=G.chip,b=G.pl.carry;if(!c.running){toast('Start the chipper first: look at its engine and press E.');return;}
+  SFX.pull();setTimeout(()=>{c.running=true;c.engine=makeEngine('chipper');toast('Chipper running.',1800);},500);}
+function feedChipper(){const c=G.chip,b=G.pl.carry;if(!c.running){toast("The chipper isn't running.");return;}
   G.pl.carry=null;b.mode='feed';b.feedT=0;b.feedFrom=b.pos.slice();c.feed=b;}
-function stepFeed(dt){const c=G.chip,b=c.feed;if(!b)return;b.feedT+=dt;const cm=chipMatrix();const throat=M.apply(cm,[0,1.0,-2.9]),mouth=M.apply(cm,[0,1.0,-4.3]);
-  const ax=V.norm(V.sub(throat,mouth));const tq=Q.mul(Q.between([0,1,0],ax),[0,0,0,1]);
-  if(b.feedT<.4){b.pos=V.lerp(b.feedFrom,mouth,b.feedT/.4);b.q=Q.slerp(b.q,Q.mul(tq,Q.conj(Q.axis([1,0,0],0))),.2);}
-  else{// pulled through the rollers along the hopper axis
-    b.pos=V.add(b.pos,V.mul(ax,2.6*dt));const o=chuteWorld();emit(o,V.add(V.mul([Math.sin(c.yaw),0,Math.cos(c.yaw)],4),[0,1.5,0]),6,hex('#c9a46a'),1.6,1.4,.05);c.load=1;
-    if(V.dot(V.sub(b.pos,throat),ax)>b.rad*.9||b.feedT>4){removeBody(b);c.feed=null;c.chips++;SFX.crunch();updateObjectives();}}}
-
-/* ---------------- cutting with the saw ---------------- */
-function stepCutting(dt){const s=G.saw,a=G.aim,tr=G.tree;s.cutting=false;G.cutPrompt='';
-  if(G.pl.tool!=='saw'||!s.on||!a)return;
-  if(a.kind==='tree'&&tr.state==='stand'){const n=tr.notch,bk=tr.back;const pd=V.norm([G.pl.pos[0]-tr.x,0,G.pl.pos[2]-tr.z]);
-    if(a.y<.15||a.y>1.3){G.cutPrompt='Cut lower: between your knee and your waist.';return;}
-    let kind;if(!n.depth)kind='notch';else{const dot=pd[0]*n.dx+pd[2]*n.dz;kind=dot>.64?'notch':dot<-.5?'back':null;}
-    const D=treeD(n.depth?n.h:a.y);
-    if(!kind){G.cutPrompt='Back-cut from the opposite side of your notch.';return;}
-    G.cutPrompt=kind==='notch'?(n.depth?`Hold: deepen the notch (${Math.round(n.depth/D*100)}%)`:'Hold left mouse: cut the notch on the side it should fall'):`Hold: back cut · hinge ${Math.max(0,(D-n.depth-bk.depth)*39.37).toFixed(1)}"`;
-    if(!G.mouse.l)return;s.cutting=true;const rate=WOOD.cutSpeed*dt*(.4+.6*s.rpm);
-    if(kind==='notch'){if(!n.depth){n.h=clamp(a.y,.3,1.0);n.dx=pd[0];n.dz=pd[2];}n.depth=Math.min(D*.62,n.depth+rate*.8);if(n.depth>=D*.6)G.cutPrompt='That notch is plenty deep. Go back-cut.';}
-    else{bk.h=n.h+.035;bk.dx=-n.dx;bk.dz=-n.dz;bk.depth+=rate;const hinge=D-n.depth-bk.depth;
-      if(n.depth<D*.15&&bk.depth>D*.48){startFall('barber');return;}
-      if(n.depth>=D*.15&&hinge<=D*.115)tr.goAcc=(tr.goAcc||0)+dt;
-      if(tr.goAcc>.12){startFall('normal');return;}
-      if(hinge<=0){startFall('barber');return;}}
-    if(performance.now()-(tr.lastBuild||0)>90)rebuildStanding();
-    emit(a.p,V.mul(pd,1.2),3,hex('#e2cfa0'),1.2,.8,.025);return;}
-  if(a.kind==='body'){const b=a.b,P=b.piece;if(!P)return;
-    if(a.cap.limb!=null&&P.kind==='trunk'){G.cutPrompt='Hold left mouse: cut off this limb';
-      if(!G.mouse.l){G.cut=null;return;}s.cutting=true;const key='L'+a.cap.limb;if(!G.cut||G.cut.key!==key||G.cut.b!==b)G.cut={key,b,prog:0,kind:'limb'};
-      const L=G.tree.T.limbs[a.cap.limb];G.cut.prog+=dt*WOOD.limbCutSpeed*(.4+.6*s.rpm);emit(a.p,[0,.6,0],2,hex('#e2cfa0'),1,.6,.02);
-      if(G.cut.prog>=L.r0*2){limbBody(b,a.cap.limb);G.cut=null;updateObjectives();}return;}
-    if(P.kind==='trunk'&&a.cap.trunk){const y=bodyLocal(b,a.p)[1];const D=2*G.tree.T.rAt(y);
-      if(P.limbs.length){const near=P.limbs.some(id=>Math.abs(G.tree.T.limbs[id].y-y)<.6);if(near){G.cutPrompt='Limb it first, then buck the stem.';}}
-            const segM=(a0,a1)=>{let m=0;for(let yy=a0;yy<a1;yy+=.05){const r=G.tree.T.rAt(yy+.025);m+=WOOD.rho*Math.PI*r*r*Math.min(.05,a1-yy);}return m;};
-      const near0=y-P.y0<P.y1-y,len=near0?y-P.y0:P.y1-y,mm=near0?segM(P.y0,y):segM(y,P.y1);
-      G.cutPrompt=G.cutPrompt||`Hold left mouse: buck here · ${(len*3.281).toFixed(1)} ft round ≈ ${mm.toFixed(0)} kg${mm>WOOD.liftMax?' (too heavy to lift)':''}`;
-      if(!G.mouse.l){return;}s.cutting=true;if(!G.cut||G.cut.b!==b||Math.abs(G.cut.y-y)>.12)G.cut={b,y,prog:0,kind:'buck'};
-      G.cut.prog+=dt*WOOD.cutSpeed*(.4+.6*s.rpm);emit(a.p,V.add(V.mul(G.fwd,-.6),[0,1,0]),3,hex('#e2cfa0'),1.2,.8,.025);
-      if(G.cut.prog>=D){buckBody(b,G.cut.y);G.cut=null;updateObjectives();}return;}
-    if(P.kind==='limb')G.cutPrompt='Brush: carry it to the chipper (switch to hands, 1).';}}
+function stepFeed(dt){const c=G.chip,b=c.feed;if(!b)return;b.feedT+=dt;const cm=chipMatrix();const throat=M.apply(cm,[0,1.0,-2.95]),mouth=M.apply(cm,[0,1.0,-4.25]);
+  const ax=V.norm(V.sub(throat,mouth)),{ax:axL,butt}=brushAxis(b);const len=b.piece&&b.piece.kind==='limb'?G.tree.T.limbs[b.piece.limb].len:(b.piece?b.piece.y1-b.piece.y0:1);
+  const tipL=V.add(butt,V.mul(axL,len));
+  if(b.feedT<.7){// swing it level, butt toward the rollers, and set the butt in the mouth
+    b.q=orientAxis(b.q,axL,V.mul(ax,-1),Math.min(1,dt*7));const want=V.sub(mouth,Q.rot(b.q,V.sub(butt,b.com)));b.pos=V.lerp(b.pos,want,Math.min(1,dt*7));}
+  else{// the feed rollers grab it and drag it through
+    b.q=orientAxis(b.q,axL,V.mul(ax,-1),Math.min(1,dt*10));b.pos=V.add(b.pos,V.mul(ax,1.5*dt));b.pos[1]+=(Math.random()-.5)*.01;
+    const o=chuteWorld();emit(o,V.add(V.mul([Math.sin(c.yaw),0,Math.cos(c.yaw)],4),[0,1.5,0]),6,hex('#c9a46a'),1.6,1.4,.05);c.load=1;if(Math.random()<dt*6)SFX.crunch();
+    const tipW=bodyWorld(b,tipL);if(V.dot(V.sub(tipW,throat),ax)>0||b.feedT>12){removeBody(b);c.feed=null;c.chips++;updateObjectives();}}}
 
 /* ================= player movement ================= */
 function obbPush(p,cx,cz,yaw,hx,hz,r){const c=Math.cos(yaw),s=Math.sin(yaw);const dx=p[0]-cx,dz=p[2]-cz;const lx=dx*c-dz*s,lz=dx*s+dz*c;
   const qx=clamp(lx,-hx,hx),qz=clamp(lz,-hz,hz);const ex=lx-qx,ez=lz-qz,d=Math.hypot(ex,ez);if(d>=r)return;let nx,nz,pen;
   if(d<1e-5){const px=hx-Math.abs(lx),pz=hz-Math.abs(lz);if(px<pz){nx=Math.sign(lx);nz=0;pen=px+r;}else{nx=0;nz=Math.sign(lz);pen=pz+r;}}else{nx=ex/d;nz=ez/d;pen=r-d;}
   const wx=nx*c+nz*s,wz=-nx*s+nz*c;p[0]+=wx*pen;p[2]+=wz*pen;}
-function stepPlayer(dt){const p=G.pl,K=G.keys,W=G.W;if(G.dlg)return;
+function stepPlayer(dt){const p=G.pl,K=G.keys,W=G.W;p.eyeY=lerp(p.eyeY||1.62,p.crouch?.98:1.62,Math.min(1,dt*8));if(G.dlg)return;
   const f=[-Math.sin(p.yaw),0,-Math.cos(p.yaw)],r=[Math.cos(p.yaw),0,-Math.sin(p.yaw)];let mv=[0,0,0];
   if(K.KeyW)mv=V.add(mv,f);if(K.KeyS)mv=V.sub(mv,f);if(K.KeyD)mv=V.add(mv,r);if(K.KeyA)mv=V.sub(mv,r);
-  const carryM=p.carry?p.carry.m:0;const sp=(K.ShiftLeft&&!p.carry?5.6:3.3)*(1-carryM/WOOD.liftMax*.45);
+  const carryM=p.carry?p.carry.m:0;const sp=(K.ShiftLeft&&!p.carry&&!p.crouch?5.6:p.crouch?1.4:3.3)*(1-carryM/WOOD.liftMax*.45);
   const moving=V.len(mv)>0;if(moving){mv=V.mul(V.norm(mv),sp*dt);p.pos[0]+=mv[0];p.pos[2]+=mv[2];p.stepT+=sp*dt;p.bob+=dt*sp*2.2;if(p.stepT>1.3&&p.ground){p.stepT=0;SFX.step();}}
   // collisions
   const rad=.34;for(const c of W.colliders){if(c.t==='circle'){const dx=p.pos[0]-c.x,dz=p.pos[2]-c.z,d=Math.hypot(dx,dz),m=c.r+rad;if(d<m&&d>1e-5){p.pos[0]=c.x+dx/d*m;p.pos[2]=c.z+dz/d*m;}}else obbPush(p.pos,c.x,c.z,0,c.hx,c.hz,rad);}
@@ -341,8 +260,11 @@ function stepPlayer(dt){const p=G.pl,K=G.keys,W=G.W;if(G.dlg)return;
   // world bounds
   p.pos[0]=clamp(p.pos[0],-120,120);p.pos[2]=clamp(p.pos[2],-110,120);
   // carried piece follows the hands
-  if(p.carry){const b=p.carry;const tgt=V.add(V.add(p.pos,[0,1.05,0]),V.mul([-Math.sin(p.yaw),0,-Math.cos(p.yaw)],.75+Math.min(.8,b.rad*.35)));
-    const np=V.lerp(b.pos,tgt,Math.min(1,dt*12));b.v=V.mul(V.sub(np,b.pos),1/Math.max(dt,1e-3));b.pos=np;b.q=Q.norm(Q.mul(Q.axis([0,1,0],p.yaw),b.holdQ));}}
+  if(p.carry){const b=p.carry;const fw=[-Math.sin(p.yaw),0,-Math.cos(p.yaw)],rt=[Math.cos(p.yaw),0,-Math.sin(p.yaw)];let np;
+    if(b.brush){const {ax:axL,butt}=brushAxis(b);const dir=V.norm(V.add(V.add(V.mul(fw,.8),V.mul(rt,-.55)),[0,-.08,0]));b.q=orientAxis(b.q,axL,dir,Math.min(1,dt*10));
+      const hands=V.add(V.add(V.add(p.pos,[0,1.0,0]),V.mul(fw,.5)),V.mul(rt,.22));np=V.lerp(b.pos,V.sub(hands,Q.rot(b.q,V.sub(butt,b.com))),Math.min(1,dt*12));}
+    else{const tgt=V.add(V.add(p.pos,[0,1.05,0]),V.mul(fw,.75+Math.min(.8,b.rad*.35)));np=V.lerp(b.pos,tgt,Math.min(1,dt*12));b.q=Q.norm(Q.mul(Q.axis([0,1,0],p.yaw),b.holdQ));}
+    b.v=V.mul(V.sub(np,b.pos),1/Math.max(dt,1e-3));b.pos=np;}}
 
 /* ---------------- danger: the falling stem ---------------- */
 function checkCrush(){const tr=G.tree,b=tr.body;if(!b||G.phase!=='play'||!(tr.state==='hinge'||(tr.state==='down'&&performance.now()-tr.downT<2500)))return;
@@ -410,10 +332,12 @@ function render(cam){const r=RD;r.resize();const asp=r.cv.width/r.cv.height;cons
   {const gl=r.gl;gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);const H=G.W.H;
     const sh=(x,z,sx,sz,yaw,a)=>r.draw(m.shadow,M.mul(M.mul(M.T(x,H(x,z)+.04,z),M.Ry(yaw||0)),M.S(sx,1,sz)),[0,0,0,a||.32]);
     sh(G.truck.pos[0],G.truck.pos[2],1.25,2.9,G.truck.yaw,.38);const cc=M.apply(cm,[0,0,-2.3]);sh(cc[0],cc[2],.8,1.7,G.chip.yaw,.3);
-    sh(G.om.x,G.om.z,.38,.38,0,.35);if(tr.state==='stand')sh(tr.x,tr.z,3.2,3.2,0,.12);
+    sh(G.om.x,G.om.z,.38,.38,0,.35);
     if(G.phase==='play')sh(G.pl.pos[0],G.pl.pos[2],.34,.34,0,.3);
     for(const b of PHYS.bodies){if(b.mode==='gone'||b.round===false&&b.brush)continue;const gh=H(b.pos[0],b.pos[2]);if(b.pos[1]-gh>2)continue;sh(b.pos[0],b.pos[2],Math.min(1.2,b.rad*.7),Math.min(1.2,b.rad*.7),0,.22);}
     gl.depthMask(true);gl.disable(gl.BLEND);}
+  // the saw lives in the world: where the bar is inside the wood, the wood hides it
+  if(G.phase==='play'&&G.pl.tool==='saw'&&!G.pl.carry&&G.saw.poseW){const sw=G.saw.poseW;r.gl.clear(0);r.draw(m.saw,sw);r.draw(m.gloveR,M.mul(sw,M.mul(M.T(0,.08,.04),M.Rx(.3))));r.draw(m.gloveL,M.mul(sw,M.mul(M.T(-.04,.17,-.23),M.mul(M.Ry(.4),M.Rx(.5)))));}
   // particles
   if(G.parts.length){const pm=RD.upload(partMesh());r.draw(pm);RD.free(pm);}
   // first-person view model
@@ -431,7 +355,7 @@ function drawViewModel(cam){const r=RD,gl=r.gl,m=G.meshes;const asp=r.cv.width/r
     if(dt0<0){pos[1]+=Math.sin(I.t*7)*.004;}
     const Mo=M.mul(M.T(pos[0],pos[1],pos[2]),M.mul(M.Rx(rx),M.mul(M.Rz(rz),M.S(1,sc,1))));r.draw(m.can,M.mul(Mo,M.T(0,-.02,0)));if(dt0<3.6){r.draw(m.handCan,M.mul(M.T(pos[0],pos[1],pos[2]),M.mul(M.Rx(rx),M.mul(M.Rz(rz),M.Ry(-Math.PI/2)))));r.draw(m.forearm,M.T(pos[0],pos[1]-Math.sin(rx)*.03,pos[2]));}return;}
   if(G.phase!=='play')return;const p=G.pl;const bobX=Math.sin(p.bob)*.012,bobY=-Math.abs(Math.cos(p.bob))*.012;
-  if(p.tool==='saw'&&!p.carry){const s=G.saw;let y=-.33,rx=-.06,ry=.1;if(s.pull>0){const k=Math.sin((1-s.pull/.5)*Math.PI);y-=.06*k;rx+=.25*k;}
+  if(p.tool==='saw'&&!p.carry){return;const s=G.saw;let y=-.33,rx=-.06,ry=.1;if(s.pull>0){const k=Math.sin((1-s.pull/.5)*Math.PI);y-=.06*k;rx+=.25*k;}
     const vib=s.on?(s.cutting?.006:.0025):0;const jx=(Math.random()-.5)*vib,jy=(Math.random()-.5)*vib;
     const cutting=s.cutting;const base=M.mul(M.T(.3+bobX+jx,-.36+(y+.33)+bobY+jy+(cutting?.05:0),-.42+(cutting?-.08:0)),M.mul(M.Ry(.55+(cutting?.08:0)),M.mul(M.Rx(.1+(cutting?.06:0)),M.Rz(-.22))));
     r.draw(m.saw,base);r.draw(m.gloveR,M.mul(base,M.mul(M.T(0,.08,.04),M.Rx(.3))));r.draw(m.gloveL,M.mul(base,M.mul(M.T(-.04,.17,-.23),M.mul(M.Ry(.4),M.Rx(.5)))));}
@@ -446,30 +370,29 @@ function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;G.t+=dt;
 function tick(dt,now){let cam;
   if(G.phase==='title'){const a=now/1000*.05;const c=[G.W.tree.x,0,G.W.tree.z];cam={eye:[c[0]+Math.sin(a)*45,G.W.H(c[0],c[2])+18,c[2]+Math.cos(a)*45],yaw:a,pitch:-.33,roll:0};}
   else if(G.phase==='intro'){stepIntro(dt);updateOldMan(dt);cam=introCamera();}
-  else{if(G.phase==='play'){stepPlayer(dt);G.aim=aimInfo();stepCutting(dt);stepDialog(dt);checkCrush();}
+  else{if(G.phase==='play'){stepPlayer(dt);G.aim=aimInfo();const pc=G.pl;sawPose({eye:V.add(pc.pos,[0,pc.eyeY||1.62,0]),yaw:pc.yaw,pitch:pc.pitch,roll:0},dt);stepSaw(dt);stepStanding(dt);stepDialog(dt);checkCrush();}
     updateOldMan(dt);const tr=G.tree;
     // physics with the hinge driven in the same sub-steps
     const sub=Math.max(1,Math.round(dt/PHYS.dt));for(let i=0;i<sub;i++){if(tr.state==='hinge')hingeStep(dt/sub);}
     physUpdate(dt,G.W.H,G.stumpCol);
-    if(tr.state==='down'&&!G.objs.felled&&tr.body&&(tr.body.sleep||performance.now()-tr.downT>6000)){G.objs.felled=true;updateObjectives();SFX.ding();toast('Down! Now limb it: cut the branches off where they meet the stem.',4200);}
+    if(tr.state==='down'&&!G.objs.felled&&tr.body&&(tr.body.sleep||performance.now()-tr.downT>6000)){G.objs.felled=true;updateObjectives();SFX.ding();}
     stepFeed(dt);stepParts(dt);
     // saw engine
     const s=G.saw;if(s.pull>0)s.pull=Math.max(0,s.pull-dt);if(s.on){s.rpm=lerp(s.rpm,G.mouse.l?1:.05,Math.min(1,dt*(G.mouse.l?6:3)));if(s.engine)s.engine.set(s.rpm*(s.cutting?.82:1),s.cutting?1:0,.42);}
     const c=G.chip;if(c.engine){c.load=Math.max(0,(c.load||0)-dt*1.5);const d=V.dist(G.pl.pos,c.pos);c.engine.set(.5+c.load*.4,c.load,clamp(1-d/60,.05,1)*.55);}
-    const p=G.pl;cam={eye:V.add(p.pos,[0,1.62+(p.ground?Math.abs(Math.sin(p.bob))*.025:0),0]),yaw:p.yaw,pitch:p.pitch,roll:0};
+    const p=G.pl;cam={eye:V.add(p.pos,[0,(p.eyeY||1.62)+(p.ground?Math.abs(Math.sin(p.bob))*.025:0),0]),yaw:p.yaw,pitch:p.pitch,roll:0};
     if(G.phase==='play')updateHUD();
     if(G.objs.felled&&!G.objs.paid&&now-(G.lastObj||0)>800){G.lastObj=now;updateObjectives();}}
-  render(cam);drawCutGauge();
+  render(cam);
   if(G.toastT&&now>G.toastT){$('toast').classList.remove('on');G.toastT=0;}}
 function updateHUD(){const a=G.aim,p=G.pl;let t='';
-  if(G.dlg)t='';else if(p.carry){const near=V.dist(hopperWorld(),G.eye)<3.4;t=p.carry.brush&&near?'<b>E</b> Feed the chipper':(near&&!p.carry.brush?'Too thick for the chipper. Rounds go on the pallet.':'<b>E</b> or <b>Q</b> Drop')+` · ${p.carry.m.toFixed(0)} kg`;}
+  if(G.dlg)t='';else if(p.carry){const near=V.dist(hopperWorld(),G.eye)<3.4;t=p.carry.brush&&near?'<b>E</b> Feed the chipper':'<b>E</b> or <b>Q</b> Drop'+` · ${p.carry.m.toFixed(0)} kg`;}
   else if(a){if(a.kind==='om')t='<b>E</b> Talk to Earl';else if(a.kind==='chipper')t=`<b>E</b> ${G.chip.running?'Stop':'Start'} the chipper`;
-    else if(a.kind==='tree')t=p.tool==='saw'?(G.saw.on?G.cutPrompt||'':'<b>R</b> Pull-start the saw'):'Dead white ash, killed by emerald ash borer. Press <b>2</b> for the chainsaw.';
-    else if(a.kind==='body'){const b=a.b;if(p.tool==='saw')t=G.saw.on?(G.cutPrompt||''):'<b>R</b> Pull-start the saw';
-      else t=b.piece&&b.piece.kind==='trunk'&&b.piece.limbs.length?'Branches still attached: limb it with the saw':(b.m>WOOD.liftMax?`${b.m.toFixed(0)} kg: too heavy. Cut it shorter or push it`:`<b>E</b> Pick up ${b.brush?'brush':'round'} · ${b.m.toFixed(0)} kg`);}}
+    else if(a.kind==='tree')t=p.tool==='saw'?(G.saw.on?'':'<b>R</b> Pull-start the saw'):'Dead white ash';
+    else if(a.kind==='body'){const b=a.b;if(p.tool==='saw')t=G.saw.on?'':'<b>R</b> Pull-start the saw';
+      else t=!b.piece?'':b.piece.kind==='trunk'&&b.piece.limbs.length?`${b.m.toFixed(0)} kg`:(b.m>WOOD.liftMax?`${b.m.toFixed(0)} kg`:`<b>E</b> Pick up ${b.brush?'brush':'round'} · ${b.m.toFixed(0)} kg`);}}
   $('prompt').innerHTML=t;
-  const prog=G.cut&&G.saw.cutting?(G.cut.kind==='buck'?G.cut.prog/(2*G.tree.T.rAt(G.cut.y)):G.cut.kind==='limb'?G.cut.prog/(G.tree.T.limbs[+G.cut.key.slice(1)].r0*2):0):0;
-  $('cutbar').hidden=!(prog>0);$('cutbar').firstElementChild.style.width=(prog*100)+'%';
+  const bt=$('barTilt');bt.hidden=p.tool!=='saw';if(!bt.hidden){const deg=Math.round(G.saw.roll*180/Math.PI);bt.querySelector('i').style.transform=`rotate(${90-deg}deg)`;bt.querySelector('span').textContent=`${deg}°`;}
   $('sawState').textContent=p.tool==='saw'?(G.saw.on?'Saw: running':'Saw: off · R to start'):'';
   $('money').textContent='$'+G.money;}
 function showError(e){const el=$('err');el.hidden=false;el.textContent='Something broke: '+(e&&e.message||e);}
@@ -481,7 +404,8 @@ function boot(){const cv=$('cv');try{RD=new Renderer(cv);}catch(e){showError(e);
   cv.addEventListener('mousedown',e=>{if(G.phase!=='play')return;if(G.dlg){advanceDialog();return;}if(document.pointerLockElement!==cv){cv.requestPointerLock&&cv.requestPointerLock();return;}if(e.button===0)G.mouse.l=true;});
   window.addEventListener('mouseup',e=>{if(e.button===0)G.mouse.l=false;});
   $('dialog').addEventListener('click',()=>advanceDialog());
-  document.addEventListener('mousemove',e=>{if(document.pointerLockElement!==cv||G.phase!=='play'||G.dlg)return;const p=G.pl;p.yaw-=e.movementX*.0022;p.pitch=clamp(p.pitch-e.movementY*.0022,-1.45,1.45);});
+  document.addEventListener('mousemove',e=>{if(document.pointerLockElement!==cv||G.phase!=='play'||G.dlg)return;const p=G.pl;const k=G.saw.cut?.25:1;p.yaw-=e.movementX*.0022*k;p.pitch=clamp(p.pitch-e.movementY*.0022*k,-1.45,1.45);});
+  window.addEventListener('wheel',e=>{if(G.phase!=='play'||G.pl.tool!=='saw')return;e.preventDefault();const st=Math.PI/12;G.saw.roll=clamp(G.saw.roll+(e.deltaY>0?st:-st),0,Math.PI);},{passive:false});
   document.addEventListener('pointerlockchange',()=>{G.lock=document.pointerLockElement===cv;$('clickHint').hidden=G.lock||G.phase!=='play';if(!G.lock)G.mouse.l=false;});
   $('btnNew').addEventListener('click',()=>{startIntro();});
   $('btnAgain').addEventListener('click',()=>{location.reload();});

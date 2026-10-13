@@ -55,22 +55,24 @@ function buildPieceMesh(T,P,cuts){const mb=new MeshB(),seg=16;
   if(P.kind==='trunk'){
     // ring heights
     const ys=[];for(let y=P.y0;y<P.y1;y+=.3)ys.push(y);ys.push(P.y1);
+    let hiAt=null;if(P.butt){const live=P.butt.cuts.filter(c=>c.s>.002);hiAt=heightField(T,live,T.rAt(P.y0),Math.max);for(let y=P.y0-.32;y<P.y0;y+=.02)ys.push(y);}
     const N=cuts&&cuts.notch&&cuts.notch.depth>0?cuts.notch:null,Bk=cuts&&cuts.back&&cuts.back.depth>0?cuts.back:null;
     if(N){for(let k=-1;k<=8;k++)ys.push(N.h+k*N.depth/8-(k===-1?.002:0));}
     if(Bk){ys.push(Bk.h-.006,Bk.h,Bk.h+.006);}
-    const Y=[...new Set(ys.map(y=>+y.toFixed(4)))].filter(y=>y>=P.y0&&y<=P.y1).sort((a,b)=>a-b);
+    const Y=[...new Set(ys.map(y=>+y.toFixed(4)))].filter(y=>y>=P.y0-(P.butt?.33:0)&&y<=P.y1).sort((a,b)=>a-b);
     const rows=[];for(const y of Y){const r=T.rAt(y),row=[];
       for(let s=0;s<=seg;s++){const a=s/seg*Math.PI*2;let x=Math.cos(a)*r,z=Math.sin(a)*r,cut=false,col=null;
         if(N&&y>=N.h&&y<=N.h+N.depth+1e-4){const sp=x*N.dx+z*N.dz,smax=(r-N.depth)+(y-N.h);if(sp>smax){x-=N.dx*(sp-smax);z-=N.dz*(sp-smax);cut=true;}}
         if(Bk&&Math.abs(y-Bk.h)<1e-4){const sp=-(x*Bk.dx+z*Bk.dz);if(sp>r-Bk.depth){x*=.94;z*=.94;col=KERF;}}
-        row.push(mb.v([x,y,z],V.norm([Math.cos(a),.1,Math.sin(a)]),col||barkCol(T,y,a,cut)));}rows.push(row);}
+        let yy=y;if(hiAt&&y<P.y0+.001){const h=hiAt(x,z);const lim=h==null?P.y0-.03:Math.max(h,P.y0-.3);if(yy<lim)yy=lim;}
+        row.push(mb.v([x,yy,z],V.norm([Math.cos(a),.1,Math.sin(a)]),col||barkCol(T,y,a,cut)));}rows.push(row);}
     for(let j=0;j<rows.length-1;j++)for(let s=0;s<seg;s++)mb.quad(rows[j][s],rows[j][s+1],rows[j+1][s+1],rows[j+1][s]);
-    if(P.y0>0.01||P.cutBottom)addEndCap(mb,T,P.y0,T.rAt(P.y0),-1,seg);
+    if(P.butt)buttCap(mb,T,P);else if(P.y0>0.01||P.cutBottom)addEndCap(mb,T,P.y0,T.rAt(P.y0),-1,seg);
     if(P.y1<T.H-.02)addEndCap(mb,T,P.y1,T.rAt(P.y1),1,seg);else mb.sphere(0,P.y1,0,T.rAt(P.y1),.04,T.rAt(P.y1),BARK,6,3);
     // limb stubs where limbs were cut off
     for(const id of (P.stubs||[])){const L=T.limbs[id];if(L.y<P.y0||L.y>P.y1)continue;const a=L.base,b=V.add(L.base,V.mul(L.dir,.06));mb.tube(a,b,L.r0*1.05,L.r0,BARK,7,true,SAP);}
   }
-  const limbs=P.kind==='trunk'?P.limbs.map(id=>T.limbs[id]):[T.limbs[P.limb]];const R=RNG(T.seed+7);
+  const limbs=P.kind==='limb'?[T.limbs[P.limb]]:P.limbs.map(id=>T.limbs[id]);const R=RNG(T.seed+7);
   for(const L of limbs){const pts=[0,.25,.5,.75,1];for(let i=0;i<pts.length-1;i++){const t0=pts[i],t1=pts[i+1];
       const bend=(t)=>V.add(limbPt(L,t),[0,-Math.sin(t*Math.PI)*L.len*.05,0]);mb.tube(bend(t0),bend(t1),limbR(L,t0),limbR(L,t1),i%2?BARK:shade(BARK,.92),7,i===0&&P.kind==='limb',SAP);}
     for(const sb of L.subs){const o=limbPt(L,sb.t);o[1]-=Math.sin(sb.t*Math.PI)*L.len*.05;const e=V.add(o,V.mul(sb.dir,sb.len));mb.tube(o,e,sb.r0,sb.r0*.35,BARK,5);

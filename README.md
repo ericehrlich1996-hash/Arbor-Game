@@ -14,6 +14,8 @@ Open `index.html` in a browser (Chrome, Edge or Firefox). No install or build st
 | 1 / 2 | hands / chainsaw |
 | R | pull-start or stop the saw |
 | Left mouse | rev and cut |
+| Mouse wheel | roll the saw (turns the cut plane) |
+| C | crouch |
 | Q | drop what you carry |
 | H | help |
 
@@ -21,10 +23,10 @@ Open `index.html` in a browser (Chrome, Edge or Firefox). No install or build st
 
 You pull up the driveway, finish your energy drink and meet Earl, the client. His white ash was killed by emerald ash borer.
 
-1. **Fell it.** Cut the notch on the side you want it to fall, about a third of the way through. Then back-cut from the other side, slightly higher, until about 10% of the diameter is left as the hinge. Get clear.
-2. **Limb it.** Cut the branches off where they meet the stem, and feed them to the chipper.
-3. **Buck it.** Cut the stem into rounds light enough to lift (60 kg max), and stack them on the pallet by the shed.
-4. **Get paid.** You earn bonuses for a textbook notch and hinge and for quick work. A barber chair costs you.
+1. **Drop it.** Cuts are free-form: wherever the bar enters the wood, at whatever angle you hold the saw, is the cut. How you cut decides where it falls, or whether it barber-chairs.
+2. **Limb it** and feed the brush to the chipper. Branches go in butt first, flat along the infeed.
+3. **Buck it** into rounds light enough to lift (60 kg max), and stack them on the pallet by the shed.
+4. **Get paid.** Clean felling and quick work earn a bonus. A barber chair costs you.
 
 ## Code layout
 
@@ -34,7 +36,8 @@ You pull up the driveway, finish your energy drink and meet Earl, the client. Hi
 | `js/world.js` | random property: terrain, road, driveway, house, shed, woods, tree placement |
 | `js/models.js` | truck (with cab interior), chipper, Earl, chainsaw, hands |
 | `js/physics.js` | rigid-body physics for logs and limbs (terrain and body contacts, sleeping, ray casts) |
-| `js/tree.js` | the tree: shape, limbs, cut geometry, mass and contact points for every piece |
+| `js/tree.js` | the tree: shape, limbs, mass and contact points for every piece |
+| `js/saw.js` | the chainsaw: bar in the world, free-form cut planes, open faces, hinge analysis, stump and butt faces, chipper feeding |
 | `js/audio.js` | all sounds, synthesized with Web Audio |
 | `js/game.js` | the level: intro, player, Earl and dialogue, felling, cutting, chipper, objectives, HUD |
 

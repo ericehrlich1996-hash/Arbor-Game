@@ -124,7 +124,7 @@ in vec3 p;in vec3 n;in vec3 c;uniform mat4 VP,Mo;uniform vec3 cam;out vec3 vN,vC
 void main(){vec4 w=Mo*vec4(p,1.);vW=w.xyz;vN=mat3(Mo)*n;vC=c;gl_Position=VP*w;}`;
 const FS=`#version 300 es
 precision highp float;in vec3 vN,vC,vW;uniform vec3 sun,sunC,skyC,gndC,fogC,cam;uniform vec2 fogR;uniform vec4 tint;uniform float emis;out vec4 o;
-void main(){vec3 N=normalize(vN);if(!gl_FrontFacing)N=-N;float d=max(dot(N,sun),0.);float h=N.y*.5+.5;
+void main(){vec3 N=normalize(vN);if(dot(N,cam-vW)<0.)N=-N;float d=max(dot(N,sun),0.);float h=N.y*.5+.5;
  vec3 col=vC*tint.rgb;vec3 lit=col*(sunC*d+mix(gndC,skyC,h))+col*emis;
  float f=clamp((distance(vW,cam)-fogR.x)/(fogR.y-fogR.x),0.,1.);o=vec4(mix(lit,fogC,f*f),tint.a);}`;
 class Renderer{

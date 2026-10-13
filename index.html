@@ -50,6 +50,7 @@
 @keyframes shout{0%{opacity:0;transform:translateX(-50%) scale(.6)}12%{opacity:1;transform:translateX(-50%) scale(1.08)}75%{opacity:1}100%{opacity:0;transform:translateX(-50%) scale(1)}}
 #bubble{position:absolute;transform:translate(-50%,-100%);width:max-content;background:#fffdf4;color:#2a2418;padding:8px 12px;border-radius:12px;max-width:280px;font-size:14px;font-weight:600;box-shadow:0 3px 12px rgba(0,0,0,.35)}
 #bubble::after{content:"";position:absolute;left:50%;bottom:-8px;margin-left:-8px;border:8px solid transparent;border-bottom:0;border-top-color:#fffdf4}
+#barTilt{position:absolute;right:16px;bottom:16px;width:74px;height:74px;display:flex;align-items:center;justify-content:center}#barTilt i{position:absolute;width:50px;height:6px;border-radius:3px;background:#b9bcc0;box-shadow:0 0 0 1px #3a3d40}#barTilt span{position:absolute;bottom:4px;font-size:11px;color:var(--dim)}
 #gaugeBox{position:absolute;right:16px;bottom:16px;padding:10px;width:220px;text-align:center}
 #gauge{width:150px;height:150px}
 #gaugeTxt{font-size:13px;line-height:1.5}#gaugeTxt span{color:var(--dim)}
@@ -80,7 +81,8 @@
 #fade{position:fixed;inset:0;background:#000;z-index:25;pointer-events:none;opacity:0;transition:opacity 1.2s}
 #fade.out{animation:fadein 1.6s ease-out}
 @keyframes fadein{0%{opacity:1}100%{opacity:0}}
-@media (max-width:760px){.tcard h1{font-size:46px}#objectives{max-width:240px;font-size:12px}#gaugeBox{display:none}}
+@media (max-width:760px){.tcard h1{font-size:46px}#objectives{max-width:240px;font-size:12px}#barTilt{position:absolute;right:16px;bottom:16px;width:74px;height:74px;display:flex;align-items:center;justify-content:center}#barTilt i{position:absolute;width:50px;height:6px;border-radius:3px;background:#b9bcc0;box-shadow:0 0 0 1px #3a3d40}#barTilt span{position:absolute;bottom:4px;font-size:11px;color:var(--dim)}
+#gaugeBox{display:none}}
 </style>
 </head>
 <body>
@@ -96,7 +98,7 @@
       <b>WASD</b><span>walk (Shift to run)</span><b>Mouse</b><span>look (click to capture)</span>
       <b>E</b><span>talk, pick up, use</span><b>1 / 2</b><span>hands / chainsaw</span>
       <b>R</b><span>pull-start the saw</span><b>Left mouse</b><span>rev and cut</span>
-      <b>Q</b><span>drop</span><b>H</b><span>help</span>
+      <b>Wheel</b><span>roll the saw</span><b>C</b><span>crouch</span><b>Q</b><span>drop</span><b>H</b><span>help</span>
     </div>
   </div>
 </div>
@@ -107,7 +109,7 @@
   <div id="money"></div><div id="sawState"></div>
   <div id="hotbar" hidden><div class="slot on" data-t="hands"><b>1</b>Hands</div><div class="slot" data-t="saw"><b>2</b>Chainsaw</div></div>
   <div id="toast" class="panel"></div><div id="shout"></div><div id="bubble" hidden></div>
-  <div id="gaugeBox" class="panel" hidden><h4>Felling cut · top view</h4><canvas id="gauge" width="150" height="150"></canvas><div id="gaugeTxt"></div></div>
+  <div id="barTilt" class="panel" hidden><i></i><span>90°</span></div>
   <div id="clickHint" class="panel" hidden>Click to look around</div>
   <div id="introHint" hidden>Space: skip</div>
   <div id="introCard"><div class="big">ARBOR SIMULATOR</div><div class="sub">Job 1 · A dead ash, a crazy old man, and $400 cash</div></div>
@@ -119,9 +121,8 @@
   <div class="keys">
     <b>WASD</b><span>walk · Shift run · Space jump</span><b>E</b><span>talk / pick up / feed chipper</span>
     <b>1 / 2</b><span>hands / chainsaw</span><b>R</b><span>pull-start or stop the saw</span>
-    <b>Left mouse</b><span>rev and cut</span><b>Q</b><span>drop what you carry</span>
+    <b>Left mouse</b><span>rev and cut</span><b>Wheel</b><span>roll the saw</span><b>C</b><span>crouch</span><b>Q</b><span>drop what you carry</span>
   </div>
-  <p style="max-width:300px;color:#c9c1ae;margin:10px 0 0">Felling: cut the <b style="color:#fff">notch</b> on the side you want the tree to fall, about ⅓ through. Walk around and <b style="color:#fff">back-cut</b> from the other side, slightly higher, until about 10% of the diameter is left as the <b style="color:#fff">hinge</b>. Then get clear.</p>
 </div>
 
 <div id="summary" class="modal" hidden><div class="mcard panel"><h2>Payday</h2><div id="sumRows"></div><ul id="sumNotes"></ul><div id="sumBank" style="color:#b9f2a4;font-weight:700"></div>
@@ -135,6 +136,7 @@
 <script src="js/models.js"></script>
 <script src="js/physics.js"></script>
 <script src="js/tree.js"></script>
+<script src="js/saw.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/game.js"></script>
 </body>
