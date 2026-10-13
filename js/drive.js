@@ -55,11 +55,12 @@ function stepDrive(dt){const D=G.drive,K=G.keys,tk=G.truck;if(!D)return;
   // bicycle model around the rear axle
   const yaw0=tk.yaw,x0=tk.pos[0],z0=tk.pos[2],cy0=G.chip.yaw;
   const yaw=yaw0+D.v/DRV.wheelbase*Math.tan(D.steer)*dt;const x=x0+Math.sin(yaw)*D.v*dt,z=z0+Math.cos(yaw)*D.v*dt;
-  truckSetPose(x,z,yaw);settleTrailer(false);
+  const Mold=truckMatrix();truckSetPose(x,z,yaw);const hitched=G.chip.mode==='truck';if(hitched)settleTrailer(false);
   // jackknife guard: keep the trailer within ~70° of the truck
   let rel=G.chip.yaw-tk.yaw;while(rel>Math.PI)rel-=2*Math.PI;while(rel<-Math.PI)rel+=2*Math.PI;
-  const hitWhat=vehicleBlocked([truckBox(x,z,yaw),chipBox()])||(Math.abs(rel)>1.25?'jackknife':null)||logBlock(dt);
-  if(hitWhat){truckSetPose(x0,z0,yaw0);G.chip.yaw=cy0;settleTrailer(false);if(Math.abs(D.v)>1.2){SFX.thud(Math.abs(D.v)*2);if(hitWhat==='earl')omBark("HEY! Watch it, I'm old, not a speed bump!",3000);}D.v=hitWhat==='jackknife'?D.v*.2:-D.v*.15;}
+  const hitWhat=vehicleBlocked(hitched?[truckBox(x,z,yaw),chipBox()]:[truckBox(x,z,yaw)])||(!hitched&&obbHit(truckBox(x,z,yaw),chipBox())?'chipper':null)||(hitched&&Math.abs(rel)>1.25?'jackknife':null)||logBlock(dt);
+  if(!hitWhat)carryBedLoad(Mold,truckMatrix(),dt);
+  if(hitWhat){truckSetPose(x0,z0,yaw0);G.chip.yaw=cy0;if(hitched)settleTrailer(false);if(Math.abs(D.v)>1.2){SFX.thud(Math.abs(D.v)*2);if(hitWhat==='earl')omBark("HEY! Watch it, I'm old, not a speed bump!",3000);}D.v=hitWhat==='jackknife'?D.v*.2:-D.v*.15;}
   // Earl shuffles out of the way when the truck comes at him
   {const o=G.om,fw=[Math.sin(tk.yaw)*Math.sign(D.v||1),Math.cos(tk.yaw)*Math.sign(D.v||1)];const dx=o.x-tk.pos[0],dz=o.z-tk.pos[2];const ahead=dx*fw[0]+dz*fw[1],side=dx*fw[1]-dz*fw[0];
     if(Math.abs(D.v)>.3&&ahead>0&&ahead<9&&Math.abs(side)<2.6&&!o.walkTo){const sg=side>=0?1:-1;o.walkTo=[o.x+fw[1]*sg*3.5,o.z-fw[0]*sg*3.5];o.after='idle';
@@ -68,8 +69,8 @@ function stepDrive(dt){const D=G.drive,K=G.keys,tk=G.truck;if(!D)return;
   if(D.eng)D.eng.set(clamp(Math.abs(D.v)/DRV.maxF,0,1)*.85+.15,fwdKey||backKey?.3:0,.5);
   if(Math.abs(D.v)>.5&&Math.random()<dt*Math.abs(D.v)*.8)SFX.step();}
 // logs under the wheels: light ones get shoved, heavy ones stop the truck
-function logBlock(dt){const tk=G.truck,D=G.drive;const boxes=[truckBox(tk.pos[0],tk.pos[2],tk.yaw),chipBox()];
-  for(const b of PHYS.bodies){if(b.mode!=='dyn')continue;if(Math.hypot(b.pos[0]-tk.pos[0],b.pos[2]-tk.pos[2])>b.rad+7)continue;const R=M3.fromQ(b.q);
+function logBlock(dt){const tk=G.truck,D=G.drive;const boxes=G.chip.mode==='truck'?[truckBox(tk.pos[0],tk.pos[2],tk.yaw),chipBox()]:[truckBox(tk.pos[0],tk.pos[2],tk.yaw)];const inv=invRigid(truckMatrix());
+  for(const b of PHYS.bodies){if(b.mode!=='dyn'||inBed(inv,b.pos))continue;if(Math.hypot(b.pos[0]-tk.pos[0],b.pos[2]-tk.pos[2])>b.rad+7)continue;const R=M3.fromQ(b.q);
     for(const lp of b.pts){const p=V.add(b.pos,M3.vec(R,lp));if(p[1]-G.W.H(p[0],p[2])>1.1)continue;
       for(const B of boxes){if(!obbCircle(B,p[0],p[2],.05))continue;
         if(b.m>350&&Math.abs(D.v)>.2)return 'log';

@@ -74,9 +74,9 @@ function stepSaw(dt){const s=G.saw,tr=G.tree;s.cutting=false;s.bind=false;
   s.cutting=true;if(!aligned||!crosses){s.bind=true;return;}
   const rate=WOOD.cutSpeed*(.35+.65*s.rpm)*(c.limb!=null?1.5:1);const maxS=c.exit+.004;
   if(c.s<maxS){c.s=Math.min(maxS,c.s+rate*dt);}
-  const front=V.add(W.e,V.mul(W.f,c.s));emit(W.e,V.add(V.mul(W.f,-1.6),[0,.9,0]),5,hex('#e2cfa0'),1.4,1.1,.026);if(Math.random()<.5)emit(W.e,V.add(V.mul(W.f,-1),[0,.3,0]),2,hex('#b89a6a'),.8,1.4,.045);
+  const front=V.add(W.e,V.mul(W.f,c.s));emit(W.e,V.add(V.mul(W.f,-1.6),[0,.9,0]),5,hex('#e2cfa0'),1.4,1.1,.026,true);if(Math.random()<.5)emit(W.e,V.add(V.mul(W.f,-1),[0,.3,0]),2,hex('#b89a6a'),.8,1.4,.045,true);
   if(c.kind==='tree'){tr.cutDirty=true;}
-  else if(c.kind==='stump'){if(c.s>=c.exit){finishStumpCut(c);s.cut=null;}}
+  else if(c.kind==='stump'){if(c.s>=c.exit){finishStumpCut(c);s.cut=null;}else if(performance.now()-(tr.stumpT||0)>110){tr.stumpT=performance.now();rebuildStump();}}
   else if(c.s>=c.exit){finishPieceCut(c);s.cut=null;}
   else if(c.limb==null&&performance.now()-(c.b.kerfT||0)>90){c.b.kerfT=performance.now();RD.free(c.b.gpu);c.b.gpu=RD.upload(buildPieceMesh(G.tree.T,c.b.piece,null));}}
 function startCut(h){const s=G.saw;
@@ -112,11 +112,16 @@ function finishPieceCut(c){const b=c.b,P=b.piece,T=G.tree.T;
     const n=c.n,e=c.e;let y=Math.abs(n[1])>1e-3?e[1]+(n[0]*e[0]+n[2]*e[2])/n[1]:e[1];y=clamp(y,P.y0+.02,P.y1-.02);
     if(y-P.y0<.03||P.y1-y<.03)return;buckBody(b,y);updateObjectives();}}
 // cleaning up a stump (or a barber chair) after the fall
+function rebuildStump(){const tr=G.tree;RD.free(tr.stump);tr.stump=RD.upload(buildStumpMesh2(tr.T,tr.cuts.concat(tr.stumpCuts.filter(k=>k.done)),tr.stumpR,tr.stumpY0,tr.barberDir,tr.stumpCuts.filter(k=>!k.done)));}
 function finishStumpCut(c){const tr=G.tree,T=tr.T;c.done=true;c.s=c.exit+.01;
   const yc=c.e[1]+(c.n[0]*c.e[0]+c.n[2]*c.e[2])/(Math.abs(c.n[1])>1e-3?c.n[1]:1e-3);   // plane height at the stem centre
   if(tr.barberDir&&yc<tr.stumpY0+1.4){spawnSlab(tr);tr.barberDir=null;}
+  // whatever was above the cut comes off as a piece of its own
+  const top=tr.stumpTop||tr.stumpH+.05;
+  if(yc<top-.03&&yc>-.15){const y0=Math.max(yc+SAWC.kerf,yc+.01),y1=Math.max(y0+.03,top);const P={kind:'trunk',y0,y1,limbs:[],cutBottom:true};
+    const b=spawnPiece(P,tr.q,[tr.x,tr.y0,tr.z]);const side=V.norm(V.cross([0,1,0],Q.rot(tr.q,c.f)));b.v=V.add(V.mul(Q.rot(tr.q,c.f),.4),V.mul(side,.2));wake(b);tr.stumpTop=yc;}
   if(yc<tr.stumpH){tr.stumpH=Math.max(.02,yc);G.stumpCol=[{x:tr.x,z:tr.z,r:T.rAt(tr.stumpH),y0:tr.y0-2,y1:tr.y0+tr.stumpH}];}
-  RD.free(tr.stump);tr.stump=RD.upload(buildStumpMesh2(T,tr.cuts.concat(tr.stumpCuts.filter(k=>k.done)),tr.stumpR,tr.stumpY0,tr.barberDir));SFX.crunch();}
+  rebuildStump();SFX.crunch();updateObjectives();}
 function spawnSlab(tr){const T=tr.T,r=T.rAt(tr.stumpY0),d=tr.barberDir,base=[tr.x,tr.y0,tr.z];
   const c=V.add(base,[-d[0]*r*.55,tr.stumpY0+.75,-d[2]*r*.55]);const w=r*1.3,th=r*.45,hh=1.5;const yaw=Math.atan2(d[0],d[2]);const q=Q.axis([0,1,0],yaw);
   const mb=new MeshB();mb.box(0,0,0,w,hh,th,SAP,[SAP,SAP,SAP,SAP,SAP,BARK]);
@@ -193,7 +198,7 @@ function startFall(kind){const tr=G.tree,T=tr.T,A=tr.A||analyzeStanding();tr.goK
   const piv=V.add(base,Q.rot(tr.q,H.length?[cx,y0,cz]:[0,y0,0]));
   tr.hinge={axis:V.norm(V.cross([0,1,0],fd)),P:piv,Pc:V.add(base,[0,y0,0]),th:0,td:kind==='hinge'?.12:.35,q0:b.q.slice(),pos0:b.pos.slice(),body:b,t:0,brk:kind==='hinge'?1.25:.45};
   tr.body=b;RD.free(tr.mesh);tr.mesh=null;tr.stumpH=y0;
-  tr.stumpR=A.R;tr.stumpY0=y0;tr.barberDir=kind==='barber'?fd:null;tr.stumpCuts=[];tr.stump=RD.upload(buildStumpMesh2(T,tr.cuts,A.R,y0,tr.barberDir));
+  tr.stumpR=A.R;tr.stumpY0=y0;tr.stumpTop=null;tr.barberDir=kind==='barber'?fd:null;tr.stumpCuts=[];tr.stump=RD.upload(buildStumpMesh2(T,tr.cuts,A.R,y0,tr.barberDir));
   G.stumpCol=[{x:tr.x,z:tr.z,r:T.rAt(y0),y0:tr.y0-2,y1:tr.y0+y0}];
   SFX.creak();setTimeout(()=>SFX.crack(),600);
   shout(kind==='barber'?'BARBER CHAIR!':'TIMBER!');
@@ -239,12 +244,13 @@ function appendLimbs(mb,T,ids){const tmp=buildPieceMesh(T,{kind:'limbsOnly',limb
 
 /* ---------- stump and butt: cut faces follow the real cut planes ---------- */
 function heightField(T,cuts,R,pick){const out=(x,z)=>{let y=null;for(const c of cuts){const h=cutSevers(c,x,z);if(h!=null)y=y==null?h:pick(y,h);}return y;};return out;}
-function buildStumpMesh2(T,cuts,R,y0,barberDir){const mb=new MeshB(),seg=36;const live=cuts.filter(c=>c.s>.002);const lowAt=heightField(T,live,R,Math.min);
+function buildStumpMesh2(T,cuts,R,y0,barberDir,partial){partial=(partial||[]).filter(k=>k.s>.002);const mb=new MeshB(),seg=36;const live=cuts.filter(c=>c.s>.002);const lowAt=heightField(T,live,R,Math.min);
   const torn=y0+.03;const top=(x,z)=>{const h=lowAt(x,z);return h==null?torn+(Math.sin(x*91)*Math.cos(z*77))*.015:clamp(h,-.2,y0+.6);};
   let tMax=-1;for(let i=0;i<=12;i++)for(let j=0;j<=12;j++){const x=(i/12*2-1)*R,z=(j/12*2-1)*R;if(x*x+z*z<=R*R)tMax=Math.max(tMax,top(x,z));}
-  const Y=[-.35,0];for(let y=.05;y<tMax+.03;y+=.015)Y.push(y);
+  const Y=[-.35,0];for(let y=.05;y<tMax+.03;y+=partial.length?.006:.015)Y.push(y);
   const rows=[];for(const y of Y){const r=T.rAt(Math.max(y,0)),row=[];for(let s2=0;s2<=seg;s2++){const a=s2/seg*Math.PI*2;const x=Math.cos(a)*r,z=Math.sin(a)*r;
-      row.push(mb.v([x,Math.min(y,top(x,z)),z],[Math.cos(a),0,Math.sin(a)],barkCol(T,y,a)));}rows.push(row);}
+      let pp=[x,Math.min(y,top(x,z)),z],col=null;for(const k of partial){const g=kerfGroove(pp,k,r);if(g){pp=g;col=KERF;break;}}
+      row.push(mb.v(pp,[Math.cos(a),0,Math.sin(a)],col||barkCol(T,y,a)));}rows.push(row);}
   for(let j=0;j<rows.length-1;j++)for(let s2=0;s2<seg;s2++)mb.quad(rows[j][s2],rows[j][s2+1],rows[j+1][s2+1],rows[j+1][s2]);
   capField(mb,T,R,top,1,lowAt);
   if(barberDir){const r=T.rAt(y0);mb.push(M.T(-barberDir[0]*r*.55,y0,-barberDir[2]*r*.55));mb.tf(M.Ry(Math.atan2(barberDir[0],barberDir[2])));

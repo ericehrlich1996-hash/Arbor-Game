@@ -28,7 +28,7 @@ function newLevel(seed){
   const s=W.s;const ctrl=[[s*70,W.roadZ-1.8],[s*40,W.roadZ-1.8],[s*22,W.roadZ-1.6],...W.drive.slice(0,5)];
   G.path=spline(ctrl,10);G.pathLen=[0];for(let i=1;i<G.path.length;i++)G.pathLen.push(G.pathLen[i-1]+Math.hypot(G.path[i][0]-G.path[i-1][0],G.path[i][1]-G.path[i-1][1]));
   G.truck={pos:[0,0,0],yaw:0,pitch:0,roll:0,wheel:0,door:0,canOnSeat:false};
-  G.chip={pos:[0,0,0],yaw:0,running:false,engine:null,feed:null,chips:0};
+  G.chip={pos:[0,0,0],yaw:0,running:false,engine:null,feed:null,chips:0,mode:'truck',queue:[]};
   placeTruckAt(G.pathLen[G.pathLen.length-1]);settleTrailer(true);
   // the problem tree
   const tdef=W.tree;const T=makeTreeDef(tdef);const ld=[Math.cos(tdef.leanDir),0,Math.sin(tdef.leanDir)];
@@ -37,7 +37,8 @@ function newLevel(seed){
   // old man
   G.om={x:W.oldMan.x,z:W.oldMan.z,yaw:0,state:'wave',t:0,talked:false,walkTo:null,bubble:null,bubbleT:0,lastBark:0};
   // player
-  G.pl={pos:[0,0,0],yaw:0,pitch:0,vy:0,ground:true,tool:'hands',carry:null,stepT:0,bob:0};
+  G.pl={pos:[0,0,0],yaw:0,pitch:0,vy:0,ground:true,tool:'hands',carryList:[],stepT:0,bob:0};
+  Object.defineProperty(G.pl,'carry',{get(){return this.carryList[0]||null;},set(v){this.carryList=v?[v]:[];}});resetDust();
   G.saw={on:false,rpm:0,pull:0,pulls:0,engine:null,cutting:false,roll:Math.PI/2,eng:0,cut:null};
   G.cut=null;G.parts=[];G.wedge=null;G.objs={talk:false,felled:false,limbed:false,stacked:false,paid:false};G.grade=null;G.startT=performance.now();G.flags={};
   G.dlg=null;G.toastT=0;
@@ -58,7 +59,7 @@ function placeTruckAt(d){const W=G.W,tk=G.truck;const [p,yaw]=pathAt(d);const [p
   tk.pitch=Math.atan2(hF-hB,3.2);tk.roll=Math.atan2(hL-hR,1.6);tk.pos[1]=(hF+hB)/2;}
 function truckMatrix(){const tk=G.truck;return M.mul(M.mul(M.T(tk.pos[0],tk.pos[1],tk.pos[2]),M.Ry(tk.yaw)),M.mul(M.Rx(-tk.pitch),M.Rz(tk.roll)));}
 function hitchWorld(){return M.apply(truckMatrix(),TRUCK.hitch);}
-function settleTrailer(reset){const c=G.chip,h=hitchWorld();const L=-CHIP.axle;
+function settleTrailer(reset){const c=G.chip,h=chipHitchPoint();const L=-CHIP.axle;
   if(reset){const tk=G.truck;c.yaw=tk.yaw;}
   // axle trails behind the hitch at fixed distance
   // the axle stays where it was and the tongue swings to point at the new hitch position
@@ -111,9 +112,9 @@ function hingeStep(dt){const tr=G.tree,hg=tr.hinge,b=hg.body;if(!hg||b.mode!=='h
   if(hg.th>1.25||touch){b.mode='dyn';b.w=V.mul(a,hg.td);b.v=V.cross(b.w,V.sub(b.pos,hg.P));tr.state='down';tr.downT=performance.now();SFX.crack();}}
 
 /* ================= particles ================= */
-function emit(p,v,n,col,spread,life,size){for(let i=0;i<n;i++){if(G.parts.length>500)G.parts.shift();
-  G.parts.push({p:p.slice(),v:[v[0]+(Math.random()-.5)*spread,v[1]+(Math.random()-.2)*spread,v[2]+(Math.random()-.5)*spread],life:life*(0.6+Math.random()*.6),age:0,col:shade(col,.8+Math.random()*.4),s:size*(0.6+Math.random()*.8)});}}
-function stepParts(dt){const H=G.W.H;for(const q of G.parts){q.age+=dt;q.v[1]-=6*dt;q.v=V.mul(q.v,1-1.2*dt);q.p=V.add(q.p,V.mul(q.v,dt));const g=H(q.p[0],q.p[2])+.01;if(q.p[1]<g){q.p[1]=g;q.v=[0,0,0];}}
+function emit(p,v,n,col,spread,life,size,dust){for(let i=0;i<n;i++){if(G.parts.length>700)G.parts.shift();
+  G.parts.push({p:p.slice(),v:[v[0]+(Math.random()-.5)*spread,v[1]+(Math.random()-.2)*spread,v[2]+(Math.random()-.5)*spread],life:dust?8:life*(0.6+Math.random()*.6),age:0,col:shade(col,.8+Math.random()*.4),s:size*(0.6+Math.random()*.8),dust});}}
+function stepParts(dt){const H=G.W.H;for(const q of G.parts){q.age+=dt;q.v[1]-=6*dt;q.v=V.mul(q.v,1-1.2*dt);q.p=V.add(q.p,V.mul(q.v,dt));const g=H(q.p[0],q.p[2])+.01;if(q.p[1]<g){q.p[1]=g;q.v=[0,0,0];if(q.dust){addDust(q.p[0],q.p[2],q.s*q.s*3.5,q.dust==='chip');q.age=q.life;}}}
   G.parts=G.parts.filter(q=>q.age<q.life);}
 function partMesh(){const mb=new MeshB();for(const q of G.parts){const s=q.s*(1-q.age/q.life*.5);mb.box(q.p[0],q.p[1],q.p[2],s,s*.6,s,q.col);}return mb;}
 
@@ -193,7 +194,7 @@ function onKey(e,down){const k=e.code;G.keys[k]=down;if(!down)return;
   if(G.dlg){if(k==='KeyE'||k==='Space'||k==='Enter')advanceDialog();return;}
   if(G.pl.inTruck){if(k==='KeyE')exitTruck();else if(k==='KeyV')G.drive.chase=!G.drive.chase;else if(k==='KeyH')$('help').hidden=!$('help').hidden;return;}
   if(k==='KeyE')interact();
-  else if(k==='KeyQ'&&G.pl.carry)dropCarry();
+  else if(k==='KeyQ'&&G.pl.carry)dropOne();
   else if(k==='Digit1')equip('hands');
   else if(k==='Digit2')equip('saw');
   else if(k==='KeyR'&&G.pl.tool==='saw')pullStart();
@@ -212,6 +213,8 @@ function aimInfo(){const p=G.pl,eye=V.add(p.pos,[0,G.pl.eyeY||1.62,0]),d=fwdOf(p
   const o=G.om,om=[o.x,G.W.H(o.x,o.z)+1.2,o.z];{const to=V.sub(om,eye),dist=V.len(to);if(dist<3.2&&V.dot(V.norm(to),d)>.9)best={kind:'om',t:dist};}
   // the truck's driver door
   if(nearDriverDoor()){const dd=V.dist(M.apply(truckMatrix(),[-1.05,1.1,.2]),eye);if(!best||dd<best.t)best={kind:'truck',t:dd};}
+  // the chipper's tongue coupler
+  {const d=nearCoupler();if(d!=null&&(!best||d<best.t))best={kind:'hitch',t:d};}
   // chipper engine
   const ce=M.apply(chipMatrix(),[0,1.1,-1.6]);{const to=V.sub(ce,eye),dist=V.len(to);if(dist<2.4&&V.dot(V.norm(to),d)>.82&&(!best||dist<best.t))best={kind:'chipper',t:dist};}
   // standing tree
@@ -220,21 +223,25 @@ function aimInfo(){const p=G.pl,eye=V.add(p.pos,[0,G.pl.eyeY||1.62,0]),d=fwdOf(p
   // pieces
   const rb=rayBodies(eye,d,2.4,b=>b!==G.pl.carry&&b.mode==='dyn');if(rb&&(!best||rb.t<best.t))best={kind:'body',t:rb.t,p:rb.p,b:rb.b,cap:rb.cap};
   return best;}
-function interact(){const p=G.pl;
-  if(p.carry){const hw=hopperWorld();if(V.dist(hw,G.eye)<3.4&&p.carry.brush){feedChipper();return;}dropCarry();return;}
-  const a=G.aim;if(!a)return;
+function interact(){const p=G.pl;const a=G.aim;
+  if(G.chip.mode==='hand'){hitchAction();return;}
+  if(p.carry){if(a&&a.kind==='body'&&p.tool==='hands'&&a.b.piece&&!(a.b.piece.kind==='trunk'&&a.b.piece.limbs.length)&&canAddCarry(a.b)){pickUp(a.b);return;}
+    const hw=hopperWorld();if(V.dist(hw,G.eye)<3.4&&p.carry.brush){feedChipper();return;}dropCarry();return;}
+  if(!a)return;
+  if(a.kind==='hitch'){hitchAction();return;}
   if(a.kind==='om'){talkToEarl();return;}
   if(a.kind==='truck'){enterTruck();return;}
   if(a.kind==='chipper'){toggleChipper();return;}
-  if(a.kind==='body'&&p.tool==='hands'){const b=a.b;if(b.m>WOOD.liftMax){toast(`Too heavy to lift (${b.m.toFixed(0)} kg).`);return;}
+  if(a.kind==='body'&&p.tool==='hands'){const b=a.b;if(b.m>WOOD.liftMax){toast(`Too heavy to lift (${lb(b.m)}).`);return;}
     if(b.piece&&b.piece.kind==='trunk'&&b.piece.limbs.length){toast("Can't lift that.");return;}
-    p.carry=b;b.mode='held';b.sleep=false;b.holdQ=Q.mul(Q.conj(Q.axis([0,1,0],p.yaw)),b.q);SFX.pick();return;}
+    pickUp(b);return;}
   if(a.kind==='body'&&p.tool==='saw'&&!G.saw.on)toast('The saw is off.');}
-function dropCarry(){const b=G.pl.carry;if(!b)return;b.mode='dyn';b.sleep=false;b.still=0;b.w=[0,0,0];b.v=V.add(V.mul(G.fwd,1.0),[0,.5,0]);G.pl.carry=null;SFX.drop();setTimeout(updateObjectives,1500);}
+function dropCarry(){const L=G.pl.carryList;if(!L.length)return;L.forEach((b,i)=>{releaseBody(b);b.v=V.add(b.v,[(i%2?.3:-.3),0,0]);});G.pl.carryList=[];SFX.drop();setTimeout(updateObjectives,1500);}
 function toggleChipper(){const c=G.chip;if(c.running){c.running=false;if(c.engine){c.engine.stop();c.engine=null;}toast('Chipper off.');return;}
   SFX.pull();setTimeout(()=>{c.running=true;c.engine=makeEngine('chipper');toast('Chipper running.',1800);},500);}
-function feedChipper(){const c=G.chip,b=G.pl.carry;if(!c.running){toast("The chipper isn't running.");return;}
-  G.pl.carry=null;b.mode='feed';b.feedT=0;b.feedFrom=b.pos.slice();c.feed=b;}
+function feedChipper(){const c=G.chip;if(!c.running){toast("The chipper isn't running.");return;}
+  const L=G.pl.carryList.filter(b=>b.brush);G.pl.carryList=G.pl.carryList.filter(b=>!b.brush);for(const b of L){b.mode='feedwait';c.queue.push(b);}nextFeed();}
+function nextFeed(){const c=G.chip;if(c.feed||!c.queue.length)return;const b=c.queue.shift();b.mode='feed';b.feedT=0;b.feedFrom=b.pos.slice();c.feed=b;}
 function stepFeed(dt){const c=G.chip,b=c.feed;if(!b)return;b.feedT+=dt;const cm=chipMatrix();const throat=M.apply(cm,[0,1.0,-2.95]),mouth=M.apply(cm,[0,1.0,-4.25]);
   const ax=V.norm(V.sub(throat,mouth)),{ax:axL,butt}=brushAxis(b);const len=b.piece&&b.piece.kind==='limb'?G.tree.T.limbs[b.piece.limb].len*((b.piece.t1==null?1:b.piece.t1)-(b.piece.t0||0)):(b.piece?b.piece.y1-b.piece.y0:1);
   const tipL=V.add(butt,V.mul(axL,len));
@@ -242,8 +249,8 @@ function stepFeed(dt){const c=G.chip,b=c.feed;if(!b)return;b.feedT+=dt;const cm=
     b.q=orientAxis(b.q,axL,V.mul(ax,-1),Math.min(1,dt*7));const want=V.sub(mouth,Q.rot(b.q,V.sub(butt,b.com)));b.pos=V.lerp(b.pos,want,Math.min(1,dt*7));}
   else{// the feed rollers grab it and drag it through
     b.q=orientAxis(b.q,axL,V.mul(ax,-1),Math.min(1,dt*10));b.pos=V.add(b.pos,V.mul(ax,1.5*dt));b.pos[1]+=(Math.random()-.5)*.01;
-    const o=chuteWorld();emit(o,V.add(V.mul([Math.sin(c.yaw),0,Math.cos(c.yaw)],4),[0,1.5,0]),6,hex('#c9a46a'),1.6,1.4,.05);c.load=1;if(Math.random()<dt*6)SFX.crunch();
-    const tipW=bodyWorld(b,tipL);if(V.dot(V.sub(tipW,throat),ax)>0||b.feedT>12){removeBody(b);c.feed=null;c.chips++;updateObjectives();}}}
+    const o=chuteWorld();emit(o,V.add(V.mul([Math.sin(c.yaw),0,Math.cos(c.yaw)],4),[0,1.5,0]),6,hex('#c9a46a'),1.6,1.4,.05,'chip');c.load=1;if(Math.random()<dt*6)SFX.crunch();
+    const tipW=bodyWorld(b,tipL);if(V.dot(V.sub(tipW,throat),ax)>0||b.feedT>12){removeBody(b);c.feed=null;c.chips++;updateObjectives();nextFeed();}}}
 
 /* ================= player movement ================= */
 function obbPush(p,cx,cz,yaw,hx,hz,r){const c=Math.cos(yaw),s=Math.sin(yaw);const dx=p[0]-cx,dz=p[2]-cz;const lx=dx*c-dz*s,lz=dx*s+dz*c;
@@ -253,7 +260,7 @@ function obbPush(p,cx,cz,yaw,hx,hz,r){const c=Math.cos(yaw),s=Math.sin(yaw);cons
 function stepPlayer(dt){const p=G.pl,K=G.keys,W=G.W;p.eyeY=lerp(p.eyeY||1.62,p.crouch?.98:1.62,Math.min(1,dt*8));if(G.dlg)return;
   const f=[-Math.sin(p.yaw),0,-Math.cos(p.yaw)],r=[Math.cos(p.yaw),0,-Math.sin(p.yaw)];let mv=[0,0,0];
   if(K.KeyW)mv=V.add(mv,f);if(K.KeyS)mv=V.sub(mv,f);if(K.KeyD)mv=V.add(mv,r);if(K.KeyA)mv=V.sub(mv,r);
-  const carryM=p.carry?p.carry.m:0;const sp=(K.ShiftLeft&&!p.carry&&!p.crouch?5.6:p.crouch?1.4:3.3)*(1-carryM/WOOD.liftMax*.45);
+  const carryM=carryMass();const sp=(K.ShiftLeft&&!p.carry&&!p.crouch?5.6:p.crouch?1.4:3.3)*(1-carryM/WOOD.liftMax*.45)*(G.chip.mode==='hand'?.55:1);
   const moving=V.len(mv)>0;if(moving){mv=V.mul(V.norm(mv),sp*dt);p.pos[0]+=mv[0];p.pos[2]+=mv[2];p.stepT+=sp*dt;p.bob+=dt*sp*2.2;if(p.stepT>1.3&&p.ground){p.stepT=0;SFX.step();}}
   // collisions
   const rad=.34;for(const c of W.colliders){if(c.t==='circle'){const dx=p.pos[0]-c.x,dz=p.pos[2]-c.z,d=Math.hypot(dx,dz),m=c.r+rad;if(d<m&&d>1e-5){p.pos[0]=c.x+dx/d*m;p.pos[2]=c.z+dz/d*m;}}else obbPush(p.pos,c.x,c.z,0,c.hx,c.hz,rad);}
@@ -271,12 +278,7 @@ function stepPlayer(dt){const p=G.pl,K=G.keys,W=G.W;p.eyeY=lerp(p.eyeY||1.62,p.c
   const gh=W.H(p.pos[0],p.pos[2]);p.vy-=9.81*dt;p.pos[1]+=p.vy*dt;if(p.pos[1]<=gh){p.pos[1]=gh;p.vy=0;p.ground=true;}
   // world bounds
   p.pos[0]=clamp(p.pos[0],-120,120);p.pos[2]=clamp(p.pos[2],-110,120);
-  // carried piece follows the hands
-  if(p.carry){const b=p.carry;const fw=[-Math.sin(p.yaw),0,-Math.cos(p.yaw)],rt=[Math.cos(p.yaw),0,-Math.sin(p.yaw)];let np;
-    if(b.brush){const {ax:axL,butt}=brushAxis(b);const dir=V.norm(V.add(V.add(V.mul(fw,.8),V.mul(rt,-.55)),[0,-.08,0]));b.q=orientAxis(b.q,axL,dir,Math.min(1,dt*10));
-      const hands=V.add(V.add(V.add(p.pos,[0,1.0,0]),V.mul(fw,.5)),V.mul(rt,.22));np=V.lerp(b.pos,V.sub(hands,Q.rot(b.q,V.sub(butt,b.com))),Math.min(1,dt*12));}
-    else{const tgt=V.add(V.add(p.pos,[0,1.05,0]),V.mul(fw,.75+Math.min(.8,b.rad*.35)));np=V.lerp(b.pos,tgt,Math.min(1,dt*12));b.q=Q.norm(Q.mul(Q.axis([0,1,0],p.yaw),b.holdQ));}
-    b.v=V.mul(V.sub(np,b.pos),1/Math.max(dt,1e-3));b.pos=np;}}
+  stepCarry(dt);}
 
 /* ---------------- danger: the falling stem ---------------- */
 function checkCrush(){const tr=G.tree,b=tr.body;if(!b||G.phase!=='play'||!(tr.state==='hinge'||(tr.state==='down'&&performance.now()-tr.downT<2500)))return;
@@ -326,7 +328,7 @@ function endIntro(){const I=G.intro;if(I.eng){I.eng.stop();I.eng=null;}G.truck.d
 /* ================= rendering ================= */
 function render(cam){const r=RD;r.resize();const asp=r.cv.width/r.cv.height;const P=M.persp(1.2,asp,.05,700);const Vw=M.view(cam.eye,cam.yaw,cam.pitch,cam.roll);const VP=M.mul(P,Vw);G.VP=VP;
   r.begin(VP,cam.eye,true);const m=G.meshes;
-  r.draw(m.terrain);r.draw(m.roads);r.draw(m.house);r.draw(m.woods);
+  r.draw(m.terrain);r.draw(m.roads);drawDust(r);r.draw(m.house);r.draw(m.woods);
   // truck + wheels + door
   const tm=truckMatrix();r.draw(m.truck,tm);
   const stA=G.drive?G.drive.steer:0;for(const [x,z] of [[-TRUCK.track,TRUCK.frontAxle],[TRUCK.track,TRUCK.frontAxle],[-TRUCK.track,TRUCK.rearAxle],[TRUCK.track,TRUCK.rearAxle]])r.draw(m.wheel,M.mul(tm,M.mul(M.T(x*1.05,TRUCK.wheelR,z),M.mul(M.Ry(z>0?stA:0),M.Rx(G.truck.wheel)))));
@@ -392,7 +394,7 @@ function tick(dt,now){let cam;
     updateOldMan(dt);const tr=G.tree;
     // physics with the hinge driven in the same sub-steps
     const sub=Math.max(1,Math.round(dt/PHYS.dt));for(let i=0;i<sub;i++){if(tr.state==='hinge')hingeStep(dt/sub);}
-    physUpdate(dt,G.W.H,G.stumpCol);if(tr.state==='down')breakUnderLimbs();
+    if(G.chip.mode==='hand')settleTrailer(false);updateSolidBoxes();physUpdate(dt,G.W.H,G.stumpCol);if(tr.state==='down')breakUnderLimbs();
     if(tr.state==='down'&&!G.objs.felled&&tr.body&&(tr.body.sleep||performance.now()-tr.downT>6000)){G.objs.felled=true;updateObjectives();SFX.ding();}
     stepFeed(dt);stepParts(dt);
     // saw engine
@@ -406,11 +408,13 @@ function tick(dt,now){let cam;
 function updateHUD(){const a=G.aim,p=G.pl;let t='';
   if(p.inTruck){$('prompt').innerHTML='';$('drive').hidden=false;$('drive').innerHTML=`<div><b>W/S</b> drive · <b>A/D</b> steer · <b>Space</b> brake · <b>V</b> camera · <b>E</b> get out</div><span>${Math.abs(G.drive.v*2.237).toFixed(0)} mph</span>`;$('barTilt').hidden=true;$('money').textContent='$'+G.money;return;}
   $('drive').hidden=true;
-  if(G.dlg)t='';else if(p.carry){const near=V.dist(hopperWorld(),G.eye)<3.4;t=p.carry.brush&&near?'<b>E</b> Feed the chipper':'<b>E</b> or <b>Q</b> Drop'+` · ${p.carry.m.toFixed(0)} kg`;}
-  else if(a){if(a.kind==='om')t='<b>E</b> Talk to Earl';else if(a.kind==='truck')t='<b>E</b> Get in the truck';else if(a.kind==='chipper')t=`<b>E</b> ${G.chip.running?'Stop':'Start'} the chipper`;
+  if(G.dlg)t='';else if(G.chip.mode==='hand')t=V.dist(couplerWorld(),hitchWorld())<.8?'<b>E</b> Hitch it to the truck':'<b>E</b> Set the tongue down';
+  else if(p.carry){const n=p.carryList.length,near=V.dist(hopperWorld(),G.eye)<3.4;const more=a&&a.kind==='body'&&a.b.piece&&canAddCarry(a.b)&&p.tool==='hands';
+    t=more?`<b>E</b> Pick up another · ${lb(carryMass()+a.b.m)} total`:(p.carry.brush&&near?`<b>E</b> Feed the chipper${n>1?` (${n})`:''}`:`<b>E</b> Drop${n>1?' all':''} · <b>Q</b> drop one`)+` · ${lb(carryMass())}`;}
+  else if(a){if(a.kind==='om')t='<b>E</b> Talk to Earl';else if(a.kind==='truck')t='<b>E</b> Get in the truck';else if(a.kind==='hitch')t=G.chip.mode==='truck'?'<b>E</b> Unhitch the chipper':'<b>E</b> Grab the tongue';else if(a.kind==='chipper')t=`<b>E</b> ${G.chip.running?'Stop':'Start'} the chipper`;
     else if(a.kind==='tree')t=p.tool==='saw'?(G.saw.on?'':'<b>R</b> Pull-start the saw'):'Dead white ash';
     else if(a.kind==='body'){const b=a.b;if(p.tool==='saw')t=G.saw.on?'':'<b>R</b> Pull-start the saw';
-      else t=!b.piece?'':b.piece.kind==='trunk'&&b.piece.limbs.length?`${b.m.toFixed(0)} kg`:(b.m>WOOD.liftMax?`${b.m.toFixed(0)} kg`:`<b>E</b> Pick up ${b.brush?'brush':'round'} · ${b.m.toFixed(0)} kg`);}}
+      else t=!b.piece?'':b.piece.kind==='trunk'&&b.piece.limbs.length?lb(b.m):(b.m>WOOD.liftMax?lb(b.m):`<b>E</b> Pick up ${b.brush?'brush':'round'} · ${lb(b.m)}`);}}
   $('prompt').innerHTML=t;
   const bt=$('barTilt');bt.hidden=p.tool!=='saw';if(!bt.hidden){const deg=Math.round(G.saw.roll*180/Math.PI);bt.querySelector('i').style.transform=`rotate(${90-deg}deg)`;bt.querySelector('span').textContent=`${deg}°`;}
   $('sawState').textContent=p.tool==='saw'?(G.saw.on?'Saw: running':'Saw: off · R to start'):'';

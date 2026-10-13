@@ -10,13 +10,13 @@ Open `index.html` in a browser (Chrome, Edge or Firefox). No install or build st
 | --- | --- |
 | WASD | walk (Shift to run, Space to jump) |
 | Mouse | look (click the view to capture the mouse) |
-| E | talk, pick up, start the chipper, feed the chipper |
+| E | talk, pick up (several pieces at once), start or feed the chipper, unhitch / walk / rehitch the chipper at its tongue |
 | 1 / 2 | hands / chainsaw |
 | R | pull-start or stop the saw |
 | Right mouse | rev and cut |
 | Mouse wheel | roll the saw (turns the cut plane) |
 | C | crouch |
-| Q | drop what you carry |
+| Q | drop one piece (E drops everything) |
 | E at the driver door | drive the truck (W/S drive, A/D steer, Space brake, V camera, E get out) |
 | H | help |
 
@@ -26,7 +26,7 @@ You pull up the driveway, finish your energy drink and meet Earl, the client. Hi
 
 1. **Drop it.** Cuts are free-form: wherever the bar enters the wood, at whatever angle you hold the saw, is the cut. How you cut decides where it falls, or whether it barber-chairs.
 2. **Limb it** and feed the brush to the chipper. Branches go in butt first, flat along the infeed.
-3. **Buck it** into rounds light enough to lift (60 kg max), and stack them on the pallet by the shed.
+3. **Buck it** into rounds light enough to lift (132 lb max), and stack them on the pallet by the shed. Rounds ride on your shoulder; wood dropped in the truck bed rides along when you drive.
 4. **Get paid.** Clean felling and quick work earn a bonus. A barber chair costs you.
 
 ## Code layout
@@ -39,6 +39,7 @@ You pull up the driveway, finish your energy drink and meet Earl, the client. Hi
 | `js/physics.js` | rigid-body physics for logs and limbs (terrain and body contacts, sleeping, ray casts) |
 | `js/tree.js` | the tree: shape, limbs, mass and contact points for every piece |
 | `js/drive.js` | driving the truck with the chipper in tow; limbs snapping under a felled stem |
+| `js/haul.js` | hitching the chipper, truck bed and chipper as solid shapes, carrying several pieces, sawdust piles |
 | `js/saw.js` | the chainsaw: bar in the world, free-form cut planes, open faces, hinge analysis, stump and butt faces, chipper feeding |
 | `js/audio.js` | all sounds, synthesized with Web Audio |
 | `js/game.js` | the level: intro, player, Earl and dialogue, felling, cutting, chipper, objectives, HUD |

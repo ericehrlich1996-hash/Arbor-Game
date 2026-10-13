@@ -63,6 +63,15 @@ function physStep(H,extraColliders){const dt=PHYS.dt,B=PHYS.bodies;
         applyImpulse(b,iIw,r,V.mul(n,jn));b._contact++;
         const vp2=velAt(b,r),vn2=V.dot(vp2,n),vt=V.sub(vp2,V.mul(n,vn2)),lt=V.len(vt);
         if(lt>1e-5){const t=V.mul(vt,1/lt),rt=V.cross(r,t),kt=b.im+V.dot(t,V.cross(M3.vec(iIw,rt),r));const jt=Math.min(lt/kt,PHYS.mu*jn);applyImpulse(b,iIw,r,V.mul(t,-jt));}}}
+    // solid boxes: truck cab, bed floor and walls, chipper body
+    if(PHYS.boxes)for(const b of B){if(b.mode!=='dyn'||b.sleep)continue;const iIw=b._iIw;
+      for(const bx of PHYS.boxes){if(V.dist(b.pos,bx.c)>b.rad+bx.h[0]+bx.h[1]+bx.h[2])continue;
+        for(const lp of b.pts){const r=M3.vec(b._R,lp),p=V.add(b.pos,r),d=V.sub(p,bx.c);const l=[V.dot(d,bx.ax[0]),V.dot(d,bx.ax[1]),V.dot(d,bx.ax[2])];
+          if(Math.abs(l[0])>bx.h[0]||Math.abs(l[1])>bx.h[1]||Math.abs(l[2])>bx.h[2])continue;
+          let k=0,pen=1e9;for(let i=0;i<3;i++){const q=bx.h[i]-Math.abs(l[i]);if(q<pen){pen=q;k=i;}}const n=V.mul(bx.ax[k],Math.sign(l[k])||1);
+          const vp=velAt(b,r),vn=V.dot(vp,n),bias=Math.max(0,pen-PHYS.slop)*PHYS.beta/dt;if(vn>=bias)continue;
+          const kk=b.im+V.dot(n,V.cross(M3.vec(iIw,V.cross(r,n)),r));const jn=(bias-vn)/kk;if(jn<=0)continue;applyImpulse(b,iIw,r,V.mul(n,jn));b._contact++;
+          const vp2=velAt(b,r),vt=V.sub(vp2,V.mul(n,V.dot(vp2,n))),lt=V.len(vt);if(lt>1e-5){const t=V.mul(vt,1/lt),kt=b.im+V.dot(t,V.cross(M3.vec(iIw,V.cross(r,t)),r));applyImpulse(b,iIw,r,V.mul(t,-Math.min(lt/kt,PHYS.mu*jn)));}}}}
     // body vs body (points of A against capsules of B)
     for(let i=0;i<B.length;i++)for(let j=0;j<B.length;j++){if(i===j)continue;const A=B[i],C=B[j];
       if(A.mode==='held'||C.mode==='held'||A.mode==='gone'||C.mode==='gone')continue;
