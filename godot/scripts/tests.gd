@@ -597,3 +597,39 @@ func _throw() -> void:
 		if i == 1: await shot("feed-a")
 	await shot("feed-b")
 	note("chips_done", g.haul.chips_done)
+
+func _sawreal() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	var tr: AshTree = g.tree
+	var house := Vector3(g.world.house.x, 0, g.world.house.z)
+	var away := (tr.global_position - house); away.y = 0; away = away.normalized()
+	# stand on the face side and cut a level kerf at knee height with the real saw
+	g.equip("saw"); g.saw.on = true; g.saw.engine_snd = Sfx.engine("saw")
+	g.player.crouch = true
+	var st := tr.global_position + away * 1.15
+	g.player.teleport(Vector3(st.x, g.world.H(st.x, st.z) + 0.05, st.z))
+	await wait(0.5)
+	look_at_point(tr.global_position + Vector3(0, 0.6, 0))
+	g.saw.roll = PI / 2     # kerf normal up: a level cut
+	await wait(0.3)
+	g.force_rev = true
+	await wait(2.5)
+	note("tree_cut", [tr.cuts.size(), tr.cuts[0].s if tr.cuts.size() > 0 else -1.0, g.saw.bind])
+	await shot("real-cutting")
+	g.force_rev = false
+	await wait(0.4)
+	g.player.crouch = false
+	var vp := tr.global_position + away * 1.8 + away.cross(Vector3.UP) * 0.8
+	g.player.teleport(Vector3(vp.x, g.world.H(vp.x, vp.z) + 0.05, vp.z))
+	g.equip("hands")
+	look_at_point(tr.global_position + Vector3(0, 0.6, 0))
+	await wait(0.5)
+	await shot("real-kerf")
+	# other side: nothing showing through
+	var bp := tr.global_position - away * 1.8
+	g.player.teleport(Vector3(bp.x, g.world.H(bp.x, bp.z) + 0.05, bp.z))
+	look_at_point(tr.global_position + Vector3(0, 0.6, 0))
+	await wait(0.5)
+	await shot("real-kerf-back")

@@ -83,6 +83,7 @@ func _setup_env() -> void:
 	env.adjustment_saturation = 1.15
 	env.fog_enabled = true
 	env.fog_light_color = Color("#c3d0d8"); env.fog_density = 0.0035; env.fog_sky_affect = 0.2
+	if OS.has_feature("web"): env.tonemap_exposure = 1.08      # browsers present the frame a touch darker
 	var we := WorldEnvironment.new(); we.environment = env; add_child(we)
 	sun = DirectionalLight3D.new()
 	sun.rotation = Vector3(deg_to_rad(-52), deg_to_rad(38), 0)
