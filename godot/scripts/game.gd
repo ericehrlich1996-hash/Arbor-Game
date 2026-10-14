@@ -77,6 +77,8 @@ shader_type sky;
 uniform vec3 top_color : source_color = vec3(0.29, 0.5, 0.76);
 uniform vec3 horizon_color : source_color = vec3(0.78, 0.85, 0.9);
 uniform vec3 ground_color : source_color = vec3(0.36, 0.42, 0.3);
+uniform float cover = 0.0;      // 0 fair-weather clouds .. 1 a solid grey lid
+uniform float grey = 0.0;       // how much the whole sky goes grey (fog, rain)
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
 	vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -100,10 +102,12 @@ void sky() {
 	if (y > 0.0) {
 		vec2 uv = d.xz / (y + 0.12) * 0.55;
 		float c = fbm(uv * 1.3 + vec2(3.0, 1.0));
-		c = smoothstep(0.5, 0.78, c) * smoothstep(0.02, 0.22, y);
-		float shade = 0.82 + 0.18 * fbm(uv * 2.6 + vec2(-1.0, 2.0)) + 0.25 * pow(sd, 6.0);
-		col = mix(col, vec3(1.0, 0.98, 0.95) * shade, c * 0.85);
+		c = smoothstep(0.5 - cover * 0.48, 0.78 - cover * 0.3, c) * smoothstep(0.02, 0.22, y);
+		float shade = 0.82 + 0.18 * fbm(uv * 2.6 + vec2(-1.0, 2.0)) + 0.25 * pow(sd, 6.0) * (1.0 - cover);
+		vec3 cloud = mix(vec3(1.0, 0.98, 0.95), vec3(0.52, 0.55, 0.58), cover) * shade;
+		col = mix(col, cloud, c * mix(0.85, 1.0, cover));
 	}
+	col = mix(col, vec3(0.62, 0.65, 0.67) * (0.8 + 0.2 * smoothstep(-0.2, 0.6, y)), grey);
 	COLOR = col;
 }
 """
@@ -134,6 +138,7 @@ func _setup_env() -> void:
 	env.fog_sun_scatter = 0.25
 	if OS.has_feature("web"): env.tonemap_exposure = 1.08      # browsers present the frame a touch darker
 	var we := WorldEnvironment.new(); we.environment = env; add_child(we)
+	sky_mat = sm
 	sun = DirectionalLight3D.new()
 	sun.rotation = Vector3(deg_to_rad(-40), deg_to_rad(145), 0)     # warm afternoon light from behind your shoulder on the drive in
 	sun.light_energy = 1.3; sun.light_color = Color("#ffe2b8")
@@ -146,6 +151,8 @@ func _setup_env() -> void:
 # ================================================================ graphics detail
 var detail := 1
 var ambient: Ambient
+var sky_mat: ShaderMaterial
+var weather: Weather
 var _fps_t := 0.0
 var _fps_frames := 0
 var _fps_checked := false
@@ -182,6 +189,8 @@ func new_level(sd: int) -> void:
 	level_root = Node3D.new(); level_root.name = "Level"; add_child(level_root)
 	world = WorldGen.new(); world.setup(sd); world.build(level_root)
 	ambient = Ambient.new(); ambient.name = "Ambient"; level_root.add_child(ambient)
+	weather = Weather.new(); weather.name = "Weather"; level_root.add_child(weather)
+	weather.setup(self, sd)
 	ambient.setup(Vector3(0, world.H(0, 0), 0))
 	var rng := RandomNumberGenerator.new(); rng.seed = sd + 99
 	truck = Truck.new(); truck.name = "Truck"
@@ -351,6 +360,7 @@ func _start() -> void:
 	get_tree().create_timer(4.0).timeout.connect(func(): if earl.state == "wave": earl.state = "idle")
 	hud.toast("Click to look around. Walk with WASD. Talk to Earl with E.", 5)
 	hud.set_tool(player.tool, muffs)
+	if weather: get_tree().create_timer(5.5).timeout.connect(weather.announce)
 
 # ================================================================ input
 func _input(ev: InputEvent) -> void:
@@ -781,6 +791,7 @@ func _process(dt: float) -> void:
 	_watch_fps(dt)
 	var cam := get_viewport().get_camera_3d()
 	if ambient and cam: ambient.step(dt, cam.global_position)
+	if weather and cam: weather.step(dt, cam.global_position)
 	if phase == "title":
 		# a slow orbit over the yard, between the house and the dead ash
 		var a := clock * 0.04

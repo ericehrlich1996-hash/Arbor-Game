@@ -132,6 +132,8 @@ func _build() -> void:
 	# the woods: a soft wind loop, songbirds, a woodpecker now and then
 	sounds.wind = _wind_loop()
 	sounds.creek = _creek_loop()
+	sounds.rain = _rain_loop()
+	sounds.thunder = _thunder()
 	for v in range(5): sounds["bird%d" % v] = _bird(v)
 	b = _buf(1.1)
 	for i in range(12): _noise(b, 0.025, 1400, 3, 0.35 * (1.0 - i / 14.0), "bandpass", i * 0.055)
@@ -159,6 +161,34 @@ func _bird(v: int) -> AudioStreamWAV:
 			if k < b.size(): b[k] += sin(ph * TAU) * env * env * 0.22
 		t0 += dur + r.randf_range(0.03, 0.14)
 		if t0 > 1.4: break
+	return _wav(b)
+
+## rain: a soft hiss with the patter of drops in it
+func _rain_loop() -> AudioStreamWAV:
+	var b := _buf(3.0)
+	var hp := Biquad.new("highpass", 900, 0.7, RATE)
+	var lp := Biquad.new("lowpass", 5200, 0.7, RATE)
+	for i in range(b.size()): b[i] = lp.run(hp.run(randf() * 2 - 1)) * 0.5
+	for k in range(260):
+		var at := int(randf() * 2.9 * RATE); var amp := randf_range(0.05, 0.25)
+		for j in range(90):
+			if at + j < b.size(): b[at + j] += (randf() * 2 - 1) * amp * exp(-j / 18.0)
+	var fade := 2000
+	for i in range(fade):
+		var k := float(i) / fade
+		b[i] = b[i] * k + b[b.size() - fade + i] * (1 - k)
+	return _wav(b.slice(0, b.size() - fade), true)
+
+## thunder: a crack, then a long low rumble that rolls about
+func _thunder() -> AudioStreamWAV:
+	var b := _buf(4.0)
+	var lp := Biquad.new("lowpass", 180, 0.8, RATE)
+	var lp2 := Biquad.new("lowpass", 900, 0.7, RATE)
+	for i in range(b.size()):
+		var t := float(i) / RATE
+		var env := clampf(t / 0.05, 0, 1) * exp(-t / 1.4) * (0.75 + 0.25 * sin(t * 7.0) * sin(t * 2.3))
+		var x := randf() * 2 - 1
+		b[i] = (lp.run(x) * 2.6 + lp2.run(x) * 0.5 * exp(-t / 0.25)) * env
 	return _wav(b)
 
 ## babbling water: band-passed noise with lots of little bubbling blips

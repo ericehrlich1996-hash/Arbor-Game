@@ -1198,3 +1198,13 @@ func _hands() -> void:
 	g.player.pitch = 0.0
 	await wait(0.5)
 	await shot("hands-idle")
+
+func _weather() -> void:
+	await wait(0.5)
+	g._start()
+	var h: Dictionary = g.world.house
+	var at := Vector3(h.x + 6, 0, h.z - h.d / 2 - 16)
+	for k: String in ["clear", "overcast", "fog", "rain", "storm"]:
+		g.weather.force(k)
+		await _view("weather-" + k, at, Vector3(h.x, g.world.H(h.x, h.z) + 3.0, h.z))
+	note("kind", g.weather.kind)
