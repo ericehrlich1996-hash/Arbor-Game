@@ -1,6 +1,6 @@
 # Arbor Simulator
 
-A physics arborist game, built with **Godot 4.6**. You start with a chainsaw, a wood chipper and an '80s square-body truck, and work your way up to bigger jobs.
+A physics arborist game, built with **Godot 4.7**. You start with a chainsaw, a wood chipper and an '80s square-body truck, and work your way up to bigger jobs.
 
 **Level 1 · Earl's dead ash.** Drive up a randomly generated property, finish your energy drink, and meet Earl. Drop his dead ash without hitting the house, limb it, chip the brush, buck the stem into rounds he can lift, and pile them behind his shed. Then get paid (mostly in twenties).
 
@@ -8,7 +8,7 @@ A physics arborist game, built with **Godot 4.6**. You start with a chainsaw, a 
 
 - **In the browser:** the web build lives at the root of this repo (`index.html`, `index.wasm`, …), so the Netlify site serves it as-is. There is no build step, and the publish directory is the repo root.
 - **In Godot:**
-  1. Install Godot 4.6 (the standard build, not .NET).
+  1. Install Godot 4.7 (the standard build, not .NET).
   2. Choose **Import** and pick `godot/project.godot`.
   3. Press **F5** to play.
 

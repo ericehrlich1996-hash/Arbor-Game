@@ -138,10 +138,17 @@ func _ready() -> void:
 	root.add_child(intro_card)
 	_build_title()
 	_build_summary()
+	_ignore_mouse(root)
+	title.mouse_filter = Control.MOUSE_FILTER_STOP
+
+## only buttons take the mouse; everything else lets clicks and motion through to the game
+func _ignore_mouse(n: Node) -> void:
+	if n is Control and not (n is Button): n.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for c in n.get_children(): _ignore_mouse(c)
 	set_play_visible(false)
 
 func _build_title() -> void:
-	title = ColorRect.new(); (title as ColorRect).color = Color(0.05, 0.06, 0.05, 0.55)
+	title = ColorRect.new(); (title as ColorRect).color = Color(0.05, 0.06, 0.05, 0.28)
 	title.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var c := CenterContainer.new(); c.set_anchors_preset(Control.PRESET_FULL_RECT); title.add_child(c)
 	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 14); c.add_child(v)

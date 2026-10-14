@@ -73,23 +73,31 @@ func _setup_env() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
 	var sky := Sky.new(); var sm := ProceduralSkyMaterial.new()
-	sm.sky_top_color = Color("#6f9fd0"); sm.sky_horizon_color = Color("#c9d8e2"); sm.ground_horizon_color = Color("#a8b0a0"); sm.ground_bottom_color = Color("#4a5a3a")
+	sm.sky_top_color = Color("#4a7fc0"); sm.sky_horizon_color = Color("#c4d6e4")
+	sm.ground_horizon_color = Color("#b4c2b0"); sm.ground_bottom_color = Color("#5a6a48")
+	sm.sun_angle_max = 25.0; sm.sun_curve = 0.12
 	sky.sky_material = sm; env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.55
+	env.ambient_light_energy = 0.75
+	env.ambient_light_sky_contribution = 0.85
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_exposure = 0.9
+	env.tonemap_exposure = 1.0
+	env.tonemap_white = 6.0
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.15
+	env.adjustment_saturation = 1.0
+	env.adjustment_contrast = 1.05
+	env.glow_enabled = true
+	env.glow_intensity = 0.25; env.glow_bloom = 0.04
 	env.fog_enabled = true
-	env.fog_light_color = Color("#c3d0d8"); env.fog_density = 0.0035; env.fog_sky_affect = 0.2
+	env.fog_light_color = Color("#c8d6e0"); env.fog_density = 0.0022; env.fog_sky_affect = 0.1; env.fog_aerial_perspective = 0.4
 	if OS.has_feature("web"): env.tonemap_exposure = 1.08      # browsers present the frame a touch darker
 	var we := WorldEnvironment.new(); we.environment = env; add_child(we)
 	sun = DirectionalLight3D.new()
-	sun.rotation = Vector3(deg_to_rad(-52), deg_to_rad(38), 0)
-	sun.light_energy = 1.05; sun.light_color = Color("#fff4e0")
+	sun.rotation = Vector3(deg_to_rad(-40), deg_to_rad(145), 0)     # warm afternoon light from behind your shoulder on the drive in
+	sun.light_energy = 1.35; sun.light_color = Color("#ffe9cc")
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 70
+	sun.shadow_blur = 1.5
+	sun.directional_shadow_max_distance = 80
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	add_child(sun)
 
@@ -269,6 +277,13 @@ func _start() -> void:
 	hud.set_tool(player.tool, muffs)
 
 # ================================================================ input
+func _input(ev: InputEvent) -> void:
+	if phase == "play" and ev is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and dlg == null:
+		var k := 0.0022
+		if player.in_truck: truck.look(ev.relative.x * k, ev.relative.y * k)
+		else: player.look(ev.relative.x * k, ev.relative.y * k)
+		get_viewport().set_input_as_handled()
+
 func _unhandled_input(ev: InputEvent) -> void:
 	if phase == "intro":
 		if ev is InputEventKey and ev.pressed and ev.physical_keycode in [KEY_SPACE, KEY_ENTER, KEY_ESCAPE]: end_intro()
@@ -657,10 +672,11 @@ func _physics_process(dt: float) -> void:
 func _process(dt: float) -> void:
 	clock += dt
 	if phase == "title":
-		var a := clock * 0.05
-		var c := Vector3(world.tree.x, 0, world.tree.z)
-		title_cam.global_position = Vector3(c.x + sin(a) * 45, world.H(c.x, c.z) + 18, c.z + cos(a) * 45)
-		title_cam.look_at(Vector3(c.x, world.H(c.x, c.z) + 4, c.z))
+		# a slow orbit over the yard, between the house and the dead ash
+		var a := clock * 0.04
+		var c := Vector3((world.tree.x + world.house.x) * 0.5, 0, (world.tree.z + world.house.z) * 0.5)
+		title_cam.global_position = Vector3(c.x + sin(a) * 34, world.H(c.x, c.z) + 22, c.z + cos(a) * 34)
+		title_cam.look_at(Vector3(c.x, world.H(c.x, c.z) + 2, c.z))
 	elif phase == "intro":
 		_step_intro(dt)
 	earl.step(dt, player.global_position if phase == "play" else truck.global_position, truck)

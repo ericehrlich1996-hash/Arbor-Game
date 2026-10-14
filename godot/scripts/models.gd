@@ -207,19 +207,12 @@ static func chainsaw() -> MeshBuilder:
 	mb.box(0, 0, -0.22, 0.06, 0.09, 0.04, dk)
 	return mb
 
-## gloved fist around a bar that runs along local X; knuckles toward −Z
-static func fist(side: float) -> MeshBuilder:
+## a gloved hand, kept simple: a ball with a cuff behind it (the bar it holds runs along local X)
+static func fist(_side: float) -> MeshBuilder:
 	var mb := MeshBuilder.new()
-	var glove := h("#c9a46a"); var gD := h("#a8844c"); var cuff := h("#8a6a3a")
-	mb.sphere(0, 0.028, 0.012, 0.042, 0.022, 0.036, glove, 10, 6)
-	for k in range(4):
-		var x := -0.033 + k * 0.022
-		var a := Vector3(x, 0.03, -0.022); var b := Vector3(x, 0.004, -0.03); var c := Vector3(x, -0.022, -0.012); var d := Vector3(x, -0.018, 0.012)
-		mb.tube(a, b, 0.0105, 0.0102, sh(glove, 0.97), 6); mb.tube(b, c, 0.0102, 0.0098, glove, 6); mb.tube(c, d, 0.0098, 0.009, sh(glove, 0.94), 6)
-		mb.sphere(x, 0.03, -0.02, 0.012, 0.012, 0.012, gD, 6, 4)
-	mb.tube(Vector3(side * 0.045, 0.02, 0.01), Vector3(side * 0.05, -0.005, -0.02), 0.012, 0.011, glove, 6)
-	mb.tube(Vector3(side * 0.05, -0.005, -0.02), Vector3(side * 0.03, -0.022, -0.028), 0.011, 0.01, glove, 6)
-	mb.tube(Vector3(0, 0.026, 0.03), Vector3(0, 0.02, 0.07), 0.036, 0.04, cuff, 9)
+	var glove := h("#c9a46a"); var cuff := h("#8a6a3a")
+	mb.sphere(0, 0.01, 0, 0.045, 0.042, 0.045, glove, 12, 8)
+	mb.tube(Vector3(0, 0.015, 0.03), Vector3(0, 0.02, 0.075), 0.034, 0.04, cuff, 10)
 	return mb
 
 ## open glove + sleeve reaching back toward the camera (idle hands)

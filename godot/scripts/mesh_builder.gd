@@ -113,21 +113,32 @@ func sphere(x: float, y: float, z: float, rx: float, ry: float, rz: float, c: Co
 		for s in range(seg):
 			quad(grid[j][s], grid[j][s + 1], grid[j + 1][s + 1], grid[j + 1][s])
 
-## lumpy low-poly foliage ball (flat shaded)
+## soft foliage clump: a once-subdivided icosphere, lumpy, smooth-shaded, darker underneath and sunlit on top
 func blob(x: float, y: float, z: float, r: float, c: Color, rng: RandomNumberGenerator, rough := 0.8) -> void:
 	var o := Vector3(x, y, z)
 	var t := (1.0 + sqrt(5.0)) / 2.0
-	var P := [Vector3(-1, t, 0), Vector3(1, t, 0), Vector3(-1, -t, 0), Vector3(1, -t, 0), Vector3(0, -1, t), Vector3(0, 1, t), Vector3(0, -1, -t), Vector3(0, 1, -t), Vector3(t, 0, -1), Vector3(t, 0, 1), Vector3(-t, 0, -1), Vector3(-t, 0, 1)]
+	var P: Array = [Vector3(-1, t, 0), Vector3(1, t, 0), Vector3(-1, -t, 0), Vector3(1, -t, 0), Vector3(0, -1, t), Vector3(0, 1, t), Vector3(0, -1, -t), Vector3(0, 1, -t), Vector3(t, 0, -1), Vector3(t, 0, 1), Vector3(-t, 0, -1), Vector3(-t, 0, 1)]
 	var F := [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]]
-	var pts := []
-	for p in P:
-		var k := 1.0 + (rng.randf() - 0.5) * 0.35 * rough
-		pts.push_back(o + p.normalized() * r * k * Vector3(1, 0.8, 1))
+	for i in range(P.size()): P[i] = (P[i] as Vector3).normalized()
+	var mid := {}
+	var midpoint := func(i: int, j: int) -> int:
+		var key := Vector2i(mini(i, j), maxi(i, j))
+		if mid.has(key): return mid[key]
+		P.append(((P[i] as Vector3) + (P[j] as Vector3)).normalized())
+		mid[key] = P.size() - 1
+		return P.size() - 1
+	var F2 := []
 	for f in F:
-		var a: Vector3 = pts[f[0]]; var b: Vector3 = pts[f[1]]; var cc: Vector3 = pts[f[2]]
-		var n := (cc - a).cross(b - a).normalized()
-		var col := shade(c, 0.9 + rng.randf() * 0.2)
-		tri(v(a, n, col), v(cc, n, col), v(b, n, col))
+		var a: int = midpoint.call(f[0], f[1]); var b: int = midpoint.call(f[1], f[2]); var cc: int = midpoint.call(f[2], f[0])
+		F2.append_array([[f[0], a, cc], [f[1], b, a], [f[2], cc, b], [a, b, cc]])
+	var ids := []
+	for p in P:
+		var k := 1.0 + (rng.randf() - 0.5) * 0.3 * rough
+		var q: Vector3 = p * r * k * Vector3(1, 0.82, 1)
+		var lit := 0.72 + 0.36 * clampf(p.y * 0.5 + 0.5, 0, 1) + (rng.randf() - 0.5) * 0.08
+		ids.append(v(o + q, p, shade(c, lit)))
+	for f in F2:
+		tri(ids[f[0]], ids[f[2]], ids[f[1]])
 
 ## flat polygon (fan), winding sets the normal
 func face(p: Array, c: Color) -> void:

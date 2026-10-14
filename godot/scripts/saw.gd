@@ -209,11 +209,12 @@ func step(dt: float, rev: bool, carrying: bool) -> void:
 	if randf() < 0.5: _emit(W.e, -W.f + Vector3(0, 0.3, 0), 1, Color("#b89a6a"), 0.8, 0.045)
 	match cut.kind:
 		"tree":
+			if game.tree.state != "stand": cut = null; return
 			game.tree.cut_progress(cut)
 		"stump":
 			if cut.s >= cut.exit:
 				game.tree.finish_stump_cut(cut); cut = null; game.update_objectives()
-			elif _t - _kerf_t > 0.08:
+			elif _t - _kerf_t > 0.08 and is_instance_valid(cut.get("node")):
 				_kerf_t = _t; Wood.update_kerf(cut.node, cut)
 		"piece":
 			if cut.s >= cut.exit:

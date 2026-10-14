@@ -159,6 +159,7 @@ class MachineSound:
 	var grit: AudioStreamPlayer
 	var kind := ""
 	func setv(rpm: float, ld: float, vol: float) -> void:
+		vol *= {"truck": 0.28, "saw": 0.5, "chipper": 0.55}.get(kind, 0.5)     # overall mix: the truck idles quietly
 		var f := 40.0 + rpm * 150.0
 		if kind == "chipper": f = 34.0 + rpm * 20.0
 		elif kind == "truck": f = 30.0 + rpm * 55.0

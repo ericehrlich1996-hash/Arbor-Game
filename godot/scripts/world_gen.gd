@@ -137,6 +137,7 @@ func build(root: Node3D) -> void:
 	_build_roads(root)
 	_build_house(root)
 	_build_woods(root)
+	_build_grass(root)
 
 func _static_box(root: Node3D, center: Vector3, size: Vector3, yaw := 0.0) -> void:
 	var sb := StaticBody3D.new()
@@ -150,7 +151,7 @@ func _static_box(root: Node3D, center: Vector3, size: Vector3, yaw := 0.0) -> vo
 func _build_terrain(root: Node3D) -> void:
 	var mb := MeshBuilder.new()
 	var st := S / N
-	var lawn := Color.html("#5f8a3a"); var lawn2 := Color.html("#6f9a44"); var meadow := Color.html("#7d8a45"); var forest := Color.html("#4a5a30")
+	var lawn := Color.html("#6a8c44"); var lawn2 := Color.html("#7a9a4e"); var meadow := Color.html("#8a9152"); var forest := Color.html("#55613a")
 	var ids := []
 	for j in range(N + 1):
 		var row := []
@@ -161,7 +162,7 @@ func _build_terrain(root: Node3D) -> void:
 			var c: Color
 			if inside:
 				c = lawn.lerp(lawn2, n)
-				c = MeshBuilder.shade(c, 1.04 if int(floor((x + z * 0.15) / 2.2)) % 2 != 0 else 0.96)
+				c = MeshBuilder.shade(c, 1.025 if int(floor((x + z * 0.15) / 2.2)) % 2 != 0 else 0.975)
 			else:
 				c = meadow.lerp(forest, clampf((absf(x) - 46) / 14, 0, 1) * 0.7 + n * 0.3)
 				if absf(x) > 60 or z > 66: c = c.lerp(forest, 0.6)
@@ -192,7 +193,10 @@ func _ribbon(mb: MeshBuilder, path: Array, width: float, col: Color, lift: float
 		L.push_back(mb.v(Vector3(lp.x, H(lp.x, lp.y) + lift, lp.y), Vector3.UP, c))
 		R.push_back(mb.v(Vector3(rp.x, H(rp.x, rp.y) + lift, rp.y), Vector3.UP, c))
 	for k in range(path.size() - 1):
-		mb.quad(L[k], R[k], R[k + 1], L[k + 1])
+		# wind every quad so it faces up (a back-facing quad gets lit from below and goes dark)
+		var up := (mb.verts[R[k]] - mb.verts[L[k]]).cross(mb.verts[L[k + 1]] - mb.verts[L[k]]).y
+		if up > 0: mb.quad(L[k], R[k], R[k + 1], L[k + 1])
+		else: mb.quad(L[k], L[k + 1], R[k + 1], R[k])
 
 func _build_roads(root: Node3D) -> void:
 	var mb := MeshBuilder.new()
@@ -342,3 +346,57 @@ func _build_woods(root: Node3D) -> void:
 		sb.position = Vector3(t.x, H(t.x, t.z) + 2, t.z); root.add_child(sb)
 	var mi := mb.instance(); mi.name = "Woods"
 	root.add_child(mi)
+
+## grass tufts everywhere you walk (and longer meadow grass out toward the woods), swaying a little
+func _build_grass(root: Node3D) -> void:
+	var tuft := MeshBuilder.new()
+	var r := RandomNumberGenerator.new(); r.seed = seed + 51
+	var base := Color.html("#5e8238"); var tip := Color.html("#a9c766")
+	for i in range(6):
+		var a := TAU * i / 6 + r.randf_range(-0.3, 0.3)
+		var lean := Vector3(cos(a), 0, sin(a)) * r.randf_range(0.04, 0.1)
+		var side := Vector3(-sin(a), 0, cos(a)) * 0.016
+		var hgt := r.randf_range(0.12, 0.22)
+		var off := Vector3(cos(a), 0, sin(a)) * 0.03
+		var i0 := tuft.v(off - side, Vector3.UP, base); var i1 := tuft.v(off + side, Vector3.UP, base)
+		var i2 := tuft.v(off + lean + Vector3(0, hgt, 0), Vector3.UP, tip)
+		tuft.tri(i0, i1, i2)
+	var mesh := tuft.commit()
+	var spots: Array = []
+	var ok := func(x: float, z: float) -> bool:
+		if _box_dist(x, z, house) < 1.2 or _box_dist(x, z, shed) < 0.4: return false
+		if absf(z - road_z) < 4.6: return false
+		if Vector2(x, z).distance_to(Vector2(tree.x, tree.z)) < 0.9: return false
+		for i in range(0, drive_path.size(), 2):
+			if Vector2(x, z).distance_to(drive_path[i]) < 2.3: return false
+		return true
+	var gx := -46.0
+	while gx < 46.0:
+		var gz := -48.0
+		while gz < 52.0:
+			var x := gx + r.randf() * 0.42; var z := gz + r.randf() * 0.42
+			if ok.call(x, z): spots.append([x, z, r.randf_range(0.8, 1.25)])
+			gz += 0.42
+		gx += 0.42
+	for k in range(14000):
+		var x := r.randf_range(-75, 75); var z := r.randf_range(-50, 80)
+		if absf(x) < 46 and z > -48 and z < 52: continue
+		if not ok.call(x, z): continue
+		spots.append([x, z, r.randf_range(1.4, 2.2)])
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D; mm.use_colors = true
+	mm.mesh = mesh
+	mm.instance_count = spots.size()
+	for i in range(spots.size()):
+		var sp: Array = spots[i]
+		var x: float = sp[0]; var z: float = sp[1]; var sc: float = sp[2]
+		var xf := Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3(sc, sc * r.randf_range(0.8, 1.2), sc)), Vector3(x, H(x, z) - 0.01, z))
+		mm.set_instance_transform(i, xf)
+		var tint := Color(1, 1, 1)
+		if r.randf() < 0.15: tint = Color(1.08, 1.04, 0.8)
+		mm.set_instance_color(i, MeshBuilder.shade(tint, r.randf_range(0.85, 1.1)))
+	var mmi := MultiMeshInstance3D.new(); mmi.name = "Grass"
+	mmi.multimesh = mm
+	mmi.material_override = Mats.grass
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(mmi)

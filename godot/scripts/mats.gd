@@ -16,24 +16,27 @@ func _init() -> void:
 	vcol_glass.albedo_color = Color(1, 1, 1, 0.28)
 	terrain = vcol.duplicate()
 	terrain.roughness = 1.0
+	terrain.cull_mode = BaseMaterial3D.CULL_BACK
 
 var bark: StandardMaterial3D        # weathered grey bark, mapped in the piece's own frame so it rides with it
 var sap: StandardMaterial3D         # fresh-cut wood
 var sap_v: StandardMaterial3D       # fresh-cut wood, vertex coloured (limb ends)
+var grass: ShaderMaterial
 
 func _ready() -> void:
 	var nz := FastNoiseLite.new()
 	nz.noise_type = FastNoiseLite.TYPE_CELLULAR
-	nz.frequency = 0.035
+	nz.cellular_return_type = FastNoiseLite.RETURN_DISTANCE2_DIV
+	nz.frequency = 0.03
 	nz.fractal_type = FastNoiseLite.FRACTAL_FBM; nz.fractal_octaves = 3
 	var g := Gradient.new()
-	g.set_color(0, Color("#3a3631")); g.set_color(1, Color("#8f897d"))
-	g.add_point(0.5, Color("#615b52"))
+	g.set_color(0, Color("#4a443c")); g.set_color(1, Color("#9a9384"))
+	g.add_point(0.45, Color("#6e675c"))
 	var tex := NoiseTexture2D.new(); tex.noise = nz; tex.color_ramp = g; tex.width = 256; tex.height = 256; tex.seamless = true
 	bark = StandardMaterial3D.new()
 	bark.albedo_texture = tex
 	bark.uv1_triplanar = true
-	bark.uv1_scale = Vector3(3.5, 0.9, 3.5)
+	bark.uv1_scale = Vector3(5.0, 0.7, 5.0)
 	bark.roughness = 0.95
 	bark.cull_mode = BaseMaterial3D.CULL_DISABLED
 	var nz2 := FastNoiseLite.new(); nz2.frequency = 0.08
@@ -46,3 +49,30 @@ func _ready() -> void:
 	sap.roughness = 0.9
 	sap.cull_mode = BaseMaterial3D.CULL_DISABLED
 	sap_v = vcol.duplicate()
+	# ground: a soft mottled detail texture in world space, multiplied over the painted colours
+	var gn := FastNoiseLite.new(); gn.frequency = 0.02; gn.fractal_octaves = 4
+	var gg := Gradient.new(); gg.set_color(0, Color(0.8, 0.82, 0.78)); gg.set_color(1, Color(1.06, 1.06, 1.0))
+	var gt := NoiseTexture2D.new(); gt.noise = gn; gt.color_ramp = gg; gt.width = 512; gt.height = 512; gt.seamless = true
+	terrain.albedo_texture = gt
+	terrain.uv1_triplanar = true; terrain.uv1_world_triplanar = true
+	terrain.uv1_scale = Vector3(0.12, 0.12, 0.12)
+	# grass tufts: vertex colours, a little sway in the wind
+	grass = ShaderMaterial.new()
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode cull_disabled, specular_disabled;
+uniform float wind = 0.09;
+void vertex() {
+	vec3 w = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	float h = VERTEX.y;
+	VERTEX.x += sin(TIME * 1.7 + w.x * 0.35 + w.z * 0.21) * wind * h;
+	VERTEX.z += cos(TIME * 1.3 + w.x * 0.27 - w.z * 0.3) * wind * h * 0.6;
+	NORMAL = vec3(0.0, 1.0, 0.0);
+}
+void fragment() {
+	ALBEDO = pow(COLOR.rgb, vec3(2.2));
+	ROUGHNESS = 0.95;
+}
+"""
+	grass.shader = sh

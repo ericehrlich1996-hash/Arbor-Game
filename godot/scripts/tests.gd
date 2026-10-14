@@ -633,3 +633,92 @@ func _sawreal() -> void:
 	look_at_point(tr.global_position + Vector3(0, 0.6, 0))
 	await wait(0.5)
 	await shot("real-kerf-back")
+
+func _look() -> void:
+	await wait(2.0)
+	await shot("look-title")
+	g._start()
+	var e: Vector3 = g.earl.global_position + Vector3(2.5, 0, -2.0)
+	g.player.teleport(Vector3(e.x, g.world.H(e.x, e.z) + 0.05, e.z))
+	look_at_point(g.earl.global_position + Vector3(0, 1.3, 0))
+	await wait(1.0)
+	await shot("look-earl")
+	var tr: AshTree = g.tree
+	var tp := tr.global_position + Vector3(6, 0, 6)
+	g.player.teleport(Vector3(tp.x, g.world.H(tp.x, tp.z) + 0.05, tp.z))
+	look_at_point(tr.global_position + Vector3(0, 5, 0))
+	await wait(0.8)
+	await shot("look-tree")
+	var t: Truck = g.truck
+	var vp := t.global_transform * Vector3(4.5, 0, 4.0)
+	g.player.teleport(Vector3(vp.x, g.world.H(vp.x, vp.z) + 0.05, vp.z))
+	look_at_point(t.global_transform * Vector3(0, 0.8, -1.5))
+	await wait(0.8)
+	await shot("look-truck")
+	g.equip("saw")
+	g.player.pitch = -0.2
+	await wait(0.5)
+	await shot("look-saw")
+	g.equip("hands")
+	await wait(0.4)
+	await shot("look-hands")
+
+## cut straight through from one side with the real saw and keep the throttle down while it goes
+func _sawdrop() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	var tr: AshTree = g.tree
+	var house := Vector3(g.world.house.x, 0, g.world.house.z)
+	var away := (tr.global_position - house); away.y = 0; away = away.normalized()
+	g.equip("saw"); g.saw.on = true; g.saw.engine_snd = Sfx.engine("saw")
+	g.player.crouch = true
+	# come at it at an angle so the bar only grazes the trunk at first
+	var side := away.cross(Vector3.UP)
+	var st := tr.global_position + away * 1.0 + side * 0.25
+	g.player.teleport(Vector3(st.x, g.world.H(st.x, st.z) + 0.05, st.z))
+	await wait(0.5)
+	look_at_point(tr.global_position + side * 0.2 + Vector3(0, 0.6, 0))
+	g.saw.roll = PI / 2
+	g.force_rev = true
+	await wait(0.6)
+	if tr.cuts.size() > 0: note("graze", [tr.cuts[0].s, tr.cuts[0].exit])
+	g.force_rev = false
+	await wait(0.3)
+	var A = tr.analyze()
+	note("held_frac_after_graze", A.frac if A != null else 1.0)
+	await shot("graze")
+	look_at_point(tr.global_position + Vector3(0, 0.6, 0))
+	g.force_rev = true
+	var tt := 0.0
+	while tr.state == "stand" and tt < 20:
+		await wait(0.25); tt += 0.25
+	note("fell_after", [tt, tr.state])
+	await wait(2.0)
+	g.force_rev = false
+	note("no_crash", true)
+
+func _sawdrop2() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	var tr: AshTree = g.tree
+	var house := Vector3(g.world.house.x, 0, g.world.house.z)
+	var away := (tr.global_position - house); away.y = 0; away = away.normalized()
+	g.equip("saw"); g.saw.on = true; g.saw.engine_snd = Sfx.engine("saw")
+	g.player.crouch = true
+	var st := tr.global_position + away * 0.95
+	g.player.teleport(Vector3(st.x, g.world.H(st.x, st.z) + 0.05, st.z))
+	await wait(0.5)
+	look_at_point(tr.global_position + Vector3(0, 0.6, 0))
+	g.saw.roll = PI / 2
+	g.force_rev = true
+	var tt := 0.0
+	while tr.state == "stand" and tt < 12:
+		await wait(0.25); tt += 0.25
+		if int(tt * 4) % 8 == 0 and tr.cuts.size() > 0: print("s ", tr.cuts[0].s, " exit ", tr.cuts[0].exit, " held ", tr.A.frac if tr.A != null else -1.0)
+	note("fell_after", [tt, tr.state])
+	await wait(3.0)
+	g.force_rev = false
+	await shot("drop-after")
+	note("no_crash", true)

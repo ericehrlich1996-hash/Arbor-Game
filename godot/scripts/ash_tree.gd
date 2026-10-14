@@ -111,6 +111,7 @@ func start_cut(e: Vector3, f: Vector3, n: Vector3) -> Dictionary:
 	return c
 
 func cut_progress(c: Dictionary) -> void:
+	if state != "stand" or not is_instance_valid(c.get("node")): return
 	Wood.update_kerf(c.node, c)
 	dirty = true
 
@@ -123,8 +124,11 @@ func _cut_severs(c: Dictionary, x: float, z: float):
 	var y = _cut_y_at(c, x, z)
 	if y == null: return null
 	if x * x + z * z > pow(Wood.r_at(T, clampf(y, 0, T.H)), 2): return null
-	var d: float = (x - c.e.x) * c.f.x + (y - c.e.y) * c.f.y + (z - c.e.z) * c.f.z
-	return y if d <= c.s else null
+	var p: Vector3 = Vector3(x, y, z) - c.e
+	var d: float = p.dot(c.f)
+	var g: Vector3 = c.n.cross(c.f).normalized()
+	if absf(p.dot(g)) > Wood.kerf_half_width(c.s): return null
+	return y if d <= c.s and d >= -0.03 else null
 
 func analyze():
 	var live := cuts.filter(func(c): return c.s > 0.004)
