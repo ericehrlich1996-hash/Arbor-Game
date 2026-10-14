@@ -23,7 +23,8 @@ func setup(t: Truck) -> void:
 	collision_mask = 1 | 4 | 8 | 64
 	mass = 650.0
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
-	center_of_mass = Vector3(0, 0.15, -2.05)
+	center_of_mass = Vector3(0, 0.1, -2.05)
+	angular_damp = 1.5
 	var mi: MeshInstance3D = Models.chipper().instance(Mats.paint); mi.name = "Body"; add_child(mi)
 	jack_mesh = Models.jack().instance(); add_child(jack_mesh)
 	_box(Vector3(0, 0.5, -1.55), Vector3(1.1, 0.9, 1.0))
@@ -115,6 +116,28 @@ func unhitch() -> void:
 	_clear_joint()
 	mode = "free"
 	_set_jack(true)
+	_settle()
+
+## sit it level on its jack and wheels where it is, at rest (dropping it off the ball with the jack
+## suddenly inside the ground is what used to set it spinning)
+func _settle() -> void:
+	var fwd := global_transform.basis.z; fwd.y = 0
+	if fwd.length() < 0.1: fwd = global_transform.basis.y; fwd.y = 0
+	if fwd.length() < 0.1: fwd = Vector3.FORWARD
+	fwd = fwd.normalized()
+	var cp := global_position
+	_axle_prev = cp - fwd * absf(Models.CHIP_AXLE)
+	var hp := Vector3(cp.x, (world.H(cp.x, cp.z) if world else cp.y) + 0.54, cp.z)
+	_trail_to(hp)
+	PhysicsServer3D.body_set_state(get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, global_transform)
+	linear_velocity = Vector3.ZERO; angular_velocity = Vector3.ZERO
+
+func right_up() -> void:
+	_clear_joint()
+	if freeze: follow_kinematic(false)
+	mode = "free"
+	_set_jack(true)
+	_settle()
 
 ## walking it by hand: no physics joint (a joint yanked by your hands can flip a 650 kg trailer);
 ## the coupler simply follows your hands and the body trails behind on its wheels, hugging the ground
@@ -139,6 +162,7 @@ func set_down() -> void:
 	if freeze: follow_kinematic(false)
 	mode = "free"
 	_set_jack(true)
+	_settle()
 
 ## during the scripted drive in: no joint, the trailer just follows the ball like a real trailer would
 var _axle_prev := Vector3.ZERO

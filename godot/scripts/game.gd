@@ -471,7 +471,22 @@ func compute_aim() -> Dictionary:
 			best = {kind = c[0], t = d}
 	return best
 
+## the truck or chipper lying on its side or roof within reach: "truck", "chipper" or ""
+func _tipped_near() -> String:
+	if player.in_truck or chipper.mode == "hand": return ""
+	for pair in [["truck", truck], ["chipper", chipper]]:
+		var v: Node3D = pair[1]
+		if v.global_transform.basis.y.y < 0.55 and v.global_position.distance_to(player.global_position) < 5.5:
+			return pair[0]
+	return ""
+
 func interact() -> void:
+	var tipped := _tipped_near()
+	if tipped != "":
+		if tipped == "truck": truck.right_up(world)
+		else: chipper.right_up()
+		Sfx.play("thud"); hud.toast("Back on its wheels.", 1.6)
+		return
 	if chipper.mode == "hand":
 		if chipper.near_hitch():
 			chipper.hitch_now(); Sfx.play("clank"); hud.toast("Hitched.", 1.5)
@@ -722,7 +737,9 @@ func _update_hud() -> void:
 	hud.obj_panel.visible = true
 	var t := ""
 	var a := aim
+	var tipped := _tipped_near()
 	if dlg != null: t = ""
+	elif tipped != "": t = "[b]E[/b] Flip the %s back over" % tipped
 	elif chipper.mode == "hand":
 		t = "[b]E[/b] Hitch it to the truck" if chipper.near_hitch() else "[b]E[/b] Set the tongue down"
 	elif haul.drag != null:

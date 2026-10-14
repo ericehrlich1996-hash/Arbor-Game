@@ -127,7 +127,7 @@ func _cut_severs(c: Dictionary, x: float, z: float):
 	var p: Vector3 = Vector3(x, y, z) - c.e
 	var d: float = p.dot(c.f)
 	var g: Vector3 = c.n.cross(c.f).normalized()
-	if absf(p.dot(g)) > Wood.kerf_half_width(c.s): return null
+	if absf(p.dot(g)) > float(c.get("w", Wood.kerf_half_width(c.s))): return null
 	return y if d <= c.s and d >= -0.03 else null
 
 func analyze():
@@ -317,7 +317,10 @@ func start_fall(kind: String) -> void:
 	var sops := [{type = "clip", p = sp, n = -sn}]
 	var kops := []
 	for c in cuts:
-		if c.s > 0.004: kops.append({type = "kerf", e = c.e, f = c.f, n = c.n, s = c.s, done = true})
+		if c.s > 0.004:
+			var ko := {type = "kerf", e = c.e, f = c.f, n = c.n, s = c.s, done = true}
+			if c.has("w"): ko.w = c.w
+			kops.append(ko)
 	for w in wedges: kops.append({type = "prism", mesh = w.mesh})
 	barber_dir = null
 	if kind == "barber":

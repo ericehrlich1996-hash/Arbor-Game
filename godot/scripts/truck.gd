@@ -27,7 +27,8 @@ func setup(rng: RandomNumberGenerator) -> void:
 	collision_mask = 1 | 4 | 8 | 64
 	mass = 1700.0
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
-	center_of_mass = Vector3(0, 0.55, 0.3)
+	center_of_mass = Vector3(0, 0.38, 0.3)
+	angular_damp = 0.6
 	continuous_cd = true
 	var m := Models.truck(rng)
 	paint = m
@@ -61,12 +62,12 @@ func setup(rng: RandomNumberGenerator) -> void:
 		vw.wheel_radius = Models.WHEEL_R
 		vw.wheel_rest_length = 0.2
 		vw.suspension_travel = 0.2
-		vw.suspension_stiffness = 30.0
-		vw.suspension_max_force = 16000.0
-		vw.damping_compression = 2.2
-		vw.damping_relaxation = 2.6
+		vw.suspension_stiffness = 46.0
+		vw.suspension_max_force = 20000.0
+		vw.damping_compression = 3.6
+		vw.damping_relaxation = 4.2
 		vw.wheel_friction_slip = 3.4
-		vw.wheel_roll_influence = 0.15
+		vw.wheel_roll_influence = 0.05
 		vw.use_as_steering = w[2]
 		vw.use_as_traction = not w[2]
 		var wm := MeshInstance3D.new(); wm.mesh = wmesh; wm.material_override = Mats.vcol
@@ -109,6 +110,21 @@ func _box(center: Vector3, size: Vector3) -> void:
 	var b := BoxShape3D.new(); b.size = size
 	cs.shape = b; cs.position = center
 	add_child(cs)
+
+## set it back on its wheels where it lies, still facing the same way
+func right_up(w: WorldGen) -> void:
+	var fwd := global_transform.basis.z; fwd.y = 0
+	if fwd.length() < 0.1: fwd = global_transform.basis.y; fwd.y = 0
+	if fwd.length() < 0.1: fwd = Vector3.FORWARD
+	fwd = fwd.normalized()
+	var p := global_position
+	var gy: float = w.H(p.x, p.z) if w else p.y
+	freeze = false
+	linear_velocity = Vector3.ZERO; angular_velocity = Vector3.ZERO
+	var xf := Transform3D(Basis.looking_at(-fwd, Vector3.UP), Vector3(p.x, gy + 0.35, p.z))
+	global_transform = xf
+	PhysicsServer3D.body_set_state(get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, xf)
+	_still_t = 0.0
 
 func hitch_world() -> Vector3:
 	return global_transform * Models.HITCH

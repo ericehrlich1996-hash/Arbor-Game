@@ -146,13 +146,14 @@ static func op_node(op: Dictionary) -> CSGShape3D:
 static func kerf_half_width(s: float) -> float:
 	return 0.035 + 0.9 * s
 
-## a kerf: the slab the bar has swept, from outside the bark to the cut front s along f
+## a kerf: the slab the bar has swept (a guided cut has the whole bar across the wood: half-width "w";
+## otherwise the bar plunged in nose-first and the slot widens as it goes), from outside the bark to the cut front s along f
 static func _place_kerf(b: CSGBox3D, op: Dictionary) -> void:
 	var n: Vector3 = op.n; var f: Vector3 = op.f
 	var g := n.cross(f).normalized()
 	var back := 0.03      # only wood the bar has actually passed through: nothing behind the entry point
 	var len: float = maxf(op.s, 0.001) + back
-	b.size = Vector3(kerf_half_width(op.s) * 2.0, KERF * 2.0, len)
+	b.size = Vector3(float(op.get("w", kerf_half_width(op.s))) * 2.0, KERF * 2.0, len)
 	b.transform = Transform3D(Basis(g, n, f), op.e + f * (op.s - len / 2.0))
 
 static func update_kerf(node: CSGShape3D, op: Dictionary) -> void:

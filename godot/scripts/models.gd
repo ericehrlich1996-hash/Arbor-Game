@@ -471,16 +471,16 @@ static func chainsaw() -> MeshBuilder:
 	mb.cyl(0, -0.008, 0, 0.037, 0.037, 0.016, steel, 12, true)
 	mb.cyl(0, -0.009, 0, 0.012, 0.012, 0.018, grey, 8, true)
 	mb.pop()
-	for k in range(26):
-		var z := -0.24 - k * 0.023
-		mb.box(0, 0.04, z, 0.016, 0.012, 0.012, dk); mb.box(0, -0.04, z, 0.016, 0.012, 0.012, dk)
-		if k % 2 == 0:
-			mb.box(0, 0.047, z - 0.004, 0.018, 0.005, 0.007, steel); mb.box(0, -0.047, z - 0.004, 0.018, 0.005, 0.007, steel)
-	for k in range(5):
-		var a := -PI / 2 + PI * k / 4.0
-		mb.box(0, sin(a) * 0.043, -0.83 - cos(a) * 0.043, 0.016, 0.012, 0.012, dk)
+	# (the chain itself is a separate, moving part: see chain_link and Saw)
 	mb.box(0, 0, -0.22, 0.06, 0.09, 0.04, dk)
 	mb.box(0.0, -0.06, -0.3, 0.02, 0.02, 0.02, grey)                                          # bucking spike
+	return mb
+
+## one chain link with its cutter tooth (the chain runs round the bar as a loop of these)
+static func chain_link() -> MeshBuilder:
+	var mb := MeshBuilder.new()
+	mb.box(0, 0, 0, 0.016, 0.012, 0.016, h("#232426"))
+	mb.box(0, 0.007, -0.003, 0.019, 0.006, 0.008, h("#b8bcc0"))
 	return mb
 
 ## a gloved hand, kept simple: a ball with a cuff behind it (the bar it holds runs along local X)

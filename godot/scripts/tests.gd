@@ -1108,3 +1108,93 @@ func _tow() -> void:
 	note("mode_after", c.mode)
 	note("up_after_setdown", c.global_transform.basis.y.y)
 	await shot("tow-down")
+
+func _fix2() -> void:
+	await wait(0.5)
+	g._start()
+	g.player.pitch = -0.1
+	await wait(0.4)
+	await shot("fix2-hands")
+	# unhitch the chipper: it must sit still on its jack
+	var c: Chipper = g.chipper
+	var cp := c.coupler_world()
+	g.player.teleport(Vector3(cp.x + 1.5, g.world.H(cp.x + 1.5, cp.z) + 0.05, cp.z + 1.0))
+	look_at_point(cp)
+	await wait(0.3)
+	g.hitch_action()
+	await wait(3.0)
+	note("chipper_up", c.global_transform.basis.y.y)
+	note("chipper_spin", c.angular_velocity.length())
+	await shot("fix2-unhitched")
+	# knock the truck over and flip it back
+	var t: Truck = g.truck
+	t.freeze = false
+	t.global_transform = Transform3D(Basis(t.global_transform.basis.z, 1.7) * t.global_transform.basis, t.global_position + Vector3(0, 1.2, 0))
+	await wait(3.0)
+	note("truck_tipped_up", t.global_transform.basis.y.y)
+	var tp := t.global_position + Vector3(3, 0, 0)
+	g.player.teleport(Vector3(tp.x, g.world.H(tp.x, tp.z) + 0.05, tp.z))
+	await wait(0.3)
+	note("tipped_near", g._tipped_near())
+	await shot("fix2-tipped")
+	g.interact()
+	await wait(3.0)
+	note("truck_after_flip", t.global_transform.basis.y.y)
+	# the saw across the trunk, mid back-cut
+	var tr: AshTree = g.tree
+	var R: float = Wood.r_at(tr.T, 0.6)
+	var dir := Vector3(1, 0, 0)
+	g.equip("saw"); g.saw.on = true; g.saw.engine_snd = Sfx.engine("saw")
+	var st := tr.global_position + dir * (R + 0.9)
+	g.player.teleport(Vector3(st.x, g.world.H(st.x, st.z) + 0.05, st.z))
+	look_at_point(tr.to_world(Vector3(0, 0.9, 0)) + dir * R)
+	await wait(0.4)
+	g.force_rev = true
+	await wait(0.5)
+	await shot("fix2-sawing")
+	g.force_rev = false
+	note("cut_w", g.saw.cut.get("w", -1.0) if g.saw.cut else -2.0)
+	await wait(0.3)
+	g.player.crouch = true
+	look_at_point(tr.to_world(Vector3(0, 0.5, 0)) + dir * R)
+	await wait(0.6)
+	g.force_rev = true
+	await wait(0.4)
+	await shot("fix2-sawing2")
+	g.force_rev = false
+
+func _fix3() -> void:
+	await wait(0.5)
+	g._start()
+	var p: Vector3 = g.tree.global_position + Vector3(4, 0, 4)
+	g.player.teleport(Vector3(p.x, g.world.H(p.x, p.z) + 0.05, p.z))
+	g.player.pitch = -0.25
+	await wait(0.5)
+	await shot("fix3-hands")
+	var t: Truck = g.truck
+	t.freeze = false
+	var b := t.global_transform.basis
+	var txf := Transform3D(Basis(b.z.normalized(), PI) * b, t.global_position + Vector3(0, 1.8, 0))
+	t.global_transform = txf
+	PhysicsServer3D.body_set_state(t.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, txf)
+	await wait(1.5)
+	note("after_tip_up", t.global_transform.basis.y.y)
+	var tp := t.global_position + Vector3(3, 0, 0)
+	g.player.teleport(Vector3(tp.x, g.world.H(tp.x, tp.z) + 0.05, tp.z))
+	look_at_point(t.global_position)
+	await wait(0.3)
+	note("tipped_near", g._tipped_near())
+	await shot("fix3-tipped")
+	g.interact()
+	await wait(3.0)
+	note("truck_after_flip", t.global_transform.basis.y.y)
+	await shot("fix3-flipped")
+
+func _hands() -> void:
+	await wait(0.5)
+	g._start()
+	var p: Vector3 = g.tree.global_position + Vector3(4, 0, 4)
+	g.player.teleport(Vector3(p.x, g.world.H(p.x, p.z) + 0.05, p.z))
+	g.player.pitch = 0.0
+	await wait(0.5)
+	await shot("hands-idle")

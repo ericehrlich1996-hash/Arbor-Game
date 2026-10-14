@@ -35,9 +35,16 @@ var _t := 0.0
 # guided cutting: aim at the trunk or a log and the cut goes exactly there, square across unless you tilt it
 var tilt := 0.0                # radians; + slopes down into the wood (a notch's top cut), − slopes up
 var guide := {}                # what the crosshair is on: {kind, xf, e, f, n, existing, piece}
+var chain_mm: MultiMeshInstance3D
+var chain_pos := 0.0           # how far the chain has run round the bar (m)
 var guide_mi: MeshInstance3D
 var guide_im: ImmediateMesh
 const GUIDE_REACH := 1.75
+# the chain loop: straight along the top and bottom of the bar, round the nose and the drive sprocket
+const CHAIN_Z0 := -0.24        # drive sprocket centre
+const CHAIN_Z1 := -0.83        # nose sprocket centre
+const CHAIN_R := 0.041
+const CHAIN_LINKS := 60
 const SHOULDER_R := Vector3(0.26, -0.55, 0.12)
 const SHOULDER_L := Vector3(-0.38, -0.52, 0.08)
 # sawdust
@@ -51,6 +58,14 @@ var _pile_t := 0.0
 func setup(g, p: Player) -> void:
 	game = g; player = p
 	model = Models.chainsaw().instance(); add_child(model)
+	# the chain: links running round the bar (over the top toward the nose, back along the bottom)
+	chain_mm = MultiMeshInstance3D.new()
+	var cmm := MultiMesh.new(); cmm.transform_format = MultiMesh.TRANSFORM_3D
+	cmm.mesh = Models.chain_link().commit(); cmm.instance_count = CHAIN_LINKS
+	chain_mm.multimesh = cmm; chain_mm.material_override = Mats.vcol
+	chain_mm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	model.add_child(chain_mm)
+	_place_chain()
 	fist_r = Models.fist(1).instance(); fist_l = Models.fist(-1).instance()
 	arm_r = Models.arm().instance(); arm_l = Models.arm().instance()
 	for m in [model, fist_r, fist_l, arm_r, arm_l]:
@@ -121,25 +136,15 @@ func pose(dt: float, rev: bool, carrying: bool) -> void:
 		var depth := 0.0
 		if cut != null: depth = cut.s
 		elif g.existing != null: depth = g.existing.s
-		# hold the saw comfortably in front of you, bar lying in the cut's plane and pointing at the cut,
-		# its nose just in the wood (deeper as the cut goes)
-		var hand := cw0 * Vector3(0.1, -0.32, -0.5)
-		hand -= nw * nw.dot(hand - ew)
-		var bdir := ew - hand
-		if bdir.length() < 0.05: bdir = fw
-		bdir = bdir.normalized()
-		var cam_f := -cw0.basis.z
-		var t_tip := 0.06 + depth
-		var org := ew + bdir * (t_tip - BAR_L + BAR_BASE)
-		var ahead := (org - cw0.origin).dot(cam_f)
-		if ahead < 0.45 and bdir.dot(cam_f) > 0.25: t_tip += (0.45 - ahead) / bdir.dot(cam_f)
-		var bw := ew + bdir * (t_tip - BAR_L)
-		var zb := -bdir
+		# the bar lies across the wood in the cut's plane, its chain edge on the cut front; the body on your right
+		var gw := nw.cross(fw).normalized()
+		var bar_dir := -gw if gw.dot(cw0.basis.x) > 0 else gw
+		var front := ew + fw * (depth - 0.01)
+		var zb := -bar_dir
 		var xb := nw
 		var yb := zb.cross(xb)
-		if absf(yb.dot(Vector3.UP)) > 0.2:
-			if yb.dot(Vector3.UP) < 0: xb = -xb; yb = -yb
-		elif yb.dot(-cw0.basis.x) < 0: xb = -xb; yb = -yb
+		if yb.dot(fw) > 0: xb = -xb; yb = -yb          # the top of the saw faces away from the cut
+		var bw := front + yb * 0.036 - bar_dir * (BAR_L * 0.5)
 		var wxf := Transform3D(Basis(xb, yb, zb), bw - zb * BAR_BASE)
 		var lx := cw0.affine_inverse() * wxf
 		eq = Quaternion(lx.basis.orthonormalized()); ep = lx.origin
@@ -216,6 +221,37 @@ func _open_cuts() -> Array:
 				out.append(op)
 	return out
 
+## where a point a distance u round the chain loop sits, in saw space, and which way the chain runs there
+func _chain_at(u: float) -> Array:
+	var straight := CHAIN_Z0 - CHAIN_Z1
+	var arc := PI * CHAIN_R
+	var L := 2.0 * straight + 2.0 * arc
+	u = fposmod(u, L)
+	if u < straight:                       # along the top, out toward the nose
+		return [Vector3(0, CHAIN_R, CHAIN_Z0 - u), Vector3(0, 0, -1)]
+	u -= straight
+	if u < arc:                            # round the nose
+		var a := u / CHAIN_R
+		return [Vector3(0, CHAIN_R * cos(a), CHAIN_Z1 - CHAIN_R * sin(a)), Vector3(0, -sin(a), -cos(a))]
+	u -= arc
+	if u < straight:                       # back along the bottom, toward the saw
+		return [Vector3(0, -CHAIN_R, CHAIN_Z1 + u), Vector3(0, 0, 1)]
+	u -= straight
+	var b := u / CHAIN_R                   # round the drive sprocket (inside the body)
+	return [Vector3(0, -CHAIN_R * cos(b), CHAIN_Z0 + CHAIN_R * sin(b)), Vector3(0, sin(b), cos(b))]
+
+func _place_chain() -> void:
+	var L := 2.0 * (CHAIN_Z0 - CHAIN_Z1) + 2.0 * PI * CHAIN_R
+	var mm := chain_mm.multimesh
+	for i in range(CHAIN_LINKS):
+		var pr := _chain_at(chain_pos + L * i / CHAIN_LINKS)
+		var d: Vector3 = pr[1]
+		var out: Vector3 = (pr[0] as Vector3) - Vector3(0, 0, clampf((pr[0] as Vector3).z, CHAIN_Z1, CHAIN_Z0))
+		var upv := out.normalized() if out.length() > 1e-4 else Vector3.UP
+		var zb := -d
+		var xb := upv.cross(zb).normalized()
+		mm.set_instance_transform(i, Transform3D(Basis(xb, upv, zb), pr[0]))
+
 ## a gloved fist at p with its cuff turned toward the shoulder, and the sleeve running from the cuff
 func _fist_at(fist: MeshInstance3D, arm: MeshInstance3D, p: Vector3, shoulder: Vector3) -> void:
 	var to_sh := shoulder - p
@@ -236,8 +272,9 @@ func pose_hands(carrying: bool) -> void:
 	for side in [1.0, -1.0]:
 		var fist: MeshInstance3D = fist_r if side > 0 else fist_l
 		var arm: MeshInstance3D = arm_r if side > 0 else arm_l
-		var p := Vector3(side * 0.24, -0.3 + boby, -0.55) if carrying else Vector3(side * (0.25 + bobx), -0.3 + boby, -0.5)
-		_fist_at(fist, arm, p, Vector3(side * 0.3, -0.62, 0.12))
+		var p := Vector3(side * 0.24, -0.3 + boby, -0.55) if carrying else Vector3(side * (0.25 + bobx), -0.255 + boby, -0.52)
+		# the forearm runs straight back and down from the fist, in line with it (no kink at the wrist)
+		_fist_at(fist, arm, p, p + Vector3(side * 0.02, -0.3, 0.55))
 	guide = {}
 	_draw_guide()
 
@@ -382,6 +419,14 @@ func step(dt: float, rev: bool, carrying: bool) -> void:
 	cutting = false; bind = false
 	if pull > 0: pull = maxf(0, pull - dt)
 	if on: rpm = lerpf(rpm, 1.0 if rev else 0.05, minf(1, dt * (6 if rev else 3)))
+	else: rpm = lerpf(rpm, 0.0, minf(1, dt * 3))
+	# the clutch: the chain only runs above idle; at speed it's a blur round the bar
+	var cs := maxf(0.0, rpm - 0.25) / 0.75 * 2.4
+	if cs > 0.0 and model.visible:
+		# capped so it never strobes backwards (the eye can't follow a real chain anyway)
+		var pitch := (2.0 * (CHAIN_Z0 - CHAIN_Z1) + 2.0 * PI * CHAIN_R) / CHAIN_LINKS
+		chain_pos += minf(cs * dt, pitch * 0.42)
+		_place_chain()
 	if engine_snd: engine_snd.setv(rpm * (0.82 if cutting else 1.0), 0.0, 0.42)
 	if player.tool != "saw" or not on or carrying: cut = null; return
 	if not rev or k < 0.96: cut = null; return
@@ -432,6 +477,12 @@ func step(dt: float, rev: bool, carrying: bool) -> void:
 				_kerf_t = _t
 				if cut.has("node") and is_instance_valid(cut.node): Wood.update_kerf(cut.node, cut)
 
+## the bar spans the wood: a guided cut is as wide as the trunk or log (a straight cut across, like a real one)
+func _guided_width(g: Dictionary) -> float:
+	var TT: Dictionary = g.T
+	var e: Vector3 = g.e
+	return clampf(Wood.r_at(TT, clampf(e.y, 0.0, TT.H)) * 1.2, 0.08, BAR_L * 0.55)
+
 func _start_guided(g: Dictionary):
 	var tree: AshTree = game.tree
 	var c
@@ -445,6 +496,9 @@ func _start_guided(g: Dictionary):
 	c.part = c.get("part", {trunk = true})
 	c.guided = true
 	c.T = g.T
+	if not c.has("w"):
+		c.w = _guided_width(g)
+		if c.has("node") and is_instance_valid(c.node): Wood.update_kerf(c.node, c)
 	return c
 
 func _start_cut(h: Dictionary):
