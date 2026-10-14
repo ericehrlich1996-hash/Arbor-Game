@@ -7,6 +7,8 @@ var verts := PackedVector3Array()
 var norms := PackedVector3Array()
 var cols := PackedColorArray()
 var idx := PackedInt32Array()
+var uvs := PackedVector2Array()
+var has_uv := false
 var _stack: Array[Transform3D] = []
 var xf := Transform3D.IDENTITY
 
@@ -23,7 +25,9 @@ func push(t: Transform3D) -> void:
 func pop() -> void:
 	xf = _stack.pop_back()
 
-func v(p: Vector3, n: Vector3, c: Color) -> int:
+func v(p: Vector3, n: Vector3, c: Color, uv := Vector2.ZERO) -> int:
+	if uv != Vector2.ZERO: has_uv = true
+	uvs.push_back(uv)
 	verts.push_back(xf * p)
 	norms.push_back((xf.basis * n).normalized())
 	cols.push_back(c)
@@ -148,6 +152,43 @@ func face(p: Array, c: Color) -> void:
 	for i in range(1, p.size() - 1):
 		tri(ids[0], ids[i + 1], ids[i])
 
+## a textured card: centre c, half-extent vectors ax (u) and ay (v), uv rect [u0,v0,u1,v1].
+## nrm is the lighting normal (foliage uses soft "round" normals rather than the card's own)
+func card(c: Vector3, ax: Vector3, ay: Vector3, col: Color, nrm: Vector3, uvr := Vector4(0, 0, 1, 1), sway_lo := 0.0, sway_hi := 1.0) -> void:
+	var c0 := Color(col.r, col.g, col.b, sway_lo); var c1 := Color(col.r, col.g, col.b, sway_hi)
+	var a := v(c - ax - ay, nrm, c0, Vector2(uvr.x, uvr.w))
+	var b := v(c + ax - ay, nrm, c0, Vector2(uvr.z, uvr.w))
+	var d := v(c + ax + ay, nrm, c1, Vector2(uvr.z, uvr.y))
+	var e := v(c - ax + ay, nrm, c1, Vector2(uvr.x, uvr.y))
+	quad(a, b, d, e)
+
+## a box with its edges chamfered by r (reads as a rounder, less blocky shape)
+func bevel_box(x: float, y: float, z: float, w: float, h: float, d: float, c: Color, r := 0.03) -> void:
+	r = minf(r, minf(w, minf(h, d)) * 0.45)
+	var hx := w * 0.5; var hy := h * 0.5; var hz := d * 0.5
+	var o := Vector3(x, y, z)
+	# the 6 faces, each inset by r
+	box(x, y, z, w - 2 * r, h, d - 2 * r, c)
+	box(x, y, z, w, h - 2 * r, d - 2 * r, c)
+	box(x, y, z, w - 2 * r, h - 2 * r, d, c)
+	# chamfer strips along the 12 edges
+	for sx in [-1.0, 1.0]:
+		for sy in [-1.0, 1.0]:
+			_chamfer(o + Vector3(sx * (hx - r), sy * (hy - r), 0), Vector3(sx, 0, 0), Vector3(0, sy, 0), Vector3(0, 0, hz - r), r, c)
+		for sz in [-1.0, 1.0]:
+			_chamfer(o + Vector3(sx * (hx - r), 0, sz * (hz - r)), Vector3(sx, 0, 0), Vector3(0, 0, sz), Vector3(0, hy - r, 0), r, c)
+	for sy in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_chamfer(o + Vector3(0, sy * (hy - r), sz * (hz - r)), Vector3(0, sy, 0), Vector3(0, 0, sz), Vector3(hx - r, 0, 0), r, c)
+
+func _chamfer(edge: Vector3, a: Vector3, b: Vector3, half_len: Vector3, r: float, c: Color) -> void:
+	var p0 := edge + a * r; var p1 := edge + b * r
+	var nn := (a + b).normalized()
+	var i0 := v(p0 - half_len, nn, c); var i1 := v(p1 - half_len, nn, c); var i2 := v(p1 + half_len, nn, c); var i3 := v(p0 + half_len, nn, c)
+	var face_n := (p1 - p0).cross(half_len)
+	if face_n.dot(nn) > 0: quad(i0, i1, i2, i3)
+	else: quad(i0, i3, i2, i1)
+
 func is_empty() -> bool:
 	return idx.is_empty()
 
@@ -160,6 +201,7 @@ func commit(mesh: ArrayMesh = null) -> ArrayMesh:
 	arr[Mesh.ARRAY_NORMAL] = norms
 	arr[Mesh.ARRAY_COLOR] = cols
 	arr[Mesh.ARRAY_INDEX] = idx
+	if has_uv: arr[Mesh.ARRAY_TEX_UV] = uvs
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 	return mesh
 

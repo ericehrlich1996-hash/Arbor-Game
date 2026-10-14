@@ -129,6 +129,93 @@ func _build() -> void:
 	sounds.engine_truck = _engine_loop(100, 6, 520)
 	sounds.grit_saw = _grit_loop(2600)
 	sounds.grit_chip = _grit_loop(900)
+	# the woods: a soft wind loop, songbirds, a woodpecker now and then
+	sounds.wind = _wind_loop()
+	sounds.creek = _creek_loop()
+	for v in range(5): sounds["bird%d" % v] = _bird(v)
+	b = _buf(1.1)
+	for i in range(12): _noise(b, 0.025, 1400, 3, 0.35 * (1.0 - i / 14.0), "bandpass", i * 0.055)
+	sounds.woodpecker = _wav(b)
+
+## a bird call: a few quick whistled sweeps, each variant a different song
+func _bird(v: int) -> AudioStreamWAV:
+	var r := RandomNumberGenerator.new(); r.seed = 300 + v
+	var b := _buf(1.6)
+	var notes := r.randi_range(2, 6)
+	var t0 := 0.0
+	var base := r.randf_range(2400, 4200)
+	for n in range(notes):
+		var dur := r.randf_range(0.05, 0.16)
+		var f0 := base * r.randf_range(0.85, 1.2); var f1 := f0 * r.randf_range(0.7, 1.45)
+		var trill := r.randf() < 0.3
+		var ph := 0.0
+		var n0 := int(t0 * RATE)
+		for i in range(int(dur * RATE)):
+			var t := float(i) / RATE
+			var f := lerpf(f0, f1, t / dur) * (1.0 + (0.06 * sin(TAU * 38.0 * t) if trill else 0.0))
+			ph += f / RATE
+			var env := sin(PI * t / dur)
+			var k := n0 + i
+			if k < b.size(): b[k] += sin(ph * TAU) * env * env * 0.22
+		t0 += dur + r.randf_range(0.03, 0.14)
+		if t0 > 1.4: break
+	return _wav(b)
+
+## babbling water: band-passed noise with lots of little bubbling blips
+func _creek_loop() -> AudioStreamWAV:
+	var b := _buf(4.0)
+	var flt := Biquad.new("bandpass", 1100, 0.6, RATE)
+	for i in range(b.size()): b[i] = flt.run(randf() * 2 - 1) * 0.35
+	for k in range(120):
+		var at := randf() * 3.8; var f0 := randf_range(500, 1400)
+		var n0 := int(at * RATE); var dur := randf_range(0.02, 0.06); var ph := 0.0
+		for i in range(int(dur * RATE)):
+			var t := float(i) / RATE
+			ph += f0 * (1.0 + t / dur * 0.8) / RATE
+			var kk := n0 + i
+			if kk < b.size(): b[kk] += sin(ph * TAU) * sin(PI * t / dur) * 0.12
+	var fade := 2000
+	for i in range(fade):
+		var k := float(i) / fade
+		b[i] = b[i] * k + b[b.size() - fade + i] * (1 - k)
+	var w := _wav(b.slice(0, b.size() - fade), true)
+	return w
+
+func _wind_loop() -> AudioStreamWAV:
+	var b := _buf(6.0)
+	var flt := Biquad.new("lowpass", 520, 0.7, RATE)
+	var flt2 := Biquad.new("bandpass", 1600, 1.2, RATE)
+	for i in range(b.size()):
+		var t := float(i) / RATE
+		var gust := 0.55 + 0.3 * sin(TAU * t / 6.0) + 0.15 * sin(TAU * t / 2.0 + 1.0)
+		var x := randf() * 2 - 1
+		b[i] = (flt.run(x) * 0.9 + flt2.run(x) * 0.12 * gust) * gust
+	var fade := 2000
+	for i in range(fade):
+		var k := float(i) / fade
+		b[i] = b[i] * k + b[b.size() - fade + i] * (1 - k)
+	return _wav(b.slice(0, b.size() - fade), true)
+
+# ------------------------------------------------------------ ambience
+var _amb_on := false
+var _wind: AudioStreamPlayer
+var _next_bird := 2.0
+var _next_pecker := 25.0
+
+func start_ambience() -> void:
+	if _amb_on: return
+	_amb_on = true
+	_wind = AudioStreamPlayer.new(); _wind.stream = sounds.wind; _wind.volume_db = linear_to_db(0.16); add_child(_wind); _wind.play()
+
+func _process(dt: float) -> void:
+	if not _amb_on: return
+	_next_bird -= dt; _next_pecker -= dt
+	if _next_bird <= 0:
+		_next_bird = randf_range(2.5, 8.0)
+		play("bird%d" % (randi() % 5), randf_range(0.08, 0.3), randf_range(0.9, 1.15))
+	if _next_pecker <= 0:
+		_next_pecker = randf_range(30.0, 70.0)
+		play("woodpecker", 0.18, randf_range(0.9, 1.1))
 
 func _engine_loop(f: float, lfo: float, lp: float) -> AudioStreamWAV:
 	var b := _buf(1.0)

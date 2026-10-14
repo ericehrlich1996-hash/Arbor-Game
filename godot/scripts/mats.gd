@@ -23,6 +23,9 @@ var sap: StandardMaterial3D         # fresh-cut wood
 var sap_v: StandardMaterial3D       # fresh-cut wood, vertex coloured (limb ends)
 var grass: ShaderMaterial
 var glass: StandardMaterial3D
+var paint: StandardMaterial3D
+var chrome: StandardMaterial3D
+var lamp: StandardMaterial3D
 
 func _ready() -> void:
 	var nz := FastNoiseLite.new()
@@ -50,6 +53,9 @@ func _ready() -> void:
 	sap.roughness = 0.9
 	sap.cull_mode = BaseMaterial3D.CULL_DISABLED
 	sap_v = vcol.duplicate()
+	paint = vcol.duplicate(); paint.roughness = 0.42; paint.metallic_specular = 0.6
+	chrome = vcol.duplicate(); chrome.metallic = 0.85; chrome.roughness = 0.22
+	lamp = vcol.duplicate(); lamp.emission_enabled = true; lamp.emission = Color(0.25, 0.22, 0.18); lamp.roughness = 0.2
 	glass = vcol.duplicate()
 	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	glass.albedo_color = Color(1, 1, 1, 0.22)

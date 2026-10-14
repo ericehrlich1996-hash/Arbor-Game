@@ -765,3 +765,229 @@ func _magnet() -> void:
 	await wait(1.0)
 	g.force_rev = false
 	note("magnet", {cuts = tr.cuts.size(), s_before = s0, s_after = tr.cuts[0].s, roll_after_deg = rad_to_deg(g.saw.roll)})
+
+func _view(name: String, at: Vector3, look: Vector3) -> void:
+	g.player.teleport(Vector3(at.x, g.world.H(at.x, at.z) + 0.05, at.z))
+	look_at_point(look)
+	await wait(0.8)
+	await shot(name)
+
+func _forest() -> void:
+	note("startup_ms", Time.get_ticks_msec())
+	await wait(1.0)
+	await shot("forest-title")
+	g._start()
+	var w: WorldGen = g.world
+	# from the middle of the yard toward each side
+	await _view("forest-yard-n", Vector3(0, 0, 30), Vector3(0, 3, 80))
+	await _view("forest-yard-w", Vector3(-30, 0, 10), Vector3(-80, 4, 10))
+	# standing in the woods
+	await _view("forest-inside", Vector3(-70, 0, 20), Vector3(-90, 3, 35))
+	await _view("forest-inside2", Vector3(60, 0, 70), Vector3(80, 5, 90))
+	# the drive in from the road
+	await _view("forest-road", Vector3(w.s * 30, 0, w.road_z), Vector3(0, 2, w.road_z + 30))
+	note("fps", Engine.get_frames_per_second())
+
+func _forest2() -> void:
+	await wait(1.0)
+	var n := 0; var tris := 0
+	for c in g.level_root.get_children():
+		if c is MultiMeshInstance3D: n += c.multimesh.instance_count
+	note("instances", n)
+	g._start()
+	await _view("f2-inside", Vector3(-70, 0, 20), Vector3(-90, 3, 35))
+	await _view("f2-edge", Vector3(-30, 0, 10), Vector3(-80, 4, 10))
+	note("fps", Engine.get_frames_per_second())
+
+func _perf() -> void:
+	g._start()
+	var tr: AshTree = g.tree
+	var spots := [g.earl.global_position + Vector3(2.5, 0, -2.0), tr.global_position + Vector3(6, 0, 6), Vector3(60, 0, 60), Vector3(-80, 0, 20)]
+	for s: Vector3 in spots:
+		g.player.teleport(Vector3(s.x, g.world.H(s.x, s.z) + 0.05, s.z))
+		for i in range(6):
+			var t0 := Time.get_ticks_msec()
+			await get_tree().process_frame
+			print("PERF ", s, " frame ", Time.get_ticks_msec() - t0, "ms prims ", RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME), " objs ", RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME), " draws ", RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME))
+		if OS.get_environment("PERF_QUICK") != "": break
+
+func _tris() -> void:
+	var f := Forest.new()
+	f.w = g.world
+	f._models()
+	for k in f.models:
+		var m: Mesh = f.models[k].mesh
+		var n := 0
+		for s in range(m.get_surface_count()):
+			var a := m.surface_get_arrays(s)
+			n += (a[Mesh.ARRAY_INDEX].size() if a[Mesh.ARRAY_INDEX] != null else a[Mesh.ARRAY_VERTEX].size()) / 3
+		print("TRIS ", k, " ", n)
+	var cnt := {}
+	for mi in g.get_tree().root.find_children("*", "MultiMeshInstance3D", true, false):
+		var k: String = str((mi as MultiMeshInstance3D).multimesh.mesh.get_rid())
+		cnt[k] = cnt.get(k, 0) + (mi as MultiMeshInstance3D).multimesh.instance_count
+	var tot := 0
+	for mi in g.get_tree().root.find_children("*", "MultiMeshInstance3D", true, false):
+		tot += (mi as MultiMeshInstance3D).multimesh.instance_count
+	print("TRIS instances ", tot)
+
+func _ablate() -> void:
+	g._start()
+	var s: Vector3 = g.earl.global_position + Vector3(2.5, 0, -2.0)
+	g.player.teleport(Vector3(s.x, g.world.H(s.x, s.z) + 0.05, s.z))
+	look_at_point(g.earl.global_position + Vector3(0, 1.3, 0))
+	var all: Array = g.get_tree().root.find_children("*", "GeometryInstance3D", true, false)
+	var groups := {"near": "^(fir|oak|birch)\\d$", "mid": "_mid", "far": "_far", "fern": "fern", "bush": "bush", "grass": "^(grass|Grass)", "rocklog": "^(rock|log|stump|snag)", "flower": "flower", "terrain": "Terrain", "shafts": "LightShafts", "treeline": "Treeline"}
+	await _ptime("base")
+	for gname in groups:
+		var re := RegEx.create_from_string(groups[gname])
+		var hid := []
+		for n: GeometryInstance3D in all:
+			if n.visible and re.search(str(n.get_meta("key", n.name))) != null:
+				n.visible = false; hid.append(n)
+		await _ptime("no-" + gname + " (" + str(hid.size()) + ")")
+		for n: GeometryInstance3D in hid: n.visible = true
+	g.sun.shadow_enabled = false
+	await _ptime("no-shadow")
+
+func _ptime(label: String) -> void:
+	await get_tree().process_frame
+	var t0 := Time.get_ticks_msec()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	print("ABL ", label, " ", (Time.get_ticks_msec() - t0) / 2, "ms prims ", RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME))
+
+func _gallery() -> void:
+	await wait(0.5)
+	g._start()
+	var h: Dictionary = g.world.house
+	var fz: float = h.z - h.d / 2
+	await _view("gal-house", Vector3(h.x + 4, 0, fz - 12), Vector3(h.x, g.world.H(h.x, h.z) + 2.2, h.z))
+	await _view("gal-porch", Vector3(h.x + h.w * 0.18 - 3, 0, fz - 5.5), Vector3(h.x + h.w * 0.18, g.world.H(h.x, h.z) + 1.3, fz - 1.2))
+	var s: Dictionary = g.world.shed
+	await _view("gal-shed", Vector3(s.x + 3, 0, s.z - 6), Vector3(s.x, g.world.H(s.x, s.z) + 1.3, s.z))
+	var e: Vector3 = g.earl.global_position
+	var ef: Vector3 = g.earl.global_transform.basis.z
+	await _view("gal-earl", e + ef * 1.8 + Vector3(0.3, 0, 0), e + Vector3(0, 1.45, 0))
+	var c: Chipper = g.chipper
+	await _view("gal-chipper", c.global_transform * Vector3(3.2, 0, -2.0), c.global_transform * Vector3(0, 0.6, -2.2))
+	var t: Truck = g.truck
+	await _view("gal-truck", t.global_transform * Vector3(3.5, 0, 2.8), t.global_transform * Vector3(0, 0.9, 0.5))
+	await _view("gal-truck-rear", t.global_transform * Vector3(-2.5, 0, -5.5), t.global_transform * Vector3(0, 0.9, -1.5))
+	await _view("gal-woods", Vector3(-70, 0, 20), Vector3(-90, 2, 32))
+	await _view("gal-woods2", Vector3(60, 0, -60), Vector3(80, 2, -75))
+	var cz: float = g.world.creek_z(-20.0)
+	await _view("gal-creek", Vector3(-24, 0, cz - 8), Vector3(-16, g.world.H(-16, cz) + 0.3, cz))
+	g.equip("saw")
+	await _view("gal-saw", g.tree.global_position + Vector3(2, 0, 2), g.tree.global_position + Vector3(0, 0.8, 0))
+
+## chaos: a long run of random actions all over the job, checking nothing goes NaN, flips or falls through the world
+func _soak() -> void:
+	await wait(0.5)
+	g._start()
+	g.objs.talk = true
+	await _fell_tree_quick()
+	var rng := RandomNumberGenerator.new(); rng.seed = int(OS.get_environment("SOAK_SEED")) if OS.get_environment("SOAK_SEED") != "" else 7
+	var steps := int(OS.get_environment("SOAK_STEPS")) if OS.get_environment("SOAK_STEPS") != "" else 50
+	var acts := {}
+	for i in range(steps):
+		var ps: Array = g.pieces()
+		var a := rng.randi() % 10
+		var name := ""
+		if g.player.in_truck and a != 6: g.exit_truck()
+		match a:
+			0, 1:
+				name = "pickup"
+				if not ps.is_empty():
+					var b: WoodPiece = ps[rng.randi() % ps.size()]
+					var p := b.global_position + Vector3(rng.randf_range(-1.5, 1.5), 0, rng.randf_range(-1.5, 1.5))
+					g.player.teleport(Vector3(p.x, g.world.H(p.x, p.z) + 0.05, p.z))
+					look_at_point(b.global_position)
+					await wait(0.15)
+					g.equip("hands"); g.interact()
+			2:
+				name = "throw"
+				if g.haul.carrying(): look_at_point(g.truck.global_position + Vector3(0, 1, 0)); g.haul.throw_one()
+			3:
+				name = "drop"
+				if g.haul.carrying(): g.haul.drop_all()
+			4:
+				name = "kick"
+				g.haul.kick()
+			5:
+				name = "saw"
+				if not ps.is_empty():
+					var b: WoodPiece = ps[rng.randi() % ps.size()]
+					var p := b.global_position + Vector3(rng.randf_range(-1.2, 1.2), 0, rng.randf_range(-1.2, 1.2))
+					g.haul.drop_all()
+					g.player.teleport(Vector3(p.x, g.world.H(p.x, p.z) + 0.05, p.z))
+					look_at_point(b.global_position)
+					g.equip("saw"); g.saw.on = true
+					if g.saw.engine_snd == null: g.saw.engine_snd = Sfx.engine("saw")
+					g.force_rev = true
+					await wait(rng.randf_range(0.3, 2.0))
+					g.force_rev = false
+			6:
+				name = "drive"
+				g.haul.drop_all()
+				if not g.player.in_truck:
+					var tp: Vector3 = g.truck.global_transform * Vector3(-1.6, 0, 0.2)
+					g.player.teleport(Vector3(tp.x, g.world.H(tp.x, tp.z) + 0.05, tp.z))
+					look_at_point(g.truck.global_position + Vector3(0, 1.2, 0))
+					await wait(0.1)
+					g.enter_truck()
+				var act := "move_fwd" if rng.randf() < 0.7 else "move_back"
+				Input.action_press(act)
+				if rng.randf() < 0.5: Input.action_press("move_left")
+				await wait(rng.randf_range(0.5, 1.5))
+				Input.action_release(act); Input.action_release("move_left")
+			7:
+				name = "drag"
+				if not ps.is_empty():
+					var b: WoodPiece = ps[rng.randi() % ps.size()]
+					if g.haul.can_drag(b):
+						g.haul.drop_all()
+						var p := b.global_position + Vector3(1.0, 0, 0.5)
+						g.player.teleport(Vector3(p.x, g.world.H(p.x, p.z) + 0.05, p.z))
+						look_at_point(b.global_position)
+						await wait(0.1)
+						g.haul.start_drag(b)
+						Input.action_press("move_back"); await wait(0.6); Input.action_release("move_back")
+						g.haul.stop_drag()
+			8:
+				name = "chipper"
+				g.haul.drop_all()
+				var hp: Vector3 = g.chipper.hopper_world()
+				g.player.teleport(Vector3(hp.x, g.world.H(hp.x, hp.z) + 0.05, hp.z - 1.0))
+				g.toggle_chipper()
+			9:
+				name = "detail"
+				g.set_detail(1 - g.detail)
+		acts[name] = acts.get(name, 0) + 1
+		await wait(0.2)
+		# sanity
+		for b in g.pieces():
+			var bp: Vector3 = b.global_position
+			if not bp.is_finite(): note("BAD_nan_piece", [i, name]); break
+			if bp.y < g.world.H(bp.x, bp.z) - 3.0: note("BAD_fell_through", [i, name, bp]); break
+		var pp: Vector3 = g.player.global_position
+		if not pp.is_finite() or pp.y < g.world.H(pp.x, pp.z) - 2.0: note("BAD_player", [i, name, pp])
+		if g.truck.global_transform.basis.y.y < 0.3: note("BAD_truck_flipped", [i, name])
+	if g.player.in_truck: g.exit_truck()
+	g.set_detail(1)
+	note("acts", acts)
+	note("pieces", g.pieces().size())
+	note("fps_end", Engine.get_frames_per_second())
+
+func _gal2() -> void:
+	await wait(1.0)
+	await shot("g2-title")
+	g._start()
+	var x := -20.0
+	var cz: float = g.world.creek_z(x)
+	await _view("g2-creek", Vector3(x, 0, cz - 3.9), Vector3(x + 12, g.world.H(x + 12, g.world.creek_z(x + 12)), g.world.creek_z(x + 12)))
+	await _view("g2-creek2", Vector3(x + 3, 0, cz + 4.2), Vector3(x - 8, g.world.H(x - 8, g.world.creek_z(x - 8)) + 0.4, g.world.creek_z(x - 8)))
+	await _view("g2-road", Vector3(10, 0, g.world.road_z + 5), Vector3(30, 5, g.world.road_z - 6))
+	g.player.pitch = 0.6
+	await wait(0.5)
+	await shot("g2-sky")

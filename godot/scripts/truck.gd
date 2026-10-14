@@ -31,7 +31,13 @@ func setup(rng: RandomNumberGenerator) -> void:
 	continuous_cd = true
 	var m := Models.truck(rng)
 	paint = m
-	var body: MeshInstance3D = m.body.instance(); body.name = "Body"; add_child(body)
+	var mesh := ArrayMesh.new()
+	for part in [[m.paint, Mats.paint], [m.chrome, Mats.chrome], [m.dark, Mats.vcol], [m.lamps, Mats.lamp]]:
+		var mb: MeshBuilder = part[0]
+		if mb.is_empty(): continue
+		mb.commit(mesh)
+		mesh.surface_set_material(mesh.get_surface_count() - 1, part[1])
+	var body := MeshInstance3D.new(); body.mesh = mesh; body.name = "Body"; add_child(body)
 	var tg: MeshInstance3D = m.tailgate.instance(Mats.vcol_glass); tg.name = "Tailgate"
 	tg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(tg)

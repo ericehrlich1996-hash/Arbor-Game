@@ -24,7 +24,7 @@ func setup(t: Truck) -> void:
 	mass = 650.0
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	center_of_mass = Vector3(0, 0.15, -2.05)
-	var mi: MeshInstance3D = Models.chipper().instance(); mi.name = "Body"; add_child(mi)
+	var mi: MeshInstance3D = Models.chipper().instance(Mats.paint); mi.name = "Body"; add_child(mi)
 	jack_mesh = Models.jack().instance(); add_child(jack_mesh)
 	_box(Vector3(0, 0.5, -1.55), Vector3(1.1, 0.9, 1.0))
 	_box(Vector3(0, 0.55, -2.45), Vector3(1.0, 1.1, 0.9))

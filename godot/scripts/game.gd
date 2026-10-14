@@ -47,6 +47,8 @@ func _ready() -> void:
 	hud.next_job_pressed.connect(func(): get_tree().reload_current_scene())
 	money = Career.load().money
 	new_level(randi() % 1000000 + 1)
+	Sfx.start_ambience()
+	if OS.get_environment("ARBOR_LOW") != "": set_detail(0)
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--test="):
 			tests = load("res://scripts/tests.gd").new()
@@ -69,17 +71,56 @@ func _setup_input() -> void:
 		var mb := InputEventMouseButton.new(); mb.button_index = act[1]
 		InputMap.action_add_event(act[0], mb)
 
+## sky: blue overhead, hazy at the horizon, a warm sun with a glow round it, and soft fair-weather clouds
+const SKY_SHADER := """
+shader_type sky;
+uniform vec3 top_color : source_color = vec3(0.29, 0.5, 0.76);
+uniform vec3 horizon_color : source_color = vec3(0.78, 0.85, 0.9);
+uniform vec3 ground_color : source_color = vec3(0.36, 0.42, 0.3);
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+	vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float fbm(vec2 p) {
+	float v = 0.0; float a = 0.5;
+	for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; }
+	return v;
+}
+void sky() {
+	vec3 d = EYEDIR;
+	float y = d.y;
+	vec3 col = mix(horizon_color, top_color, smoothstep(0.0, 0.55, y));
+	if (y < 0.0) col = mix(horizon_color, ground_color, smoothstep(0.0, -0.25, y));
+	float sd = 0.0;
+	if (LIGHT0_ENABLED) {
+		sd = max(dot(d, LIGHT0_DIRECTION), 0.0);
+		col += LIGHT0_COLOR * (pow(sd, 900.0) * 6.0 + pow(sd, 24.0) * 0.3 + pow(sd, 4.0) * 0.06);
+	}
+	if (y > 0.0) {
+		vec2 uv = d.xz / (y + 0.12) * 0.55;
+		float c = fbm(uv * 1.3 + vec2(3.0, 1.0));
+		c = smoothstep(0.5, 0.78, c) * smoothstep(0.02, 0.22, y);
+		float shade = 0.82 + 0.18 * fbm(uv * 2.6 + vec2(-1.0, 2.0)) + 0.25 * pow(sd, 6.0);
+		col = mix(col, vec3(1.0, 0.98, 0.95) * shade, c * 0.85);
+	}
+	COLOR = col;
+}
+"""
+
 func _setup_env() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
-	var sky := Sky.new(); var sm := ProceduralSkyMaterial.new()
-	sm.sky_top_color = Color("#4a7fc0"); sm.sky_horizon_color = Color("#c4d6e4")
-	sm.ground_horizon_color = Color("#b4c2b0"); sm.ground_bottom_color = Color("#5a6a48")
-	sm.sun_angle_max = 25.0; sm.sun_curve = 0.12
+	var sky := Sky.new()
+	var sm := ShaderMaterial.new(); var ssh := Shader.new()
+	ssh.code = SKY_SHADER
+	sm.shader = ssh
 	sky.sky_material = sm; env.sky = sky
+	sky.radiance_size = Sky.RADIANCE_SIZE_64
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.75
-	env.ambient_light_sky_contribution = 0.85
+	env.ambient_light_color = Color("#c9d2b0")
+	env.ambient_light_energy = 0.95
+	env.ambient_light_sky_contribution = 0.55
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_exposure = 1.0
 	env.tonemap_white = 6.0
@@ -89,17 +130,49 @@ func _setup_env() -> void:
 	env.glow_enabled = true
 	env.glow_intensity = 0.25; env.glow_bloom = 0.04
 	env.fog_enabled = true
-	env.fog_light_color = Color("#c8d6e0"); env.fog_density = 0.0022; env.fog_sky_affect = 0.1; env.fog_aerial_perspective = 0.4
+	env.fog_light_color = Color("#dcd6c0"); env.fog_density = 0.0022; env.fog_sky_affect = 0.15; env.fog_aerial_perspective = 0.3
+	env.fog_sun_scatter = 0.25
 	if OS.has_feature("web"): env.tonemap_exposure = 1.08      # browsers present the frame a touch darker
 	var we := WorldEnvironment.new(); we.environment = env; add_child(we)
 	sun = DirectionalLight3D.new()
 	sun.rotation = Vector3(deg_to_rad(-40), deg_to_rad(145), 0)     # warm afternoon light from behind your shoulder on the drive in
-	sun.light_energy = 1.35; sun.light_color = Color("#ffe9cc")
+	sun.light_energy = 1.3; sun.light_color = Color("#ffe2b8")
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.5
-	sun.directional_shadow_max_distance = 80
+	sun.directional_shadow_max_distance = 60
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	add_child(sun)
+
+# ================================================================ graphics detail
+var detail := 1
+var ambient: Ambient
+var _fps_t := 0.0
+var _fps_frames := 0
+var _fps_checked := false
+
+## low detail pulls the forest's draw distances in and turns off sun shadows, for slower machines
+func set_detail(d: int) -> void:
+	detail = d
+	sun.shadow_enabled = d == 1
+	var k := 1.0 if d == 1 else 0.55
+	if level_root == null: return
+	for n in level_root.find_children("*", "GeometryInstance3D", true, false):
+		if n.has_meta("vr"):
+			var vr: Vector2 = n.get_meta("vr")
+			(n as GeometryInstance3D).visibility_range_begin = vr.x * k
+			(n as GeometryInstance3D).visibility_range_end = vr.y * k if vr.y < 400.0 else vr.y
+
+## if the first few seconds of play run badly, drop to low detail once and say so
+func _watch_fps(dt: float) -> void:
+	if _fps_checked or phase != "play" or tests != null: return
+	_fps_t += dt
+	if _fps_t < 2.0: return              # shaders are still compiling in the first moments
+	_fps_frames += 1
+	if _fps_t > 8.0:
+		_fps_checked = true
+		if _fps_frames / (_fps_t - 2.0) < 24.0 and detail == 1:
+			set_detail(0)
+			hud.toast("Running slow, so I lowered the graphics detail. F3 switches it back.", 4.0)
 
 # ================================================================ a new property
 func new_level(sd: int) -> void:
@@ -107,6 +180,8 @@ func new_level(sd: int) -> void:
 	if level_root: level_root.queue_free()
 	level_root = Node3D.new(); level_root.name = "Level"; add_child(level_root)
 	world = WorldGen.new(); world.setup(sd); world.build(level_root)
+	ambient = Ambient.new(); ambient.name = "Ambient"; level_root.add_child(ambient)
+	ambient.setup(Vector3(0, world.H(0, 0), 0))
 	var rng := RandomNumberGenerator.new(); rng.seed = sd + 99
 	truck = Truck.new(); truck.name = "Truck"
 	level_root.add_child(truck)
@@ -285,6 +360,10 @@ func _input(ev: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _unhandled_input(ev: InputEvent) -> void:
+	if ev is InputEventKey and ev.pressed and not ev.echo and ev.physical_keycode == KEY_F3:
+		set_detail(1 - detail)
+		hud.toast("Graphics: " + ("high detail" if detail == 1 else "low detail (faster)") + "  ·  F3 to switch", 2.5)
+		return
 	if phase == "intro":
 		if ev is InputEventKey and ev.pressed and ev.physical_keycode in [KEY_SPACE, KEY_ENTER, KEY_ESCAPE]: end_intro()
 		return
@@ -671,11 +750,14 @@ func _physics_process(dt: float) -> void:
 
 func _process(dt: float) -> void:
 	clock += dt
+	_watch_fps(dt)
+	var cam := get_viewport().get_camera_3d()
+	if ambient and cam: ambient.step(dt, cam.global_position)
 	if phase == "title":
 		# a slow orbit over the yard, between the house and the dead ash
 		var a := clock * 0.04
 		var c := Vector3((world.tree.x + world.house.x) * 0.5, 0, (world.tree.z + world.house.z) * 0.5)
-		title_cam.global_position = Vector3(c.x + sin(a) * 34, world.H(c.x, c.z) + 22, c.z + cos(a) * 34)
+		title_cam.global_position = Vector3(c.x + sin(a) * 26, world.H(c.x, c.z) + 21, c.z + cos(a) * 26)
 		title_cam.look_at(Vector3(c.x, world.H(c.x, c.z) + 2, c.z))
 	elif phase == "intro":
 		_step_intro(dt)
