@@ -93,6 +93,7 @@ func engine_world() -> Vector3:
 ## put the coupler on the hitch ball and connect it
 func hitch_now() -> void:
 	_clear_joint()
+	if freeze and mode == "hand": follow_kinematic(false)
 	var hp := truck.hitch_world()
 	var tb := truck.global_transform.basis
 	global_transform = Transform3D(tb, hp)
@@ -115,28 +116,27 @@ func unhitch() -> void:
 	mode = "free"
 	_set_jack(true)
 
-func grab_tongue(hand: Vector3) -> void:
+## walking it by hand: no physics joint (a joint yanked by your hands can flip a 650 kg trailer);
+## the coupler simply follows your hands and the body trails behind on its wheels, hugging the ground
+func grab_tongue(_hand: Vector3) -> void:
 	_clear_joint()
-	anchor.global_position = global_position
-	joint = PinJoint3D.new()
-	add_child(joint)
-	joint.global_position = global_position
-	joint.node_a = anchor.get_path()
-	joint.node_b = get_path()
+	follow_kinematic(true)
 	mode = "hand"
 	_set_jack(false)
 
-## while walking it: the anchor follows your hands (moved a bit each physics step so the joint pulls smoothly)
 func move_hand(target: Vector3, dt: float) -> void:
 	if mode != "hand": return
-	var p := anchor.global_position
-	var d := target - p
-	var mx := 3.0 * dt
+	var p := global_position
+	var d := Vector3(target.x - p.x, 0, target.z - p.z)
+	var mx := 2.6 * dt
 	if d.length() > mx: d = d.normalized() * mx
-	anchor.global_position = p + d
+	var hp := p + d
+	hp.y = (world.H(hp.x, hp.z) if world else p.y) + 0.54
+	_trail_to(hp)
 
 func set_down() -> void:
 	_clear_joint()
+	if freeze: follow_kinematic(false)
 	mode = "free"
 	_set_jack(true)
 
@@ -152,7 +152,9 @@ func follow_kinematic(on: bool) -> void:
 		linear_velocity = Vector3.ZERO; angular_velocity = Vector3.ZERO
 
 func trail(_dt: float) -> void:
-	var hp := truck.hitch_world()
+	_trail_to(truck.hitch_world())
+
+func _trail_to(hp: Vector3) -> void:
 	var head := hp - _axle_prev; head.y = 0
 	if head.length() < 1e-3: return
 	head = head.normalized()

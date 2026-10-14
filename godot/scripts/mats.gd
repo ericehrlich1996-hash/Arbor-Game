@@ -73,9 +73,11 @@ func _ready() -> void:
 	sh.code = """
 shader_type spatial;
 render_mode cull_disabled, specular_disabled;
+global uniform float detail_k;
 uniform float wind = 0.09;
 void vertex() {
 	vec3 w = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	VERTEX *= 1.0 - smoothstep(26.0, 37.0, distance(w, CAMERA_POSITION_WORLD) / max(detail_k, 0.05));   // grows in, no popping
 	float h = VERTEX.y;
 	VERTEX.x += sin(TIME * 1.7 + w.x * 0.35 + w.z * 0.21) * wind * h;
 	VERTEX.z += cos(TIME * 1.3 + w.x * 0.27 - w.z * 0.3) * wind * h * 0.6;

@@ -219,6 +219,10 @@ static func init() -> void:
 	mats.fern = _foliage(tex.fern, 1.4)
 	mats.grass = _foliage(tex.grass, 1.6)
 	mats.flower = _foliage(tex.flower, 1.2)
+	mats.bush = _foliage(tex.leaves_small, 1.0)
+	mats.litter = _foliage(tex.leaves, 0.0)
+	for k in [["fern", 55.0], ["grass", 50.0], ["flower", 45.0], ["bush", 80.0], ["litter", 45.0]]:
+		(mats[k[0]] as ShaderMaterial).set_shader_parameter("shrink_end", k[1])
 	mats.bark_fir = _bark(_noise_tex(0.06, 3, Color("#3a2b22"), Color("#7a5a44"), Vector2.ONE, true), Vector3(6, 0.5, 6))
 	mats.bark_oak = _bark(_noise_tex(0.05, 3, Color("#2e2925"), Color("#5f574c"), Vector2.ONE, true), Vector3(5, 0.7, 5))
 	mats.bark_birch = _bark(_noise_tex(0.04, 2, Color("#2a2826"), Color("#ecebe4"), Vector2.ONE, false), Vector3(2, 6, 2))
@@ -239,10 +243,21 @@ static func _foliage_shader() -> Shader:
 	_fsh.code = """
 shader_type spatial;
 render_mode cull_disabled, diffuse_lambert_wrap, specular_disabled;
+global uniform float detail_k;
 uniform sampler2D tex : source_color, filter_linear_mipmap, repeat_disable;
 uniform float wind = 1.0;
 uniform float cut = 0.45;
+// level-of-detail blending: x..y fade in, z..w fade out (metres from the camera, per plant)
+uniform vec4 fade = vec4(-2.0, -1.0, 100000.0, 100001.0);
+uniform bool fade_inv = false;
+// small plants shrink into the ground near this distance instead of popping out
+uniform float shrink_end = -1.0;
+varying float vfade;
 void vertex() {
+	vec3 org = MODEL_MATRIX[3].xyz;
+	float d = distance(org, CAMERA_POSITION_WORLD) / max(detail_k, 0.05);
+	vfade = smoothstep(fade.x, fade.y, d) * (1.0 - smoothstep(fade.z, fade.w, d));
+	if (shrink_end > 0.0) VERTEX *= 1.0 - smoothstep(shrink_end * 0.7, shrink_end, d);
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float w = COLOR.a * wind;
 	float t = TIME;
@@ -252,6 +267,12 @@ void vertex() {
 	VERTEX.y += sin(t * 2.7 + wp.x * 0.5 + wp.z * 0.4) * 0.025 * w;
 }
 void fragment() {
+	if (vfade < 0.999) {
+		// screen-door dither: the outgoing and incoming models use complementary pixels, so they cross-fade
+		float h = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
+		if (fade_inv) h = 1.0 - h;
+		if (h >= vfade) discard;
+	}
 	vec4 tx = texture(tex, UV);
 	ALBEDO = tx.rgb * pow(COLOR.rgb, vec3(2.2));
 	ALPHA = tx.a;
@@ -439,7 +460,7 @@ static func litter(seed: int) -> ArrayMesh:
 		var a := r.randf() * TAU; var sz := r.randf_range(0.5, 0.9)
 		var col: Color = [Color(0.85, 0.5, 0.2), Color(0.7, 0.32, 0.16), Color(0.82, 0.66, 0.3), Color(0.55, 0.42, 0.25)][r.randi() % 4]
 		mb.card(p, Vector3(cos(a), 0, sin(a)) * sz, Vector3(-sin(a), 0, cos(a)) * sz, col, Vector3.UP, Vector4(0, 0, 1, 1), 0.0, 0.0)
-	return _mesh([[mb, mats.leaves]])
+	return _mesh([[mb, mats.litter]])
 
 ## a leafy bush: a dome of leaf cards
 static func bush(seed: int, tint: Color) -> ArrayMesh:
@@ -455,7 +476,7 @@ static func bush(seed: int, tint: Color) -> ArrayMesh:
 		var ax := Vector3(cos(a), r.randf_range(-0.3, 0.3), sin(a)).normalized() * sz
 		var ay := ax.cross(Vector3(r.randf() - 0.5, 1, r.randf() - 0.5)).normalized() * sz
 		mb.card(p, ax, ay, tint * r.randf_range(0.8, 1.1), _soft_normal(p, ctr - Vector3(0, 0.4, 0)), Vector4(0, 0, 1, 1), 0.3, 0.7)
-	return _mesh([[mb, mats.leaves_small]])
+	return _mesh([[mb, mats.bush]])
 
 ## a clump of tall grass (crossed cards) and a flower spike
 static func grass_clump(seed: int, tall: float) -> ArrayMesh:

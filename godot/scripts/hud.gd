@@ -96,7 +96,10 @@ func _ready() -> void:
 		hotbar.add_child(p); slots[k[0]] = p
 	root.add_child(hotbar)
 	# bar tilt readout (bottom right)
-	tilt = _label("", 15, DIM); tilt.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT); tilt.position = Vector2(-150, -50)
+	tilt = _label("", 16, DIM); tilt.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	tilt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tilt.offset_left = -300; tilt.offset_right = 300; tilt.offset_top = -100; tilt.offset_bottom = -76
+	tilt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8)); tilt.add_theme_constant_override("outline_size", 5)
 	root.add_child(tilt)
 	# toast
 	toast_lbl = _label("", 17); toast_lbl.set_anchors_preset(Control.PRESET_CENTER); toast_lbl.position = Vector2(-300, -170)
@@ -125,7 +128,7 @@ func _ready() -> void:
 	help.set_anchors_preset(Control.PRESET_TOP_RIGHT); help.position = Vector2(-410, 90); help.custom_minimum_size = Vector2(390, 0)
 	var hl := RichTextLabel.new(); hl.bbcode_enabled = true; hl.fit_content = true; hl.scroll_active = false; hl.custom_minimum_size = Vector2(360, 0)
 	hl.add_theme_font_size_override("normal_font_size", 14); hl.add_theme_font_size_override("bold_font_size", 14)
-	hl.text = "[b]WASD[/b] walk · [b]Shift[/b] run · [b]Space[/b] jump · [b]C[/b] crouch\n[b]Mouse[/b] look (click to capture)\n[b]E[/b] talk / pick up / use / drive / hitch\n[b]1 2 3[/b] hands · chainsaw · ear muffs\n[b]R[/b] pull-start the saw · [b]Right mouse[/b] rev and cut\n[b]Wheel[/b] roll the saw (turns the cut)\n[b]Q[/b] drop one · [b]G[/b] throw · [b]T[/b] drag · [b]F[/b] kick\n[b]F3[/b] graphics detail (high / low) · [b]H[/b] this help"
+	hl.text = "[b]WASD[/b] walk · [b]Shift[/b] run · [b]Space[/b] jump · [b]C[/b] crouch\n[b]Mouse[/b] look (click to capture)\n[b]E[/b] talk / pick up / use / drive / hitch\n[b]1 2 3[/b] hands · chainsaw · ear muffs\n[b]R[/b] pull-start the saw · [b]Right mouse[/b] rev and cut\n[b]Wheel[/b] angle the cut (aim at a trunk or log: the line shows where it goes)\n[b]Q[/b] drop one · [b]G[/b] throw · [b]T[/b] drag · [b]F[/b] kick\n[b]F3[/b] graphics detail (high / low) · [b]H[/b] this help"
 	help.add_child(hl); help.visible = false
 	root.add_child(help)
 	# fade + intro card

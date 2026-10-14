@@ -58,10 +58,24 @@ func _models() -> void:
 const NEAR := 42.0
 const MID := 88.0
 
+## the three models cross-fade (a dithered blend in the foliage shader) instead of popping
 func _lods(key: String, make: Callable) -> void:
-	models[key] = {mesh = make.call(0), end = NEAR, shadow = true}
-	models[key + "_mid"] = {mesh = make.call(1), begin = NEAR - 6.0, end = MID, shadow = false}
-	models[key + "_far"] = {mesh = make.call(2), begin = MID - 8.0, end = 420.0, shadow = false}
+	var near: ArrayMesh = make.call(0); var mid: ArrayMesh = make.call(1); var far: ArrayMesh = make.call(2)
+	_fade(near, Vector4(-2, -1, NEAR - 7.0, NEAR), false)
+	_fade(mid, Vector4(NEAR - 7.0, NEAR, MID - 9.0, MID), true)
+	_fade(far, Vector4(MID - 9.0, MID, 1e5, 1e5 + 1.0), true)
+	models[key] = {mesh = near, end = NEAR + 1.0, shadow = true}
+	models[key + "_mid"] = {mesh = mid, begin = NEAR - 8.0, end = MID + 1.0, shadow = false}
+	models[key + "_far"] = {mesh = far, begin = MID - 10.0, end = 420.0, shadow = false}
+
+static func _fade(m: ArrayMesh, f: Vector4, inv: bool) -> void:
+	for i in range(m.get_surface_count()):
+		var mat := m.surface_get_material(i)
+		if mat is ShaderMaterial:
+			var d: ShaderMaterial = mat.duplicate()
+			d.set_shader_parameter("fade", f)
+			d.set_shader_parameter("fade_inv", inv)
+			m.surface_set_material(i, d)
 
 func _tree(key: String, x: float, z: float, yaw: float, s: float) -> void:
 	_add(key, x, z, yaw, s); _add(key + "_mid", x, z, yaw, s); _add(key + "_far", x, z, yaw, s)
@@ -203,8 +217,8 @@ func _emit() -> void:
 			mi.set_meta("key", key)
 			mi.visibility_range_begin = md.get("begin", 0.0)
 			mi.visibility_range_end = md.end
-			mi.visibility_range_end_margin = 10.0
-			mi.visibility_range_begin_margin = 10.0 if md.has("begin") else 0.0
+			mi.visibility_range_end_margin = 1.0
+			mi.visibility_range_begin_margin = 1.0 if md.has("begin") else 0.0
 			mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 			mi.set_meta("vr", Vector2(mi.visibility_range_begin, mi.visibility_range_end))
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if md.shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

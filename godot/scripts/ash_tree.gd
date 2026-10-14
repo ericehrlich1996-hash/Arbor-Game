@@ -212,7 +212,7 @@ func _leans_over_hold(an: Dictionary) -> bool:
 func step(dt: float) -> void:
 	t += dt
 	if state == "stand":
-		if dirty and t - last_build > 0.11:
+		if dirty and t - last_build > 0.05:
 			dirty = false; last_build = t
 			A = analyze()
 			if A != null:
@@ -229,7 +229,7 @@ func step(dt: float) -> void:
 				else: go_kind = ""
 		if go_kind != "":
 			go_acc += dt
-			if go_acc > 0.14: start_fall(go_kind)
+			if go_acc > 0.05: start_fall(go_kind)
 		else: go_acc = 0
 	elif state == "hinge":
 		_hinge_step(dt)

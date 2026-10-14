@@ -991,3 +991,120 @@ func _gal2() -> void:
 	g.player.pitch = 0.6
 	await wait(0.5)
 	await shot("g2-sky")
+
+## fell the tree with the guided saw the way a player would: notch on the fall side, back cut from behind
+func _guided() -> void:
+	await wait(0.5)
+	g._start()
+	g.objs.talk = true
+	var tr: AshTree = g.tree
+	var R: float = Wood.r_at(tr.T, 0.6)
+	var house := Vector3(g.world.house.x, 0, g.world.house.z)
+	var away := tr.global_position - house; away.y = 0; away = away.normalized()
+	var base := tr.global_position
+	g.equip("saw"); g.saw.on = true; g.saw.engine_snd = Sfx.engine("saw")
+	g.player.crouch = true
+	# stand on the fall side, aim at the bark facing us
+	var stand := base + away * (R + 0.95)
+	g.player.teleport(Vector3(stand.x, g.world.H(stand.x, stand.z) + 0.05, stand.z))
+	await wait(0.5)
+	var hb := 0.55
+	var top_h := hb + 2 * R * 0.33 * tan(deg_to_rad(50))
+	look_at_point(tr.to_world(Vector3(0, top_h, 0)) + away * R)
+	g.saw.tilt = deg_to_rad(50)
+	await wait(0.4)
+	note("guide_top", [not g.saw.guide.is_empty(), g.saw.guide.get("kind", "")])
+	await shot("guided-aim")
+	g.force_rev = true
+	var tt := 0.0
+	while tt < 12.0 and (g.saw.cut == null or Vector3(g.saw.cut.f).dot(Vector3(g.saw.cut.f)) > 0 and g.saw.cut.s < 2 * R * 0.33 / cos(deg_to_rad(50))):
+		await wait(0.1); tt += 0.1
+	note("top_cut", [g.saw.cut.s if g.saw.cut else -1.0, tt])
+	await shot("guided-topcut")
+	g.force_rev = false
+	await wait(0.3)
+	look_at_point(tr.to_world(Vector3(0, hb, 0)) + away * R)
+	g.saw.tilt = 0.0
+	await wait(0.4)
+	g.force_rev = true
+	tt = 0.0
+	while tt < 12.0 and tr.freed.is_empty():
+		await wait(0.1); tt += 0.1
+	g.force_rev = false
+	note("notch_out", [not tr.freed.is_empty(), tt])
+	await wait(0.6)
+	await shot("guided-notch")
+	# back cut from the other side, a little above the notch floor
+	var back := base - away * (R + 0.95)
+	g.player.teleport(Vector3(back.x, g.world.H(back.x, back.z) + 0.05, back.z))
+	await wait(0.4)
+	look_at_point(tr.to_world(Vector3(0, hb + 0.04, 0)) - away * R)
+	await wait(0.4)
+	await shot("guided-backaim")
+	g.force_rev = true
+	tt = 0.0
+	while tt < 20.0 and tr.state == "stand":
+		await wait(0.1); tt += 0.1
+	g.force_rev = false
+	note("fell", [tr.state, tt, tr.grade])
+	g.player.crouch = false
+	await wait(4.0)
+	var vp := base - away * 6.0
+	g.player.teleport(Vector3(vp.x, g.world.H(vp.x, vp.z) + 0.05, vp.z))
+	look_at_point(base + away * 6.0)
+	await wait(0.5)
+	await shot("guided-down")
+	# buck: aim at the stem 3 m out and cut a round, timing it
+	var st: WoodPiece = tr.stem
+	if st and is_instance_valid(st):
+		for id in st.limbs.duplicate(): Lumber.limb_off(g, st, id)
+		await wait(1.0)
+		st = tr.stem
+		var wp := st.to_world(Vector3(0, st.span.x + 3.0, 0))
+		var ax := st.global_transform.basis.y.normalized()
+		var sd := ax.cross(Vector3.UP).normalized()
+		var ey := wp + sd * 0.9
+		g.player.teleport(Vector3(ey.x, g.world.H(ey.x, ey.z) + 0.05, ey.z))
+		await wait(0.3)
+		look_at_point(wp + Vector3(0, 0.15, 0))
+		await wait(0.4)
+		note("buck_guide", [not g.saw.guide.is_empty(), g.saw.guide.get("kind", "")])
+		await shot("guided-buckaim")
+		var n0: int = g.pieces().size()
+		g.force_rev = true
+		tt = 0.0
+		while tt < 25.0 and g.pieces().size() == n0:
+			await wait(0.1); tt += 0.1
+		g.force_rev = false
+		note("buck_time", tt)
+		await wait(0.5)
+		await shot("guided-bucked")
+
+## unhitch the chipper, walk it around by the tongue, set it down: it must stay on its wheels
+func _tow() -> void:
+	await wait(0.5)
+	g._start()
+	var c: Chipper = g.chipper
+	g.hitch_action()
+	await wait(1.0)
+	var cp := c.coupler_world()
+	var fwd: Vector3 = c.global_transform.basis.z; fwd.y = 0; fwd = fwd.normalized()
+	var stand := cp + fwd * 1.0
+	g.player.teleport(Vector3(stand.x, g.world.H(stand.x, stand.z) + 0.05, stand.z))
+	look_at_point(cp)
+	await wait(0.3)
+	g.hitch_action()
+	note("mode", c.mode)
+	# walk backwards, then turn and walk on
+	Input.action_press("move_back"); await wait(2.0)
+	Input.action_press("move_left"); await wait(1.5); Input.action_release("move_left")
+	Input.action_release("move_back")
+	g.player.yaw += 1.2
+	Input.action_press("move_fwd"); await wait(2.0); Input.action_release("move_fwd")
+	note("up_while_towing", c.global_transform.basis.y.y)
+	await shot("tow-moving")
+	g.interact()
+	await wait(2.0)
+	note("mode_after", c.mode)
+	note("up_after_setdown", c.global_transform.basis.y.y)
+	await shot("tow-down")

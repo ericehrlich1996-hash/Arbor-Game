@@ -45,6 +45,8 @@ func _hold(b: WoodPiece, on: bool) -> void:
 
 func pick_up(b: WoodPiece) -> void:
 	_hold(b, true)
+	b.set_meta("held_t", 0.0)
+	if b.has_meta("carry_roll"): b.remove_meta("carry_roll")
 	carry.append(b)
 	Sfx.play("pick")
 
@@ -86,8 +88,12 @@ func step_carry(dt: float) -> void:
 	var fw := p.fwd(); var rt := Vector3(cos(p.yaw), 0, -sin(p.yaw))
 	var stack_y := 0.0
 	var i := 0
+	var eye := p.cam.global_position
 	for b in carry:
-		var k := minf(1.0, dt * 12)
+		# ease in for a moment after pick-up, then ride rigidly with you
+		var held_t: float = b.get_meta("held_t", 0.0) + dt
+		b.set_meta("held_t", held_t)
+		var k := 1.0 if held_t > 0.3 else minf(1.0, dt * 14)
 		if b.is_brush() or b.kind == "wedge":
 			var ba: Dictionary = b.brush_axis()
 			var dir := (fw * 0.8 + rt * (-0.55 + i * 0.06) + Vector3(0, -0.08 + i * 0.03, 0)).normalized()
@@ -96,9 +102,19 @@ func step_carry(dt: float) -> void:
 		else:
 			# over the right shoulder, the round's axis running fore and aft
 			var r := Wood.r_at(b.T, b.center_wood().y)
-			var sh := p.global_position + Vector3(0, p.eye_h - 0.16 + r + stack_y, 0) + rt * (0.3 + r * 0.5) + fw * 0.12
+			var sh := eye + Vector3(0, -0.16 + r + stack_y, 0) + rt * (0.3 + r * 0.5) + fw * 0.12
 			stack_y += r * 1.85
-			place(b, Vector3.UP, fw + Vector3(0, 0.18, 0), b.center_wood(), sh, k)
+			# a fixed hold: the log's axis runs fore and aft, it doesn't roll or swing
+			var ax := (fw + Vector3(0, 0.18, 0)).normalized()
+			var side := rt - ax * rt.dot(ax)
+			var tb := Basis(side.normalized(), ax, side.normalized().cross(ax))
+			var roll: float = b.get_meta("carry_roll", randf() * TAU)
+			b.set_meta("carry_roll", roll)
+			tb = tb * Basis(Vector3.UP, roll)
+			var cur: Basis = b.global_transform.basis.orthonormalized()
+			var nb := Basis(Quaternion(cur).slerp(Quaternion(tb), k))
+			var want: Vector3 = sh - nb * b.center_wood()
+			b.global_transform = Transform3D(nb, b.global_position.lerp(want, k))
 		i += 1
 
 # ---------------------------------------------------------------- throwing

@@ -155,6 +155,7 @@ func set_detail(d: int) -> void:
 	detail = d
 	sun.shadow_enabled = d == 1
 	var k := 1.0 if d == 1 else 0.55
+	RenderingServer.global_shader_parameter_set(&"detail_k", k)
 	if level_root == null: return
 	for n in level_root.find_children("*", "GeometryInstance3D", true, false):
 		if n.has_meta("vr"):
@@ -378,7 +379,11 @@ func _unhandled_input(ev: InputEvent) -> void:
 		return
 	if ev is InputEventMouseButton and ev.pressed and (ev.button_index == MOUSE_BUTTON_WHEEL_UP or ev.button_index == MOUSE_BUTTON_WHEEL_DOWN):
 		if player.tool == "saw" and not player.in_truck:
-			saw.roll = wrapf(saw.roll + (0.08 if ev.button_index == MOUSE_BUTTON_WHEEL_UP else -0.08), -PI, PI)
+			if not saw.guide.is_empty():
+				# guided cut: the wheel tilts the cut, in 5° steps (level, a sloping notch top, or an upward cut)
+				saw.tilt = clampf(saw.tilt + deg_to_rad(5.0 if ev.button_index == MOUSE_BUTTON_WHEEL_DOWN else -5.0), deg_to_rad(-70), deg_to_rad(70))
+			else:
+				saw.roll = wrapf(saw.roll + (0.08 if ev.button_index == MOUSE_BUTTON_WHEEL_UP else -0.08), -PI, PI)
 		return
 	if ev is InputEventKey and ev.pressed and ev.physical_keycode == KEY_ESCAPE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -702,7 +707,13 @@ func _update_hud() -> void:
 	hud.money.text = "$%d" % money
 	hud.tool_state.text = ("Saw: running" if saw.on else "Saw: off · R to start") if player.tool == "saw" else ""
 	hud.tilt.visible = player.tool == "saw" and not player.in_truck and phase == "play"
-	hud.tilt.text = "Bar roll %d°" % int(rad_to_deg(saw.roll))
+	if not saw.guide.is_empty():
+		var tdeg := int(round(rad_to_deg(saw.tilt)))
+		var ang := "level" if tdeg == 0 else ("%d° down" % tdeg if tdeg > 0 else "%d° up" % -tdeg)
+		if saw.guide.existing != null: hud.tilt.text = "Carrying on your cut · hold right mouse"
+		else: hud.tilt.text = "Cut: %s · wheel to angle · hold right mouse" % ang
+	else:
+		hud.tilt.text = "Bar roll %d°" % int(rad_to_deg(saw.roll))
 	if player.in_truck:
 		hud.drive_lbl.text = "[b]W/S[/b] drive · [b]A/D[/b] steer · [b]Space[/b] brake · [b]V[/b] camera · [b]E[/b] get out      [b]%d mph[/b]" % int(truck.speed_mph())
 		hud.obj_panel.visible = truck.chase     # out of the way of the rear-view mirror

@@ -32,6 +32,14 @@ var f := Vector3.FORWARD       # along the bar, world
 var n := Vector3.RIGHT         # kerf normal (saw's +X), world
 var _kerf_t := 0.0
 var _t := 0.0
+# guided cutting: aim at the trunk or a log and the cut goes exactly there, square across unless you tilt it
+var tilt := 0.0                # radians; + slopes down into the wood (a notch's top cut), − slopes up
+var guide := {}                # what the crosshair is on: {kind, xf, e, f, n, existing, piece}
+var guide_mi: MeshInstance3D
+var guide_im: ImmediateMesh
+const GUIDE_REACH := 1.75
+const SHOULDER_R := Vector3(0.26, -0.55, 0.12)
+const SHOULDER_L := Vector3(-0.38, -0.52, 0.08)
 # sawdust
 var chips: Array = []
 var chip_mm: MultiMeshInstance3D
@@ -49,6 +57,18 @@ func setup(g, p: Player) -> void:
 		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for m in [fist_r, fist_l, arm_r, arm_l]:
 		add_child(m)
+	# the cut guide: a bright line round the wood where the cut will go
+	guide_im = ImmediateMesh.new()
+	guide_mi = MeshInstance3D.new(); guide_mi.mesh = guide_im; guide_mi.top_level = true
+	guide_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var gm := StandardMaterial3D.new()
+	gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	gm.vertex_color_use_as_albedo = true
+	gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	gm.no_depth_test = false
+	gm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	guide_mi.material_override = gm
+	add_child(guide_mi)
 	# chips in the air and the piles they make
 	chip_mm = MultiMeshInstance3D.new()
 	var cm := MultiMesh.new(); cm.transform_format = MultiMesh.TRANSFORM_3D; cm.use_colors = true
@@ -89,6 +109,40 @@ func pose(dt: float, rev: bool, carrying: bool) -> void:
 	var z := -ff; var x := ax; var y := z.cross(x)
 	var eq := Quaternion(Basis(x, y, z).orthonormalized())
 	var ep := tip - ff * (-BAR_BASE + BAR_L)
+	var cw0 := player.cam.global_transform
+	# guided: lay the bar right on the guide line, square to the cut, and feed it in as the cut deepens
+	guide = _find_guide() if (player.tool == "saw" and not carrying) else {}
+	if not guide.is_empty():
+		var g: Dictionary = guide
+		var xf: Transform3D = g.xf
+		var ew: Vector3 = xf * g.e
+		var fw: Vector3 = (xf.basis * g.f).normalized()
+		var nw: Vector3 = (xf.basis * g.n).normalized()
+		var depth := 0.0
+		if cut != null: depth = cut.s
+		elif g.existing != null: depth = g.existing.s
+		# hold the saw comfortably in front of you, bar lying in the cut's plane and pointing at the cut,
+		# its nose just in the wood (deeper as the cut goes)
+		var hand := cw0 * Vector3(0.1, -0.32, -0.5)
+		hand -= nw * nw.dot(hand - ew)
+		var bdir := ew - hand
+		if bdir.length() < 0.05: bdir = fw
+		bdir = bdir.normalized()
+		var cam_f := -cw0.basis.z
+		var t_tip := 0.06 + depth
+		var org := ew + bdir * (t_tip - BAR_L + BAR_BASE)
+		var ahead := (org - cw0.origin).dot(cam_f)
+		if ahead < 0.45 and bdir.dot(cam_f) > 0.25: t_tip += (0.45 - ahead) / bdir.dot(cam_f)
+		var bw := ew + bdir * (t_tip - BAR_L)
+		var zb := -bdir
+		var xb := nw
+		var yb := zb.cross(xb)
+		if absf(yb.dot(Vector3.UP)) > 0.2:
+			if yb.dot(Vector3.UP) < 0: xb = -xb; yb = -yb
+		elif yb.dot(-cw0.basis.x) < 0: xb = -xb; yb = -yb
+		var wxf := Transform3D(Basis(xb, yb, zb), bw - zb * BAR_BASE)
+		var lx := cw0.affine_inverse() * wxf
+		eq = Quaternion(lx.basis.orthonormalized()); ep = lx.origin
 	k = smoothstep(0, 1, clampf(eng, 0, 1))
 	var pos := ip.lerp(ep, k)
 	var q := iq.slerp(eq, k)
@@ -97,8 +151,8 @@ func pose(dt: float, rev: bool, carrying: bool) -> void:
 	var fc := q * Vector3(0, 0, -1)
 	var bw := cw * (pos + q * Vector3(0, 0, BAR_BASE))
 	var fw := (cw.basis * fc).normalized()
-	if k > 0.5 and cut == null: _magnet(dt, cw)
-	if k > 0.5:
+	if k > 0.5 and cut == null and guide.is_empty(): _magnet(dt, cw)
+	if k > 0.5 and guide.is_empty():
 		var lim = null
 		if cut != null:
 			var W := cut_world(cut)
@@ -117,11 +171,9 @@ func pose(dt: float, rev: bool, carrying: bool) -> void:
 	f = (T_ - B).normalized()
 	n = (mw.basis * Vector3.RIGHT).normalized()
 	# hands on the handles, sleeves back to the shoulders
-	var rh := model.transform * Transform3D(Basis(Vector3.UP, PI / 2), Vector3(0, 0.098, 0.035))
-	var lh := model.transform * Transform3D(Basis(Vector3.UP, -0.3), Vector3(-0.05, 0.172, -0.233))
-	fist_r.transform = rh; fist_l.transform = lh
-	_arm(arm_r, rh * Vector3(0, 0.02, 0.06), Vector3(0.26, -0.55, 0.12))
-	_arm(arm_l, lh * Vector3(0, 0.02, 0.06), Vector3(-0.42, -0.5, 0.08))
+	_fist_at(fist_r, arm_r, model.transform * Vector3(0, 0.098, 0.035), SHOULDER_R)
+	_fist_at(fist_l, arm_l, model.transform * Vector3(-0.05, 0.172, -0.233), SHOULDER_L)
+	_draw_guide()
 
 ## a bar held close to a cut you've already made wants to drop back into it: the roll eases toward
 ## that kerf's angle (gently: you can still turn it away with the wheel)
@@ -164,6 +216,15 @@ func _open_cuts() -> Array:
 				out.append(op)
 	return out
 
+## a gloved fist at p with its cuff turned toward the shoulder, and the sleeve running from the cuff
+func _fist_at(fist: MeshInstance3D, arm: MeshInstance3D, p: Vector3, shoulder: Vector3) -> void:
+	var to_sh := shoulder - p
+	if to_sh.length() < 0.05: to_sh = Vector3(0, -1, 0.3)
+	to_sh = to_sh.normalized()
+	var up := Vector3.UP if absf(to_sh.y) < 0.95 else Vector3.BACK
+	fist.transform = Transform3D(Basis.looking_at(-to_sh, up), p)
+	_arm(arm, p + to_sh * 0.065, shoulder, 0.04)
+
 func _arm(m: MeshInstance3D, a: Vector3, b: Vector3, r := 0.042) -> void:
 	var d := b - a; var L := d.length()
 	if L < 1e-3: return
@@ -176,9 +237,104 @@ func pose_hands(carrying: bool) -> void:
 		var fist: MeshInstance3D = fist_r if side > 0 else fist_l
 		var arm: MeshInstance3D = arm_r if side > 0 else arm_l
 		var p := Vector3(side * 0.24, -0.3 + boby, -0.55) if carrying else Vector3(side * (0.25 + bobx), -0.3 + boby, -0.5)
-		var rx := -0.5 if carrying else -0.3
-		fist.transform = Transform3D(Basis(Vector3.RIGHT, rx) * Basis(Vector3.UP, PI / 2), p)
-		_arm(arm, fist.transform * Vector3(0, 0.02, 0.06), Vector3(side * 0.3, -0.6, 0.12))
+		_fist_at(fist, arm, p, Vector3(side * 0.3, -0.62, 0.12))
+	guide = {}
+	_draw_guide()
+
+# ---------------------------------------------------------------- the cut guide
+## what's under the crosshair that can take a guided cut: the standing trunk, the stump, or a log
+func _find_guide() -> Dictionary:
+	var tree: AshTree = game.tree
+	# while a cut is under way, the guide stays locked to it
+	if cut != null:
+		var xf_c: Transform3D
+		if cut.kind == "tree" or cut.kind == "stump": xf_c = tree.global_transform
+		elif is_instance_valid(cut.get("piece")) and not cut.part.has("limb"): xf_c = cut.piece.global_transform
+		else: return {}
+		if cut.get("guided", false):
+			return {kind = cut.kind, xf = xf_c, e = cut.e, f = cut.f, n = cut.n, existing = cut, piece = cut.get("piece"), T = cut.get("T", tree.T)}
+		return {}
+	var cam := player.cam
+	var from := cam.global_position; var dir := -cam.global_transform.basis.z
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * GUIDE_REACH)
+	q.collision_mask = 8 | 32
+	q.exclude = [player.get_rid()]
+	var hit: Dictionary = game.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty(): return {}
+	var col = hit.collider
+	var kind := ""; var xf: Transform3D; var inside: Callable; var pc = null; var TT: Dictionary = tree.T
+	var list: Array = []
+	if tree.stand_body and is_instance_valid(tree.stand_body) and col == tree.stand_body:
+		kind = "tree"; xf = tree.global_transform; inside = tree.standing_inside; list = tree.cuts
+	elif tree.stump_body and is_instance_valid(tree.stump_body) and col == tree.stump_body:
+		kind = "stump"; xf = tree.global_transform; inside = tree.stump_inside
+		list = tree.stump_cuts.filter(func(c): return not c.get("done", false))
+	elif col is WoodPiece and col.mode == "dyn" and (col.kind == "trunk" or col.kind == "slab"):
+		var owner = col.shape_owner_get_owner(col.shape_find_owner(hit.shape))
+		var part: Dictionary = owner.get_meta("part", {trunk = true}) if owner else {trunk = true}
+		if part.has("limb") or part.has("tip") or part.has("wedge"): return {}
+		kind = "piece"; pc = col; xf = col.global_transform; TT = col.T
+		inside = func(p: Vector3) -> bool: return pc.inside_trunk(p)
+		for op in pc.ops:
+			if op.type == "kerf" and not op.get("done", false): list.append(op)
+	else:
+		return {}
+	var inv := xf.affine_inverse()
+	var e0 := inv * from; var dl := (inv.basis * dir).normalized()
+	var t0 := maxf(0.0, from.distance_to(hit.position) - 0.25)
+	var ch = AshTree.chord(inside, e0, dl, t0, t0 + 0.6)
+	if ch == null: return {}
+	var P: Vector3 = e0 + dl * ch.x
+	if kind == "tree" and (P.y > AshTree.CSG_TOP - 0.35 or P.y < -0.25): return {}
+	var rad := Vector3(P.x, 0, P.z)
+	if rad.length() < 0.02: return {}
+	var d := -rad.normalized()
+	# an old cut right here, cut from this side: carry on with it
+	var best = null; var best_d := 0.06
+	for c in list:
+		var hd := Vector2(c.f.x, c.f.z)
+		if hd.length() < 0.2 or hd.normalized().dot(Vector2(d.x, d.z)) < 0.45: continue
+		var pd := absf((c.n as Vector3).dot(P - c.e))
+		if pd < best_d: best_d = pd; best = c
+	if best != null:
+		return {kind = kind, xf = xf, e = best.e, f = best.f, n = best.n, existing = best, piece = pc, T = TT}
+	var r := d.cross(Vector3.UP).normalized()
+	var fl := (d * cos(tilt) + Vector3.DOWN * sin(tilt)).normalized()
+	var nl := r.cross(fl).normalized()
+	return {kind = kind, xf = xf, e = P, f = fl, n = nl, existing = null, piece = pc, T = TT}
+
+## the line where the cut will meet the bark (green when you'd be carrying on an old cut), and how deep it is
+func _draw_guide() -> void:
+	guide_im.clear_surfaces()
+	if guide.is_empty() or not on and player.tool != "saw": return
+	var g: Dictionary = guide
+	var xf: Transform3D = g.xf
+	var TT: Dictionary = g.T
+	var e: Vector3 = g.e; var nn: Vector3 = g.n
+	var col := Color(1.0, 0.62, 0.15, 0.9) if g.existing == null else Color(0.45, 1.0, 0.35, 0.9)
+	if absf(nn.y) > 0.2:
+		# a thin glowing band round the bark (a strip, so it reads at any distance)
+		var nw := (xf.basis * nn).normalized()
+		guide_im.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+		for i in range(49):
+			var a := TAU * i / 48.0
+			var dx := cos(a); var dz := sin(a)
+			var y := e.y
+			for it in range(3):
+				var R := Wood.r_at(TT, clampf(y, 0.0, TT.H)) * 1.03 + 0.004
+				y = e.y - (nn.x * (R * dx - e.x) + nn.z * (R * dz - e.z)) / nn.y
+			var R2 := Wood.r_at(TT, clampf(y, 0.0, TT.H)) * 1.03 + 0.004
+			var pw := xf * Vector3(R2 * dx, y, R2 * dz)
+			guide_im.surface_set_color(col); guide_im.surface_add_vertex(pw - nw * 0.009)
+			guide_im.surface_set_color(col); guide_im.surface_add_vertex(pw + nw * 0.009)
+		guide_im.surface_end()
+	# how far in: a tick from the entry toward the far side
+	var f: Vector3 = g.f
+	var depth: float = (cut.s if cut != null else (g.existing.s if g.existing != null else 0.0))
+	guide_im.surface_begin(Mesh.PRIMITIVE_LINES)
+	guide_im.surface_set_color(col); guide_im.surface_add_vertex(xf * (e - f * 0.06))
+	guide_im.surface_set_color(col); guide_im.surface_add_vertex(xf * (e + f * maxf(depth, 0.0)))
+	guide_im.surface_end()
 
 # ---------------------------------------------------------------- what does the bar touch?
 func wood_hit(from: Vector3, dir: Vector3, max_t: float) -> Dictionary:
@@ -229,6 +385,9 @@ func step(dt: float, rev: bool, carrying: bool) -> void:
 	if engine_snd: engine_snd.setv(rpm * (0.82 if cutting else 1.0), 0.0, 0.42)
 	if player.tool != "saw" or not on or carrying: cut = null; return
 	if not rev or k < 0.96: cut = null; return
+	if cut == null and not guide.is_empty():
+		cut = _start_guided(guide)
+		if cut == null: return
 	if cut == null:
 		# easing into an old kerf: wait until the bar has settled into it rather than starting a new one beside it
 		var mg := _nearest_open_cut()
@@ -239,7 +398,7 @@ func step(dt: float, rev: bool, carrying: bool) -> void:
 		if cut == null: return
 	var W := cut_world(cut)
 	if W.is_empty(): cut = null; return
-	var aligned: bool = f.dot(W.f) > 0.93 and absf(n.dot(W.n)) > 0.97
+	var aligned: bool = cut.get("guided", false) or (f.dot(W.f) > 0.93 and absf(n.dot(W.n)) > 0.97)
 	var grain: Vector3
 	if cut.kind == "tree" or cut.kind == "stump": grain = game.tree.global_transform.basis.y
 	else: grain = cut.piece.grain_world(cut.part)
@@ -247,8 +406,13 @@ func step(dt: float, rev: bool, carrying: bool) -> void:
 	cutting = true
 	if engine_snd: engine_snd.setv(rpm * 0.82, 1.0, 0.42)
 	if not aligned or not crosses: bind = true; return
-	var rate := Wood.CUT_SPEED * (0.35 + 0.65 * rpm) * (1.5 if cut.part.has("limb") else 1.0)
+	# felling cuts go at full speed; bucking a lying log is slower work (the whole bar is buried in it)
+	var kind_k := 1.0
+	if cut.kind == "piece": kind_k = 0.75 if cut.part.has("limb") else 0.32
+	var rate := Wood.CUT_SPEED * (0.35 + 0.65 * rpm) * kind_k
 	var max_s: float = cut.exit + 0.004
+	# the moment the tree starts to go, the bar stops eating the hinge
+	if cut.kind == "tree" and game.tree.go_kind != "": rate = 0.0
 	if cut.s < max_s: cut.s = minf(max_s, cut.s + rate * dt)
 	_emit(W.e, -W.f * 1.6 + Vector3(0, 0.9, 0), 3, Color("#e2cfa0"), 1.4, 0.026)
 	if randf() < 0.5: _emit(W.e, -W.f + Vector3(0, 0.3, 0), 1, Color("#b89a6a"), 0.8, 0.045)
@@ -267,6 +431,21 @@ func step(dt: float, rev: bool, carrying: bool) -> void:
 			elif not cut.part.has("limb") and _t - _kerf_t > 0.08:
 				_kerf_t = _t
 				if cut.has("node") and is_instance_valid(cut.node): Wood.update_kerf(cut.node, cut)
+
+func _start_guided(g: Dictionary):
+	var tree: AshTree = game.tree
+	var c
+	match g.kind:
+		"tree": c = tree.start_cut(g.e, g.f, g.n)
+		"stump": c = tree.stump_start_cut(g.e, g.f, g.n)
+		_:
+			if not is_instance_valid(g.piece): return null
+			c = _start_cut({kind = "piece", piece = g.piece, part = {trunk = true}, p = (g.xf as Transform3D) * g.e})
+	if c == null: return null
+	c.part = c.get("part", {trunk = true})
+	c.guided = true
+	c.T = g.T
+	return c
 
 func _start_cut(h: Dictionary):
 	var tree: AshTree = game.tree
