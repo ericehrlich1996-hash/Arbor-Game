@@ -62,7 +62,7 @@ func build() -> void:
 			mb.tube(L.base, L.base + L.dir * 0.06, L.r0 * 1.05, L.r0, Color.WHITE, 7, false)
 		if not mb.is_empty():
 			var mi := mb.instance(Mats.bark); add_child(mi)
-	mass = maxf(0.3, volume * Wood.RHO)
+	mass = maxf(0.3, volume * Wood.RHO * Wood.GAME_MASS)
 	collision_layer = 64 if kind == "limb" else 8     # you walk through brush, not over logs
 
 func _build_trunk() -> void:

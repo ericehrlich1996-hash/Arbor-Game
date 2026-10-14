@@ -18,9 +18,9 @@ static func sh(c: Color, k: float) -> Color: return MeshBuilder.shade(c, k)
 static func truck(rng: RandomNumberGenerator) -> Dictionary:
 	var paint: Array = TRUCK_PAINT[rng.randi_range(0, TRUCK_PAINT.size() - 1)]
 	var c1 := h(paint[0]); var c2 := h(paint[1])
-	var mb := MeshBuilder.new(); var tg := MeshBuilder.new()
+	var mb := MeshBuilder.new(); var tg := MeshBuilder.new(); var glass := MeshBuilder.new()
 	var mirror := Transform3D(Basis.from_scale(Vector3(-1, 1, 1)), Vector3.ZERO)
-	mb.push(mirror); tg.push(mirror)
+	mb.push(mirror); tg.push(mirror); glass.push(mirror)
 	var chrome := h("#c9ccd0"); var black := h("#1c1d1f"); var dark := h("#2a2b2d"); var glassF := h("#1e2830")
 	var vinyl := h("#b89a6a"); var dash := h("#3a2e26"); var rubber := h("#151515")
 	var W2 := 1.0
@@ -51,7 +51,10 @@ static func truck(rng: RandomNumberGenerator) -> Dictionary:
 		mb.tube(Vector3(sx * 0.95, yb, 0.8), Vector3(sx * 0.93, yt - 0.02, 0.5), 0.035, 0.035, c2, 5)
 		mb.box(sx * 0.96, (yb + yt) / 2, cz0 + 0.05, 0.08, yt - yb, 0.1, c2)
 		mb.box(sx * 0.97, yb + 0.02, 0.06, 0.05, 0.05, 1.45, c1)
-	mb.box(0, (yb + yt) / 2, cz0 + 0.03, 1.9, yt - yb, 0.05, c2); mb.box(0, 1.63, cz0 + 0.01, 1.0, 0.36, 0.06, glassF)
+	# back wall around the rear window (the glass itself is see-through, drawn separately)
+	mb.box(0, (yb + 1.45) / 2, cz0 + 0.03, 1.9, 1.45 - yb, 0.05, c2); mb.box(0, (1.81 + yt) / 2, cz0 + 0.03, 1.9, yt - 1.81, 0.05, c2)
+	for sx in [-1.0, 1.0]: mb.box(sx * 0.725, 1.63, cz0 + 0.03, 0.45, 0.36, 0.05, c2)
+	glass.box(0, 1.63, cz0 + 0.03, 1.0, 0.36, 0.012, Color(0.55, 0.68, 0.78))
 	mb.box(0, yt - 0.04, 0.52, 1.9, 0.06, 0.08, c2); mb.box(0, yb + 0.02, 0.8, 1.9, 0.05, 0.08, c2)
 	for sx in [-1.0, 1.0]:
 		mb.box(sx * 1.0, yt - 0.02, -0.08, 0.03, 0.03, 1.2, chrome)
@@ -94,7 +97,7 @@ static func truck(rng: RandomNumberGenerator) -> Dictionary:
 	mb.box(0, 0.56, bz0 - 0.14, 2.0, 0.18, 0.14, chrome)
 	mb.box(0, 0.5, bz0 - 0.32, 0.1, 0.06, 0.36, dark); mb.sphere(0, 0.58, HITCH.z, 0.05, 0.05, 0.05, chrome, 8, 6)
 	mb.box(0, 0.5, 0, 1.1, 0.18, 4.6, black)
-	return {body = mb, tailgate = tg, c1 = c1, c2 = c2}
+	return {body = mb, tailgate = tg, glass = glass, c1 = c1, c2 = c2}
 
 static func wheel() -> MeshBuilder:
 	var mb := MeshBuilder.new()

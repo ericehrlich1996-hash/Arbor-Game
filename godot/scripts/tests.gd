@@ -722,3 +722,46 @@ func _sawdrop2() -> void:
 	g.force_rev = false
 	await shot("drop-after")
 	note("no_crash", true)
+
+func _window() -> void:
+	await wait(1.0)
+	g._start()
+	var t: Truck = g.truck
+	for i in range(8):
+		await wait(0.25)
+		print("v ", t.linear_velocity.length(), " w ", t.angular_velocity.length(), " still ", t._still_t, " frz ", t.freeze, " drv ", t.driving)
+	note("parked_frozen", t.freeze)
+	var p0 := t.global_position
+	await wait(3.0)
+	note("creep_mm", snappedf(t.global_position.distance_to(p0) * 1000, 0.1))
+	g.player.teleport(t.global_transform * Vector3(0.3, Truck.BED_FLOOR_Y + 0.05, -2.2))
+	look_at_point(t.global_transform * Vector3(0, 1.6, 1.5))
+	await wait(0.6)
+	await shot("window-from-bed")
+	var rs := _make_rounds(1)
+	await wait(1.5)
+	note("round_kg", rs[0].mass)
+
+func _magnet() -> void:
+	await wait(1.0)
+	g._start()
+	var tr: AshTree = g.tree
+	var house := Vector3(g.world.house.x, 0, g.world.house.z)
+	var away := (tr.global_position - house); away.y = 0; away = away.normalized()
+	g.equip("saw"); g.saw.on = true; g.saw.engine_snd = Sfx.engine("saw")
+	g.player.crouch = true
+	var st := tr.global_position + away * 0.95
+	g.player.teleport(Vector3(st.x, g.world.H(st.x, st.z) + 0.05, st.z))
+	await wait(0.5)
+	look_at_point(tr.global_position + Vector3(0, 0.6, 0))
+	g.saw.roll = PI / 2
+	g.force_rev = true
+	await wait(0.4)
+	g.force_rev = false
+	await wait(0.5)
+	var s0: float = tr.cuts[0].s
+	g.saw.roll = PI / 2 + 0.3        # come back in about 17° off
+	g.force_rev = true
+	await wait(1.0)
+	g.force_rev = false
+	note("magnet", {cuts = tr.cuts.size(), s_before = s0, s_after = tr.cuts[0].s, roll_after_deg = rad_to_deg(g.saw.roll)})

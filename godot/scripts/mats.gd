@@ -22,6 +22,7 @@ var bark: StandardMaterial3D        # weathered grey bark, mapped in the piece's
 var sap: StandardMaterial3D         # fresh-cut wood
 var sap_v: StandardMaterial3D       # fresh-cut wood, vertex coloured (limb ends)
 var grass: ShaderMaterial
+var glass: StandardMaterial3D
 
 func _ready() -> void:
 	var nz := FastNoiseLite.new()
@@ -49,6 +50,10 @@ func _ready() -> void:
 	sap.roughness = 0.9
 	sap.cull_mode = BaseMaterial3D.CULL_DISABLED
 	sap_v = vcol.duplicate()
+	glass = vcol.duplicate()
+	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass.albedo_color = Color(1, 1, 1, 0.22)
+	glass.roughness = 0.1; glass.metallic_specular = 0.9
 	# ground: a soft mottled detail texture in world space, multiplied over the painted colours
 	var gn := FastNoiseLite.new(); gn.frequency = 0.02; gn.fractal_octaves = 4
 	var gg := Gradient.new(); gg.set_color(0, Color(0.8, 0.82, 0.78)); gg.set_color(1, Color(1.06, 1.06, 1.0))

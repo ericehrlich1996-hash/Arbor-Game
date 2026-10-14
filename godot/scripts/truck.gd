@@ -17,6 +17,8 @@ var mirror_quad: MeshInstance3D
 var wheels: Array[VehicleWheel3D] = []
 var paint := {}
 var engine_snd = null
+var _still_t := 0.0
+var _last_pos := Vector3.ZERO
 
 const BED_FLOOR_Y := 0.8
 
@@ -33,6 +35,9 @@ func setup(rng: RandomNumberGenerator) -> void:
 	var tg: MeshInstance3D = m.tailgate.instance(Mats.vcol_glass); tg.name = "Tailgate"
 	tg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(tg)
+	var gl: MeshInstance3D = m.glass.instance(Mats.glass); gl.name = "Glass"
+	gl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(gl)
 	# collision: front clip, cab, bed floor, bed walls, tailgate, chassis
 	_box(Vector3(0, 0.95, 1.62), Vector3(2.0, 0.75, 1.9))
 	_box(Vector3(0, 1.35, 0.05), Vector3(2.0, 1.25, 1.46))
@@ -54,7 +59,7 @@ func setup(rng: RandomNumberGenerator) -> void:
 		vw.suspension_max_force = 16000.0
 		vw.damping_compression = 2.2
 		vw.damping_relaxation = 2.6
-		vw.wheel_friction_slip = 2.6
+		vw.wheel_friction_slip = 3.4
 		vw.wheel_roll_influence = 0.15
 		vw.use_as_steering = w[2]
 		vw.use_as_traction = not w[2]
@@ -110,6 +115,8 @@ func in_bed(p: Vector3) -> bool:
 	return absf(l.x) < 1.0 and l.z > -2.7 and l.z < -0.7 and l.y > 0.6 and l.y < 3.0
 
 func enter() -> void:
+	freeze = false
+	_still_t = 0.0
 	driving = true
 	look_yaw = 0; look_pitch = 0
 	_set_cam()
@@ -151,7 +158,15 @@ func _physics_process(dt: float) -> void:
 		if want_brake: brake = 60.0; engine_force = 0
 	else:
 		engine_force = 0
-		if absf(v) < 0.3: brake = 400.0
+		brake = 400.0
+		# parked: once it has settled (less than a few cm of drift over half a second), pin it so it can't creep
+		_still_t += dt
+		if _still_t > 0.5:
+			if global_position.distance_to(_last_pos) < 0.06 and not freeze:
+				freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+				freeze = true
+			_last_pos = global_position
+			_still_t = 0.0
 
 func _process(dt: float) -> void:
 	if driving:

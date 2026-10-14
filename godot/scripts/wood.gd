@@ -13,7 +13,8 @@ extends RefCounted
 const RHO := 640.0          # dead ash, kg/m³
 const LIFT_MAX := 60.0      # kg you can shoulder
 const DRAG_MAX := 200.0 / 2.205
-const CUT_SPEED := 0.11     # m/s of bar travel through wood at full throttle
+const CUT_SPEED := 0.32     # m/s of bar travel through wood at full throttle (a sharp chain)
+const GAME_MASS := 0.2      # pieces weigh a fifth of real ash, so a sensible number of rounds gets you a liftable pile
 const KERF := 0.0075        # half the width of the slot the chain removes
 
 ## ---------------------------------------------------------------- tree definition

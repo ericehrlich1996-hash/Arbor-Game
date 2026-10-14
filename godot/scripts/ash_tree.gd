@@ -100,7 +100,7 @@ static func chord(inside: Callable, e: Vector3, f: Vector3, t0: float, t1: float
 ## start (or pick back up) a cut in the standing tree at wood-frame entry e
 func start_cut(e: Vector3, f: Vector3, n: Vector3) -> Dictionary:
 	for c in cuts:
-		if absf(c.n.dot(n)) > 0.985 and absf(c.n.dot(e - c.e)) < 0.025 and c.f.dot(f) > 0.9: return c
+		if absf(c.n.dot(n)) > 0.97 and absf(c.n.dot(e - c.e)) < 0.04 and c.f.dot(f) > 0.9: return c
 	var ch = chord(standing_inside, e, f, -0.03, 1.6)
 	var ex := 0.02
 	if ch != null: ex = maxf(0.02, ch.y - maxf(0.0, ch.x))
@@ -426,7 +426,7 @@ func stump_inside(p: Vector3) -> bool:
 
 func stump_start_cut(e: Vector3, f: Vector3, n: Vector3) -> Dictionary:
 	for c in stump_cuts:
-		if not c.get("done", false) and absf(c.n.dot(n)) > 0.995 and absf(c.n.dot(e - c.e)) < 0.012 and c.f.dot(f) > 0.97: return c
+		if not c.get("done", false) and absf(c.n.dot(n)) > 0.97 and absf(c.n.dot(e - c.e)) < 0.04 and c.f.dot(f) > 0.9: return c
 	var ch = chord(stump_inside, e, f, -0.03, 1.6)
 	var ex := 0.02
 	if ch != null: ex = maxf(0.02, ch.y - maxf(0.0, ch.x))

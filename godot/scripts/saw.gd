@@ -97,6 +97,7 @@ func pose(dt: float, rev: bool, carrying: bool) -> void:
 	var fc := q * Vector3(0, 0, -1)
 	var bw := cw * (pos + q * Vector3(0, 0, BAR_BASE))
 	var fw := (cw.basis * fc).normalized()
+	if k > 0.5 and cut == null: _magnet(dt, cw)
 	if k > 0.5:
 		var lim = null
 		if cut != null:
@@ -121,6 +122,47 @@ func pose(dt: float, rev: bool, carrying: bool) -> void:
 	fist_r.transform = rh; fist_l.transform = lh
 	_arm(arm_r, rh * Vector3(0, 0.02, 0.06), Vector3(0.26, -0.55, 0.12))
 	_arm(arm_l, lh * Vector3(0, 0.02, 0.06), Vector3(-0.42, -0.5, 0.08))
+
+## a bar held close to a cut you've already made wants to drop back into it: the roll eases toward
+## that kerf's angle (gently: you can still turn it away with the wheel)
+func _nearest_open_cut() -> Dictionary:
+	var p := B + f * 0.35
+	var best := {}; var best_d := 0.07
+	for c in _open_cuts():
+		var W := cut_world(c)
+		if W.is_empty(): continue
+		var d := absf(W.n.dot(p - W.e))
+		if d < best_d and absf(n.dot(W.n)) > 0.85 and f.dot(W.f) > 0.75:
+			best_d = d; best = W; best.d = d
+	return best
+
+func _magnet(dt: float, cw: Transform3D) -> void:
+	var best := _nearest_open_cut()
+	if best.is_empty(): return
+	var best_d: float = best.d
+	var nc: Vector3 = cw.basis.inverse() * best.n
+	var reach := 1.0 + clampf(-player.pitch, 0, 1.2) * 0.5
+	var tip := Vector3(0, -0.03, -1.12 * reach)
+	var ff := (tip - Vector3(0.065, -0.17, -0.5 * reach)).normalized()
+	var rgt := ff.cross(Vector3.UP).normalized(); var upp := rgt.cross(ff)
+	var want := atan2(nc.dot(upp), nc.dot(rgt))
+	if absf(angle_difference(roll, want + PI)) < absf(angle_difference(roll, want)): want += PI   # either face of the kerf will do
+	var pull := (1.0 - best_d / 0.07) * 2.5
+	roll = lerp_angle(roll, want, minf(1.0, dt * pull))
+
+func _open_cuts() -> Array:
+	var out := []
+	var tree: AshTree = game.tree
+	if tree.state == "stand": out.append_array(tree.cuts)
+	elif tree.stump: out.append_array(tree.stump_cuts.filter(func(c): return not c.get("done", false)))
+	for pc in game.pieces():
+		if pc.global_position.distance_to(player.global_position) > 30 and pc.center_world().distance_to(player.global_position) > 3: continue
+		for op in pc.ops:
+			if op.type == "kerf" and not op.get("done", false):
+				op.piece = pc
+				if not op.has("part"): op.part = {trunk = true}
+				out.append(op)
+	return out
 
 func _arm(m: MeshInstance3D, a: Vector3, b: Vector3, r := 0.042) -> void:
 	var d := b - a; var L := d.length()
@@ -188,13 +230,16 @@ func step(dt: float, rev: bool, carrying: bool) -> void:
 	if player.tool != "saw" or not on or carrying: cut = null; return
 	if not rev or k < 0.96: cut = null; return
 	if cut == null:
+		# easing into an old kerf: wait until the bar has settled into it rather than starting a new one beside it
+		var mg := _nearest_open_cut()
+		if not mg.is_empty() and absf(n.dot(mg.n)) < 0.97: return
 		var h := wood_hit(B, f, BAR_L + 0.02)
 		if h.is_empty() or h.t > BAR_L + 0.01: return
 		cut = _start_cut(h)
 		if cut == null: return
 	var W := cut_world(cut)
 	if W.is_empty(): cut = null; return
-	var aligned: bool = f.dot(W.f) > 0.985 and absf(n.dot(W.n)) > 0.98
+	var aligned: bool = f.dot(W.f) > 0.93 and absf(n.dot(W.n)) > 0.97
 	var grain: Vector3
 	if cut.kind == "tree" or cut.kind == "stump": grain = game.tree.global_transform.basis.y
 	else: grain = cut.piece.grain_world(cut.part)
@@ -238,7 +283,7 @@ func _start_cut(h: Dictionary):
 	# a cut already started in this piece at the same place picks up where it left off
 	if not part.has("limb"):
 		for op in pc.ops:
-			if op.type == "kerf" and not op.get("done", false) and absf(op.n.dot(nl)) > 0.985 and absf(op.n.dot(e - op.e)) < 0.025 and op.f.dot(fl) > 0.9:
+			if op.type == "kerf" and not op.get("done", false) and absf(op.n.dot(nl)) > 0.97 and absf(op.n.dot(e - op.e)) < 0.04 and op.f.dot(fl) > 0.9:
 				op.piece = pc; op.part = part
 				return op
 	var inside := func(p: Vector3) -> bool: return pc.inside_limb(p, part) if part.has("limb") else pc.inside_trunk(p)
