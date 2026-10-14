@@ -967,7 +967,7 @@ func _soak() -> void:
 		await wait(0.2)
 		# sanity
 		for b in g.pieces():
-			var bp: Vector3 = b.global_position
+			var bp: Vector3 = b.center_world()
 			if not bp.is_finite(): note("BAD_nan_piece", [i, name]); break
 			if bp.y < g.world.H(bp.x, bp.z) - 3.0: note("BAD_fell_through", [i, name, bp]); break
 		var pp: Vector3 = g.player.global_position

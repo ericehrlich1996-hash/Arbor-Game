@@ -534,6 +534,23 @@ func _build_house(root: Node3D) -> void:
 			mb.push(Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(fwx - 1.08 + k * 0.24 + (0.12 if row % 2 else 0.0), 0.65 + row * 0.22, bz + 0.6)))
 			mb.cyl(0, -0.24, 0, 0.11, 0.11, 0.48, Color.html("#7a5a3c"), 6, true, Color.html("#c8a070"))
 			mb.pop()
+	# out back: a picnic table and a birdbath
+	var ptx: float = -W * 0.28; var ptz: float = bz + 4.5
+	var pw := Color.html("#8a6a48")
+	mb.push(Transform3D(Basis(Vector3.UP, 0.25), Vector3(ptx, 0, ptz)))
+	for k in range(5): mb.box(0, 0.76, -0.4 + k * 0.2, 1.9, 0.05, 0.18, MeshBuilder.shade(pw, r.randf_range(0.9, 1.08)))
+	for sz: float in [-1.0, 1.0]:
+		for k in range(2): mb.box(0, 0.45, sz * (0.72 + k * 0.14), 1.9, 0.05, 0.13, MeshBuilder.shade(pw, r.randf_range(0.9, 1.05)))
+	for sx: float in [-0.7, 0.7]:
+		for sz: float in [-1.0, 1.0]:
+			mb.push(Transform3D(Basis(Vector3.RIGHT, sz * 0.5), Vector3(sx, 0.38, sz * 0.25)))
+			mb.box(0, 0, 0, 0.08, 0.86, 0.1, MeshBuilder.shade(pw, 0.85))
+			mb.pop()
+		mb.box(sx, 0.42, 0, 0.08, 0.06, 1.8, MeshBuilder.shade(pw, 0.85))
+	mb.pop()
+	mb.cyl(W * 0.32, 0.0, bz + 3.0, 0.12, 0.08, 0.7, Color.html("#a8a49a"), 10, true)
+	mb.cyl(W * 0.32, 0.7, bz + 3.0, 0.1, 0.38, 0.12, Color.html("#b0aca2"), 14, true)
+	mb.cyl(W * 0.32, 0.8, bz + 3.0, 0.33, 0.33, 0.005, Color.html("#5a7a8a"), 14, true)
 	mb.pop()
 	_static_box(root, Vector3(h.x, y0 + 1.6, h.z), Vector3(h.w, 3.6, h.d))
 	_static_box(root, Vector3(h.x + dx, y0 + 0.1, h.z + fz - 1.3), Vector3(3.2, 0.68, 2.4))
