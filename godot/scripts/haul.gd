@@ -10,6 +10,7 @@ var feeding = null
 var feed_queue: Array = []
 var feed_t := 0.0
 var chips_done := 0
+var chipped_mass := 0.0
 
 func setup(g) -> void:
 	game = g
@@ -303,6 +304,7 @@ func step_feed(dt: float) -> void:
 		var tip_w := b.to_world(tip_l)
 		if (tip_w - throat).dot(ax) > 0 or feed_t > 12:
 			b.mode = "gone"
+			chipped_mass += b.mass
 			b.queue_free()
 			feeding = null
 			chips_done += 1

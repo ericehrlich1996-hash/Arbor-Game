@@ -65,7 +65,7 @@ func setup(sd: int) -> void:
 		for p in drive: d_drive = minf(d_drive, Vector2(x, z).distance_to(p))
 		if _box_dist(x, z, house) < clear or _box_dist(x, z, shed) < clear or Vector2(x, z).distance_to(Vector2(pile.x, pile.z)) < clear - 1: continue
 		if Vector2(x, z).distance_to(Vector2(park.x, park.z)) < clear + 4 or d_drive < clear - 2 or z - road_z < clear + 4: continue
-		tree = {x = x, z = z, h = ht, dbh = _range(0.5, 0.6), lean = _range(0.02, 0.06), lean_dir = _range(0, TAU), seed = rng.randi_range(1, 1000000)}
+		tree = {x = x, z = z, h = ht, dbh = _range(0.5, 0.6), lean = _range(0.015, 0.1), lean_dir = _range(0, TAU), seed = rng.randi_range(1, 1000000)}
 		break
 	if tree.is_empty():
 		tree = {x = s * 24, z = 30.0, h = 16.0, dbh = 0.5, lean = 0.04, lean_dir = 1.0, seed = 5}

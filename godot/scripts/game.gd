@@ -151,6 +151,7 @@ func _setup_env() -> void:
 
 # ================================================================ graphics detail
 var detail := 1
+var done_frac := 0.0
 var ambient: Ambient
 var sky_mat: ShaderMaterial
 var weather: Weather
@@ -777,12 +778,22 @@ func update_objectives() -> void:
 			if b.mass > Wood.LIFT_MAX: heavy += 1
 			if in_pile(b) and b.mode == "dyn": piled += 1
 	counts = {brush = brush, rounds = rounds, heavy = heavy, piled = piled}
+	# by weight: once 95% of the wood is chipped or on the pile, the job's done (crumbs don't count)
+	var total := haul.chipped_mass; var brush_kg := 0.0; var done_kg := haul.chipped_mass
+	for b in pieces():
+		total += b.mass
+		if b.mode == "feed" or b.mode == "feedwait": done_kg += b.mass; continue
+		var is_brush: bool = b.kind == "limb" or b.kind == "wedge" or (b.kind == "trunk" and not b.limbs.is_empty() and b.mass <= Wood.LIFT_MAX)
+		if is_brush: brush_kg += b.mass
+		elif in_pile(b) and b.mode == "dyn": done_kg += b.mass
+	done_frac = done_kg / maxf(total, 0.001)
 	if objs.felled:
-		objs.limbed = brush == 0
-		objs.stacked = objs.limbed and rounds > 0 and heavy == 0 and piled == rounds
+		var attached := pieces().any(func(b): return b.kind == "trunk" and not b.limbs.is_empty() and b.mass > Wood.LIFT_MAX)
+		objs.limbed = not attached and (brush == 0 or brush_kg <= total * 0.05)
+		objs.stacked = objs.limbed and rounds > 0 and done_frac >= 0.95
 	var buck_txt := "Buck the stem into liftable rounds and pile them behind the shed"
 	if objs.felled and rounds > 0:
-		buck_txt += " · %d/%d" % [piled, rounds]
+		buck_txt += " · %d/%d · %d%%" % [piled, rounds, int(floor(done_frac * 100.0))]
 		if heavy > 0: buck_txt += " · %d too heavy" % heavy
 	hud.set_objectives([
 		[objs.talk, "Talk to Earl"],
@@ -807,12 +818,13 @@ func _update_hud() -> void:
 		hud.set_carry(0, "", 0.0, 1.0, lb)
 	hud.tool_state.text = ("Saw: running" if saw.on else "Saw: off · R to start") if player.tool == "saw" else ""
 	hud.tilt.visible = player.tool == "saw" and not player.in_truck and phase == "play"
-	hud.set_dial(not saw.guide.is_empty() and player.tool == "saw" and not player.in_truck and phase == "play",
+	hud.set_dial(not saw.guide.is_empty() and not saw.guide.has("ring_c") and player.tool == "saw" and not player.in_truck and phase == "play",
 		saw.guide.get("existing") != null and saw.guide.existing.has("f"), _guide_tilt(), saw.guide.get("too_far", false))
 	if not saw.guide.is_empty():
 		var tdeg := int(round(rad_to_deg(saw.tilt)))
 		var ang := "level" if tdeg == 0 else ("%d° down" % tdeg if tdeg > 0 else "%d° up" % -tdeg)
-		if saw.guide.get("too_close", false): hud.tilt.text = "Step back a little to get the saw in"
+		if saw.guide.has("ring_c") and not saw.guide.get("too_far", false): hud.tilt.text = "Hold right mouse to cut the branch"
+		elif saw.guide.get("too_close", false): hud.tilt.text = "Step back a little to get the saw in"
 		elif saw.guide.get("too_far", false): hud.tilt.text = "Step closer to cut there"
 		elif saw.guide.existing != null: hud.tilt.text = "Carrying on your cut · hold right mouse"
 		else: hud.tilt.text = "Wheel to angle the cut · hold right mouse to cut"

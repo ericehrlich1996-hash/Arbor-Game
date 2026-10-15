@@ -1326,3 +1326,54 @@ func _bucktime() -> void:
 		note("s", [tt, c.s if c else -1.0, c.exit if c else -1.0, g.pieces().size() - n0])
 		if g.pieces().size() != n0: break
 	g.force_rev = false
+
+func _limbring() -> void:
+	await wait(0.5)
+	g._start()
+	g.objs.talk = true
+	# pinch: cut level straight in from the side the tree leans to
+	var tr: AshTree = g.tree
+	tr.def.lean = 0.08
+	var R: float = Wood.r_at(tr.T, 0.6)
+	var lw: Vector3 = tr.lean_dir
+	var side := lw.cross(Vector3.UP).normalized()
+	g.equip("saw"); g.saw.on = true; g.saw.engine_snd = Sfx.engine("saw")
+	g.player.crouch = true
+	var st := tr.global_position + side * (R + 0.8)
+	g.player.teleport(Vector3(st.x, g.world.H(st.x, st.z) + 0.05, st.z))
+	await wait(0.4)
+	look_at_point(tr.to_world(Vector3(0, 0.6, 0)) + lw * R * 0.8 + side * R * 0.5)
+	await wait(0.4)
+	g.force_rev = true
+	await wait(6.0)
+	g.force_rev = false
+	var c = tr.cuts[0] if not tr.cuts.is_empty() else null
+	note("pinch", [c.s if c else -1.0, 2 * R, g.saw._pinch_told, tr.state])
+	g.player.crouch = false
+	# then the stem on the ground: aim at a limb
+	tr.def.lean = 0.03
+	await _fell_tree_quick()
+	var stem: WoodPiece = tr.stem
+	var lp := Vector3.ZERO; var best := 1e9
+	for id in stem.limbs:
+		var LL: Dictionary = stem.T.limbs[id]
+		for t: float in [0.15, 0.3, 0.45, 0.6]:
+			var w := stem.to_world(Wood.limb_pt(LL, t))
+			var hgt: float = w.y - g.world.H(w.x, w.z)
+			if hgt > 0.3 and absf(hgt - 0.8) < best: best = absf(hgt - 0.8); lp = w
+	var vp := lp + Vector3(0.75, 0, 0.35)
+	g.equip("saw"); g.saw.on = true
+	g.player.teleport(Vector3(vp.x, g.world.H(vp.x, vp.z) + 0.05, vp.z))
+	await wait(0.3)
+	look_at_point(lp)
+	await wait(0.6)
+	note("limb_guide", [g.saw.guide.has("ring_c"), g.saw.guide.get("too_far", null)])
+	await shot("limbring")
+	var n0: int = stem.limbs.size()
+	g.force_rev = true
+	var tt := 0.0
+	while tt < 8.0 and is_instance_valid(stem) and stem.limbs.size() == n0:
+		await wait(0.2); tt += 0.2
+	g.force_rev = false
+	note("limb_cut", [tt, is_instance_valid(stem) and stem.limbs.size() < n0])
+	await shot("limbring-after")

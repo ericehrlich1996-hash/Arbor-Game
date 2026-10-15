@@ -146,8 +146,10 @@ func pose(dt: float, rev: bool, carrying: bool) -> void:
 		var bar_dir := gw if gw.dot(-cw0.basis.z) > 0 else -gw
 		var front := ew + fw * (depth - 0.01)
 		# centre the bar on the wood: the heart of the trunk, carried onto the cut front line
-		var heart: Vector3 = xf * Vector3(0, (g.e as Vector3).y, 0)
+		var heart: Vector3 = xf * (g.heart if g.has("heart") else Vector3(0, (g.e as Vector3).y, 0))
 		var mid := front + bar_dir * bar_dir.dot(heart - front)
+		# a thin branch: just the front of the bar across it, the saw held back at a comfortable reach
+		if g.has("ring_r"): mid += bar_dir * maxf(0.0, BAR_L * 0.5 - float(g.ring_r) - 0.12)
 		var zb := -bar_dir
 		var xb := nw
 		var yb := zb.cross(xb)
@@ -300,6 +302,11 @@ func _find_guide() -> Dictionary:
 	var tree: AshTree = game.tree
 	# while a cut is under way, the guide stays locked to it
 	if cut != null:
+		if cut.has("gd") and is_instance_valid(cut.get("piece")):
+			var gd: Dictionary = cut.gd.duplicate()
+			gd.xf = cut.piece.global_transform
+			gd.existing = cut
+			return gd
 		var xf_c: Transform3D
 		if cut.kind == "tree" or cut.kind == "stump": xf_c = tree.global_transform
 		elif is_instance_valid(cut.get("piece")) and not cut.part.has("limb"): xf_c = cut.piece.global_transform
@@ -310,11 +317,15 @@ func _find_guide() -> Dictionary:
 	var cam := player.cam
 	var from := cam.global_position; var dir := -cam.global_transform.basis.z
 	var q := PhysicsRayQueryParameters3D.create(from, from + dir * GUIDE_REACH)
-	q.collision_mask = 8 | 32
+	q.collision_mask = 8 | 32 | 64
 	q.exclude = [player.get_rid()]
 	var hit: Dictionary = game.get_world_3d().direct_space_state.intersect_ray(q)
 	if hit.is_empty(): return {}
 	var col = hit.collider
+	if col is WoodPiece and col.mode == "dyn":
+		var lowner = col.shape_owner_get_owner(col.shape_find_owner(hit.shape))
+		var lpart: Dictionary = lowner.get_meta("part", {}) if lowner else {}
+		if lpart.has("limb"): return _limb_guide(col, lpart, hit.position)
 	var kind := ""; var xf: Transform3D; var inside: Callable; var pc = null; var TT: Dictionary = tree.T
 	var list: Array = []
 	if tree.stand_body and is_instance_valid(tree.stand_body) and col == tree.stand_body:
@@ -368,6 +379,34 @@ func _find_guide() -> Dictionary:
 	var e: Vector3 = C - fl * ((back.y if back != null else R_here) + 0.01)
 	return {kind = kind, xf = xf, e = e, f = fl, n = nl, existing = null, piece = pc, T = TT, aim = P}
 
+## a branch: the ring goes round it where you're looking, square to the branch
+func _limb_guide(pc: WoodPiece, part: Dictionary, hitp: Vector3) -> Dictionary:
+	var L: Dictionary = pc.T.limbs[part.limb]
+	var a: Vector3; var b: Vector3; var r0: float; var r1: float
+	if part.has("sub"):
+		var sb: Dictionary = L.subs[part.sub]
+		a = Wood.limb_pt(L, sb.t); b = a + sb.dir * sb.len; r0 = sb.r0; r1 = sb.r0 * 0.5
+	else:
+		var ta: float = pc.t0 if pc.kind == "limb" else 0.0
+		var tb: float = pc.t1 if pc.kind == "limb" else pc.lt.get(part.limb, 1.0)
+		a = Wood.limb_pt(L, ta); b = Wood.limb_pt(L, tb); r0 = Wood.limb_r(L, ta); r1 = Wood.limb_r(L, tb)
+	var P := pc.to_wood(hitp)
+	var cp := Geometry3D.get_closest_point_to_segment(P, a, b)
+	var k := clampf((cp - a).dot(b - a) / maxf((b - a).length_squared(), 1e-9), 0.0, 1.0)
+	var r := lerpf(r0, r1, k)
+	var u := (b - a).normalized()
+	# the bar points away from you, square across the branch; the chain comes down through it from above
+	var inv_b := pc.global_transform.basis.inverse()
+	var cf := (inv_b * -player.cam.global_transform.basis.z).normalized()
+	var bar := cf - u * cf.dot(u)
+	if bar.length() < 0.05: bar = u.cross(inv_b * Vector3.UP)
+	bar = bar.normalized()
+	var fl := u.cross(bar).normalized()
+	if fl.dot(inv_b * Vector3.DOWN) < 0: fl = -fl
+	var e := cp - fl * r
+	return {kind = "piece", xf = pc.global_transform, e = e, f = fl, n = u, existing = null, piece = pc, T = pc.T,
+		part = part, ring_c = cp, ring_r = r, heart = cp}
+
 ## the line where the cut will meet the bark (green when you'd be carrying on an old cut), and how deep it is
 func _draw_guide() -> void:
 	guide_im.clear_surfaces()
@@ -378,6 +417,20 @@ func _draw_guide() -> void:
 	var e: Vector3 = g.e; var nn: Vector3 = g.n
 	var col := Color(1.0, 0.62, 0.15, 0.9) if g.existing == null else Color(0.45, 1.0, 0.35, 0.9)
 	if g.get("too_far", false): col = Color(1, 1, 1, 0.45)
+	if g.has("ring_c"):
+		var c0: Vector3 = g.ring_c; var rr: float = g.ring_r * 1.12 + 0.004
+		var ax: Vector3 = nn.normalized()
+		var p0 := ax.cross(Vector3.UP if absf(ax.y) < 0.9 else Vector3.RIGHT).normalized()
+		var p1 := ax.cross(p0)
+		var nwl := (xf.basis * ax).normalized()
+		guide_im.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+		for i in range(33):
+			var an := TAU * i / 32.0
+			var pw := xf * (c0 + (p0 * cos(an) + p1 * sin(an)) * rr)
+			guide_im.surface_set_color(col); guide_im.surface_add_vertex(pw - nwl * 0.007)
+			guide_im.surface_set_color(col); guide_im.surface_add_vertex(pw + nwl * 0.007)
+		guide_im.surface_end()
+		return
 	if absf(nn.y) > 0.2:
 		# a thin glowing band round the bark (a strip, so it reads at any distance)
 		var nw := (xf.basis * nn).normalized()
@@ -485,10 +538,14 @@ func step(dt: float, rev: bool, carrying: bool) -> void:
 	# felling cuts go at full speed; bucking a lying log is slower work (the whole bar is buried in it)
 	var kind_k := 1.0
 	if cut.kind == "piece": kind_k = 0.75 if cut.part.has("limb") else 0.32
+	elif cut.kind == "tree": kind_k = 0.5
 	var rate := Wood.CUT_SPEED * (0.35 + 0.65 * rpm) * kind_k
 	var max_s: float = cut.exit + 0.004
 	# the moment the tree starts to go, the bar stops eating the hinge
 	if cut.kind == "tree" and game.tree.go_kind != "": rate = 0.0
+	# a leaning tree sits its weight on the side it leans toward: cut in from that side and the kerf
+	# closes on the bar part way through. The more it leans, the sooner. Back-cut from the other side.
+	if cut.kind == "tree" and _pinched(cut): rate = 0.0; bind = true
 	if cut.s < max_s: cut.s = minf(max_s, cut.s + rate * dt)
 	_emit(W.e, -W.f * 1.6 + Vector3(0, 0.9, 0), 3, Color("#e2cfa0"), 1.4, 0.026)
 	if randf() < 0.5: _emit(W.e, -W.f + Vector3(0, 0.3, 0), 1, Color("#b89a6a"), 0.8, 0.045)
@@ -514,6 +571,24 @@ func _guided_width(g: Dictionary) -> float:
 	var e: Vector3 = g.e
 	return clampf(Wood.r_at(TT, clampf(e.y, 0.0, TT.H)) * 1.2, 0.08, BAR_L * 0.55)
 
+var _pinch_told := false
+func _pinched(c: Dictionary) -> bool:
+	var tree: AshTree = game.tree
+	var lean: float = tree.def.lean
+	if lean < 0.03 or absf((c.n as Vector3).y) < 0.8: return false
+	var lw := tree.global_transform.basis.inverse() * tree.lean_dir; lw.y = 0
+	var side := Vector2((c.e as Vector3).x, (c.e as Vector3).z)
+	if side.length() < 0.01 or lw.length() < 0.01: return false
+	if side.normalized().dot(Vector2(lw.x, lw.z).normalized()) < 0.35: return false
+	var D := 2.0 * Wood.r_at(tree.T, clampf((c.e as Vector3).y, 0.0, tree.T.H))
+	var frac := clampf(1.0 - lean * 7.0, 0.4, 0.8)
+	if c.s < D * frac: return false
+	if not _pinch_told:
+		_pinch_told = true
+		game.hud.toast("Pinched! The tree leans this way and the cut's closing on the bar. Back-cut from the other side.", 4.5)
+		Sfx.play("creak", 0.6)
+	return true
+
 func _start_guided(g: Dictionary):
 	var tree: AshTree = game.tree
 	var c
@@ -522,7 +597,10 @@ func _start_guided(g: Dictionary):
 		"stump": c = tree.stump_start_cut(g.e, g.f, g.n)
 		_:
 			if not is_instance_valid(g.piece): return null
-			c = _start_cut({kind = "piece", piece = g.piece, part = {trunk = true}, p = (g.xf as Transform3D) * g.e, fl = g.f, nl = g.n})
+			c = _start_cut({kind = "piece", piece = g.piece, part = g.get("part", {trunk = true}), p = (g.xf as Transform3D) * g.e, fl = g.f, nl = g.n})
+			if c != null and g.has("ring_c"):
+				c.e = g.e; c.f = g.f; c.n = g.n; c.exit = maxf(0.02, g.ring_r * 2.0)
+				var gd := g.duplicate(); gd.erase("existing"); c.gd = gd
 	if c == null: return null
 	c.part = c.get("part", {trunk = true})
 	c.guided = true
