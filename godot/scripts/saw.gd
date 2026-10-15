@@ -40,7 +40,7 @@ var chain_pos := 0.0           # how far the chain has run round the bar (m)
 var guide_mi: MeshInstance3D
 var guide_im: ImmediateMesh
 const GUIDE_REACH := 1.75
-const MAX_REACH := 0.95         # how far from your eyes the saw can be held (arms stay arm-length)
+const MAX_REACH := 1.08         # how far from your eyes the saw can be held (arms stay arm-length)
 # the chain loop: straight along the top and bottom of the bar, round the nose and the drive sprocket
 const CHAIN_Z0 := -0.24        # drive sprocket centre
 const CHAIN_Z1 := -0.83        # nose sprocket centre
@@ -107,7 +107,10 @@ func set_visible_tool(v: bool) -> void:
 # ---------------------------------------------------------------- pose
 func pose(dt: float, rev: bool, carrying: bool) -> void:
 	_t += dt
-	var want := 1.0 if (on and rev and not carrying) else 0.0
+	# with the saw running and the line on a trunk or log in reach, the saw sits right on that line
+	# (so the ring and the bar always agree); otherwise it rests at your hip until you rev
+	var on_guide: bool = not guide.is_empty() and not guide.get("too_far", false)
+	var want := 1.0 if (on and not carrying and (rev or on_guide)) else 0.0
 	eng = lerpf(eng, want, minf(1, dt * 9))
 	var bobx := sin(player.bob) * 0.012; var boby := -absf(cos(player.bob)) * 0.012
 	var pull_y := 0.0; var pull_r := 0.0

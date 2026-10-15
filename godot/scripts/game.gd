@@ -172,14 +172,16 @@ func set_detail(d: int) -> void:
 			(n as GeometryInstance3D).visibility_range_end = vr.y * (k if vr.y < 200.0 else (0.65 if d == 0 else 1.0))
 
 ## if the first few seconds of play run badly, drop to low detail once and say so
+## watch the frame rate from the start of the drive in: if it's struggling, drop to low detail early
+## (rather than after you're already playing), once, and say so
 func _watch_fps(dt: float) -> void:
-	if _fps_checked or phase != "play" or tests != null: return
+	if _fps_checked or (phase != "play" and phase != "intro") or tests != null: return
 	_fps_t += dt
-	if _fps_t < 2.0: return              # shaders are still compiling in the first moments
+	if _fps_t < 1.0: return              # the first moment is always lumpy
 	_fps_frames += 1
-	if _fps_t > 8.0:
+	if _fps_t > 4.0:
 		_fps_checked = true
-		if _fps_frames / (_fps_t - 2.0) < 24.0 and detail == 1:
+		if _fps_frames / (_fps_t - 1.0) < 26.0 and detail == 1:
 			set_detail(0)
 			hud.toast("Running slow, so I lowered the graphics detail. F3 switches it back.", 4.0)
 
@@ -259,7 +261,7 @@ func start_intro() -> void:
 	chipper.hitch_now()
 	chipper.follow_kinematic(true)
 	player.visible = false
-	truck.mirror_live = true
+	truck.mirror_live = true; truck.mirror_div = 6     # just a glance during the drive in
 	truck.cab_cam.make_current()
 	truck.cab_cam.rotation = Vector3(-0.06, PI, 0)
 	intro.eng = Sfx.engine("truck")
@@ -538,6 +540,13 @@ func _prewarm_shaders() -> void:
 	for f in range(4): await get_tree().process_frame
 	holder.queue_free()
 
+## the angle of the cut on the guide, in degrees (+ slopes down into the wood), for the dial
+func _guide_tilt() -> float:
+	var g: Dictionary = saw.guide
+	if g.is_empty(): return rad_to_deg(saw.tilt)
+	var f: Vector3 = g.f
+	return rad_to_deg(atan2(-f.y, Vector2(f.x, f.z).length()))
+
 ## the truck or chipper lying on its side or roof within reach: "truck", "chipper" or ""
 func _tipped_near() -> String:
 	if player.in_truck or chipper.mode == "hand": return ""
@@ -798,12 +807,14 @@ func _update_hud() -> void:
 		hud.set_carry(0, "", 0.0, 1.0, lb)
 	hud.tool_state.text = ("Saw: running" if saw.on else "Saw: off · R to start") if player.tool == "saw" else ""
 	hud.tilt.visible = player.tool == "saw" and not player.in_truck and phase == "play"
+	hud.set_dial(not saw.guide.is_empty() and player.tool == "saw" and not player.in_truck and phase == "play",
+		saw.guide.get("existing") != null and saw.guide.existing.has("f"), _guide_tilt(), saw.guide.get("too_far", false))
 	if not saw.guide.is_empty():
 		var tdeg := int(round(rad_to_deg(saw.tilt)))
 		var ang := "level" if tdeg == 0 else ("%d° down" % tdeg if tdeg > 0 else "%d° up" % -tdeg)
 		if saw.guide.get("too_far", false): hud.tilt.text = "Step closer to cut there"
 		elif saw.guide.existing != null: hud.tilt.text = "Carrying on your cut · hold right mouse"
-		else: hud.tilt.text = "Cut: %s · wheel to angle · hold right mouse" % ang
+		else: hud.tilt.text = "Wheel to angle the cut · hold right mouse to cut"
 	else:
 		hud.tilt.text = "Bar roll %d°" % int(rad_to_deg(saw.roll))
 	if player.in_truck:

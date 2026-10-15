@@ -20,6 +20,7 @@ var engine_snd = null
 var _still_t := 0.0
 var mirror_live := false        # the mirror is redrawn a few times a second while someone's driving
 var _mirror_n := 0
+var mirror_div := 3             # redraw the mirror every Nth frame
 var _last_pos := Vector3.ZERO
 
 const BED_FLOOR_Y := 0.8
@@ -146,6 +147,7 @@ func enter() -> void:
 	look_yaw = 0; look_pitch = 0
 	_set_cam()
 	mirror_live = true
+	mirror_div = 3
 
 func exit() -> void:
 	driving = false
@@ -201,7 +203,7 @@ func _process(dt: float) -> void:
 	# the rear-view mirror is a second render of the world: only refresh it every third frame
 	if mirror_live:
 		_mirror_n += 1
-		if _mirror_n % 3 == 0: mirror_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+		if _mirror_n % mirror_div == 0: mirror_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	if driving:
 		cab_cam.rotation = Vector3(look_pitch, PI + look_yaw, 0)
 		var back := -global_transform.basis.z

@@ -30,6 +30,9 @@ var summary: Control
 var sum_rows: VBoxContainer
 var sum_notes: Label
 var tilt: Label
+var dial_box: PanelContainer
+var dial: AngleDial
+var dial_lbl: Label
 var carry_box: PanelContainer
 var carry_lbl: Label
 var carry_fill: ColorRect
@@ -57,6 +60,16 @@ func _label(text: String, size := 16, col := INK) -> Label:
 	l.add_theme_color_override("font_color", col)
 	return l
 
+func set_dial(show: bool, continuing: bool, deg: float, too_far: bool) -> void:
+	dial_box.visible = show and not carry_box.visible
+	if not dial_box.visible: return
+	var d := int(round(deg))
+	dial.deg = deg
+	dial.col = Color(1, 1, 1, 0.5) if too_far else (GREEN if continuing else ACCENT)
+	dial.queue_redraw()
+	dial_lbl.text = "Level cut" if d == 0 else ("%d° down" % d if d > 0 else "%d° up" % -d)
+	dial_lbl.add_theme_color_override("font_color", dial.col)
+
 func set_carry(n: int, what: String, kg: float, max_kg: float, to_lb: Callable) -> void:
 	carry_box.visible = n > 0
 	if n == 0: return
@@ -67,6 +80,23 @@ func set_carry(n: int, what: String, kg: float, max_kg: float, to_lb: Callable) 
 	carry_fill.color = col
 	carry_fill.size = Vector2(200.0 * fr, 10)
 	carry_wt.text = "%s of %s" % [to_lb.call(kg), to_lb.call(max_kg)] + ("  ·  full" if fr >= 0.92 else "")
+
+## a tiny side view of a trunk with the cut line across it
+class AngleDial extends Control:
+	var deg := 0.0
+	var col := Color("#f0a030")
+	func _draw() -> void:
+		var c := size / 2.0
+		var tw := 34.0; var th := size.y - 6.0
+		draw_rect(Rect2(c.x - tw / 2, c.y - th / 2, tw, th), Color(0.55, 0.5, 0.42))
+		draw_rect(Rect2(c.x - tw / 2, c.y - th / 2, 5, th), Color(0.42, 0.38, 0.32))
+		var a := deg_to_rad(deg)
+		# the cut comes in from the left (your side), sloping down for a positive angle
+		var d := Vector2(cos(a), sin(a))
+		draw_line(c - d * 52.0, c + d * 52.0, col, 3.0, true)
+		draw_arc(c - d * 52.0, 4.0, 0, TAU, 12, col, 2.0, true)
+		# a level reference, faint
+		draw_line(c + Vector2(-52, 0), c + Vector2(52, 0), Color(1, 1, 1, 0.18), 1.0)
 
 func _ready() -> void:
 	layer = 5
@@ -116,6 +146,17 @@ func _ready() -> void:
 	tilt.offset_left = -300; tilt.offset_right = 300; tilt.offset_top = -100; tilt.offset_bottom = -76
 	tilt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8)); tilt.add_theme_constant_override("outline_size", 5)
 	root.add_child(tilt)
+	# the cut-angle dial: a little trunk with the cut drawn across it at the angle it'll go in
+	dial_box = PanelContainer.new(); var db := _panel(0.8); db.content_margin_top = 8; db.content_margin_bottom = 8
+	dial_box.add_theme_stylebox_override("panel", db)
+	dial_box.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	dial_box.offset_left = -170; dial_box.offset_right = -16; dial_box.offset_top = -150; dial_box.offset_bottom = -16
+	var dvb := VBoxContainer.new(); dvb.alignment = BoxContainer.ALIGNMENT_CENTER; dial_box.add_child(dvb)
+	dial = AngleDial.new(); dial.custom_minimum_size = Vector2(122, 80); dvb.add_child(dial)
+	dial_lbl = _label("", 15); dial_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; dvb.add_child(dial_lbl)
+	dial_box.visible = false
+	dial_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(dial_box)
 	# what's on your shoulder: how many pieces, and how close to the limit (green, orange, red)
 	carry_box = PanelContainer.new(); var cb := _panel(0.8); cb.content_margin_top = 8; cb.content_margin_bottom = 8
 	carry_box.add_theme_stylebox_override("panel", cb)

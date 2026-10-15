@@ -1279,3 +1279,22 @@ func _woodsview() -> void:
 	await _view("wv-woods", Vector3(-70, 0, 20), Vector3(-90, 3, 32))
 	await _view("wv-edge", Vector3(-30, 0, 10), Vector3(-80, 6, 10))
 	await _view("wv-road", Vector3(10, 0, g.world.road_z + 2), Vector3(60, 4, g.world.road_z))
+
+func _ringaim() -> void:
+	await wait(0.5)
+	g._start()
+	var tr: AshTree = g.tree
+	var R: float = Wood.r_at(tr.T, 0.6)
+	var dir := Vector3(1, 0, 0)
+	g.equip("saw"); g.saw.on = true; g.saw.engine_snd = Sfx.engine("saw")
+	g.player.crouch = true
+	var st := tr.global_position + dir * (R + 0.5)
+	g.player.teleport(Vector3(st.x, g.world.H(st.x, st.z) + 0.05, st.z))
+	look_at_point(tr.to_world(Vector3(0, 0.7, 0)) + dir * R)
+	g.saw.tilt = deg_to_rad(45)
+	await wait(0.8)
+	await shot("ring-aim45")
+	g.saw.tilt = 0.0
+	look_at_point(tr.to_world(Vector3(0, 0.5, 0)) + dir * R)
+	await wait(0.6)
+	await shot("ring-aim0")
