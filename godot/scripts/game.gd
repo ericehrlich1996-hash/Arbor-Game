@@ -13,7 +13,9 @@ var player: Player
 var hud: Hud
 var sun: DirectionalLight3D
 var level_root: Node3D
-var phase := "title"           # title | intro | play | done
+var phase := "title"           # title | hub | intro | play | done
+var in_hub := false
+var hub: Hub
 var objs := {talk = false, felled = false, limbed = false, stacked = false, paid = false}
 var aim := {}
 var dlg = null
@@ -43,18 +45,107 @@ func _ready() -> void:
 	_setup_input()
 	_setup_env()
 	hud = Hud.new(); add_child(hud)
-	hud.start_pressed.connect(start_intro)
-	hud.next_job_pressed.connect(func(): get_tree().reload_current_scene())
-	money = Career.load().money
-	new_level(randi() % 1000000 + 1)
+	hud.start_pressed.connect(_on_start)
+	hud.next_job_pressed.connect(func(): Hub.come_home = true; get_tree().reload_current_scene())
+	hud.job_chosen.connect(start_job)
+	hud.computer_closed.connect(_close_computer)
+	var car := Career.load()
+	money = car.money
+	Mats.set_truck_rust(car.truck_rust)
+	var test_name := ""
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--test="): test_name = a.substr(7)
+	if test_name == "" or test_name.begins_with("hub"): enter_hub()
+	else: new_level(randi() % 1000000 + 1)
 	Sfx.start_ambience()
 	_prewarm_shaders()
 	if OS.get_environment("ARBOR_LOW") != "": set_detail(0)
-	for a in OS.get_cmdline_user_args():
-		if a.begins_with("--test="):
-			tests = load("res://scripts/tests.gd").new()
-			add_child(tests)
-			tests.run(self, a.substr(7))
+	if test_name != "":
+		tests = load("res://scripts/tests.gd").new()
+		add_child(tests)
+		tests.run(self, test_name)
+
+# ================================================================ home
+func enter_hub() -> void:
+	in_hub = true
+	if level_root: level_root.queue_free()
+	level_root = Node3D.new(); level_root.name = "Level"; add_child(level_root)
+	hub = Hub.new(); hub.name = "Home"; level_root.add_child(hub)
+	hub.build(self)
+	world = hub.world
+	truck = hub.truck
+	player = hub.player
+	weather = Weather.new(); weather.name = "Weather"; level_root.add_child(weather)
+	weather.setup(self, randi() % 100000)
+	ambient = Ambient.new(); ambient.name = "Ambient"; level_root.add_child(ambient)
+	ambient.setup(Vector3(0, world.H(0, 0), 0))
+	saw = Saw.new(); saw.name = "Saw"; player.hands.add_child(saw)
+	saw.setup(self, player)
+	hud.set_play_visible(false)
+	hub.title_cam.make_current()
+	if Hub.come_home:
+		Hub.come_home = false
+		hub_begin()
+		hud.toast("Home again. $%d in the bank." % money, 3.5)
+	else:
+		phase = "title"
+		hud.title.visible = true
+
+func _on_start() -> void:
+	if in_hub: hub_begin()
+	else: start_intro()
+
+func hub_begin() -> void:
+	phase = "hub"
+	hud.title.visible = false
+	hud.set_play_visible(true)
+	for n in [hud.obj_panel, hud.hotbar, hud.tilt]: n.visible = false
+	hub.begin()
+	if tests == null: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	hud.fade.color.a = 1.0
+	create_tween().tween_property(hud.fade, "color:a", 0.0, 1.0)
+	if not hud.toast_lbl.visible or hud.toast_lbl.text == "": hud.toast("Home sweet home. The old computer in the corner is where the work comes in.", 5.0)
+
+const JOBS := [
+	{title = "Earl's dead ash", pay = 400, open = true,
+		text = "Old fella out on Birch Rd. Dead ash in the yard, leaning. Drop it, limb it, chip the brush, stack the rounds behind his shed."},
+	{title = "-- nothing else yet --", pay = 0, open = false, text = "Word gets around. Check back after a job or two."},
+]
+
+func open_computer() -> void:
+	hub.busy = true
+	hud.set_prompt("")
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	Sfx.play("blip")
+	hud.show_computer(JOBS, money, Career.load().jobs)
+
+func _close_computer() -> void:
+	hub.busy = false
+	if tests == null: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func start_job(_idx: int) -> void:
+	Sfx.play("ding")
+	var tw := create_tween()
+	tw.tween_property(hud.fade, "color:a", 1.0, 0.7)
+	tw.tween_callback(func():
+		in_hub = false
+		hub = null
+		hud.set_play_visible(false); hud.set_prompt("")
+		new_level(randi() % 1000000 + 1)
+		_prewarm_shaders()
+		start_intro())
+
+func _hub_input(ev: InputEvent) -> void:
+	if phase != "hub": return
+	if hud.pc_screen.visible:
+		if ev is InputEventKey and ev.pressed and ev.physical_keycode == KEY_ESCAPE: hud.hide_computer(); _close_computer()
+		return
+	if ev is InputEventMouseButton and ev.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED; return
+	if ev is InputEventKey and ev.pressed and ev.physical_keycode == KEY_ESCAPE:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE; return
+	if ev.is_action_pressed("help"): hud.help.visible = not hud.help.visible; return
+	if ev.is_action_pressed("interact") or (ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT): hub.interact()
 
 func _setup_input() -> void:
 	var keys := {
@@ -177,7 +268,7 @@ func set_detail(d: int) -> void:
 ## watch the frame rate from the start of the drive in: if it's struggling, drop to low detail early
 ## (rather than after you're already playing), once, and say so
 func _watch_fps(dt: float) -> void:
-	if _fps_checked or (phase != "play" and phase != "intro") or tests != null: return
+	if _fps_checked or (phase != "play" and phase != "intro" and phase != "hub") or tests != null: return
 	_fps_t += dt
 	if _fps_t < 1.0: return              # the first moment is always lumpy
 	_fps_frames += 1
@@ -190,6 +281,7 @@ func _watch_fps(dt: float) -> void:
 # ================================================================ a new property
 func new_level(sd: int) -> void:
 	seed = sd
+	in_hub = false
 	if level_root: level_root.queue_free()
 	level_root = Node3D.new(); level_root.name = "Level"; add_child(level_root)
 	world = WorldGen.new(); world.setup(sd); world.build(level_root)
@@ -372,7 +464,7 @@ func _start() -> void:
 
 # ================================================================ input
 func _input(ev: InputEvent) -> void:
-	if phase == "play" and ev is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and dlg == null:
+	if (phase == "play" or phase == "hub") and ev is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and dlg == null:
 		var k := 0.0022
 		if player.in_truck: truck.look(ev.relative.x * k, ev.relative.y * k)
 		else: player.look(ev.relative.x * k, ev.relative.y * k)
@@ -383,6 +475,7 @@ func _unhandled_input(ev: InputEvent) -> void:
 		set_detail(1 - detail)
 		hud.toast("Graphics: " + ("high detail" if detail == 1 else "low detail (faster)") + "  ·  F3 to switch", 2.5)
 		return
+	if in_hub: _hub_input(ev); return
 	if phase == "intro":
 		if ev is InputEventKey and ev.pressed and ev.physical_keycode in [KEY_SPACE, KEY_ENTER, KEY_ESCAPE]: end_intro()
 		return
@@ -887,6 +980,10 @@ func _process(dt: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if ambient and cam: ambient.step(dt, cam.global_position)
 	if weather and cam: weather.step(dt, cam.global_position)
+	if in_hub:
+		hub.step(dt)
+		hud.money.text = "$%d" % money
+		return
 	if timelapse: timelapse.step(dt)
 	_step_kick(dt)
 	if phase == "title":

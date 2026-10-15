@@ -36,7 +36,7 @@ func setup(rng: RandomNumberGenerator) -> void:
 	var m := Models.truck(rng)
 	paint = m
 	var mesh := ArrayMesh.new()
-	for part in [[m.paint, Mats.paint], [m.chrome, Mats.chrome], [m.dark, Mats.vcol], [m.lamps, Mats.lamp]]:
+	for part in [[m.paint, Mats.truck_paint], [m.chrome, Mats.truck_chrome], [m.dark, Mats.vcol], [m.lamps, Mats.lamp]]:
 		var mb: MeshBuilder = part[0]
 		if mb.is_empty(): continue
 		mb.commit(mesh)
@@ -45,7 +45,7 @@ func setup(rng: RandomNumberGenerator) -> void:
 	var tg: MeshInstance3D = m.tailgate.instance(Mats.vcol_glass); tg.name = "Tailgate"
 	tg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(tg)
-	var gl: MeshInstance3D = m.glass.instance(Mats.glass); gl.name = "Glass"
+	var gl: MeshInstance3D = m.glass.instance(Mats.truck_glass); gl.name = "Glass"
 	gl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(gl)
 	# collision: front clip, cab, bed floor, bed walls, tailgate, chassis

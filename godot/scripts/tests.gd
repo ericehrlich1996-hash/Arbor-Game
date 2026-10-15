@@ -1420,3 +1420,41 @@ func _kickleg() -> void:
 	g.haul.kick()
 	await wait(0.22)
 	await shot("kick-out")
+
+func _hview(name: String, at: Vector3, look: Vector3) -> void:
+	var y0: float = g.hub.y0
+	var p: Player = g.player
+	p.teleport(Vector3(at.x, g.world.H(at.x, at.z) + 0.05 if at.y < 0.2 else y0 + at.y, at.z))
+	look_at_point(Vector3(look.x, y0 + look.y, look.z))
+	await wait(0.8)
+	await shot(name)
+
+func _hub() -> void:
+	await wait(1.5)
+	await shot("hub-title")
+	g.hub_begin()
+	await wait(1.2)
+	await shot("hub-start")
+	await _hview("hub-yard", Vector3(9, 0, -12), Vector3(0, 2, 0))
+	await _hview("hub-truck", Vector3(4.5, 0, -12.5), Vector3(7, 1, -9.5))
+	await _hview("hub-door", Vector3(1.3, 0.5, -2.6), Vector3(-1.5, 1.2, 1.5))
+	await _hview("hub-fire", Vector3(0.5, 0.5, -1.5), Vector3(-4, 1.0, -0.5))
+	await _hview("hub-kitchen", Vector3(-0.5, 0.5, 0.0), Vector3(4, 1.2, -1.0))
+	await _hview("hub-bath", Vector3(2.6, 0.5, 0.3), Vector3(3.3, 1.0, 2.9))
+	await _hview("hub-desk", Vector3(-2.6, 0.5, -1.4), Vector3(-3.1, 1.25, -2.8))
+	note("aim", g.hub.aim)
+	g.hub.interact()
+	await wait(0.6)
+	await shot("hub-computer")
+	note("pc_open", g.hud.pc_screen.visible)
+	g.start_job(0)
+	await wait(4.0)
+	note("after_job", [g.phase, g.in_hub])
+	await shot("hub-intro")
+
+func _hub2() -> void:
+	await wait(1.0)
+	g.hub_begin()
+	await _hview("hub2-yard", Vector3(9, 0, -12), Vector3(0, 2, 0))
+	await _hview("hub2-truckside", Vector3(10.5, 0, -8.5), Vector3(7, 1, -9.5))
+	await _hview("hub2-door", Vector3(1.3, 0.5, -2.6), Vector3(-1.5, 1.2, 1.5))

@@ -26,6 +26,51 @@ var glass: StandardMaterial3D
 var paint: StandardMaterial3D
 var chrome: StandardMaterial3D
 var lamp: StandardMaterial3D
+var truck_paint: ShaderMaterial    # faded paint eaten through with rust, grime low down
+var truck_chrome: ShaderMaterial
+var truck_glass: StandardMaterial3D
+
+const RUST_SHADER := """
+shader_type spatial;
+uniform float rust = 0.75;
+uniform float metal = 0.0;
+uniform float shine = 0.45;
+varying vec3 lp;
+float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+float n3(vec3 p) {
+	vec3 i = floor(p); vec3 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y),
+		mix(mix(h3(i + vec3(0,0,1)), h3(i + vec3(1,0,1)), f.x), mix(h3(i + vec3(0,1,1)), h3(i + vec3(1,1,1)), f.x), f.y), f.z);
+}
+float fbm(vec3 p) { float v = 0.0; float a = 0.5; for (int i = 0; i < 4; i++) { v += a * n3(p); p = p * 2.07 + 3.1; a *= 0.5; } return v; }
+void vertex() { lp = VERTEX; }
+void fragment() {
+	vec3 base = pow(COLOR.rgb, vec3(2.2));
+	// sun-baked paint: chalky and faded
+	vec3 faded = mix(base, vec3(dot(base, vec3(0.3, 0.5, 0.2))), 0.3 * rust) * (1.0 - 0.12 * rust) + 0.02 * rust;
+	// rust: blooms from the bottom edges up, plus scattered patches and pitting
+	float low = 1.0 - smoothstep(0.45, 1.35, lp.y);
+	float m = fbm(lp * 2.1) + low * 0.6 * rust + (n3(lp * 22.0) - 0.5) * 0.18;
+	float r = smoothstep(0.78 - rust * 0.32, 0.86 - rust * 0.3, m);
+	float pit = step(0.975 - rust * 0.03, n3(lp * 48.0)) * rust;
+	r = max(r, pit * 0.8);
+	vec3 rc = mix(vec3(0.2, 0.085, 0.035), vec3(0.52, 0.24, 0.08), n3(lp * 9.0));
+	rc = mix(rc, vec3(0.45, 0.27, 0.12), smoothstep(0.7, 0.95, n3(lp * 17.0)) * 0.5);
+	// a dirty halo where paint meets rust, and road grime along the bottom
+	float halo = smoothstep(0.62 - rust * 0.3, 0.78 - rust * 0.3, m) * (1.0 - r);
+	vec3 col = mix(faded, faded * 0.62 + vec3(0.04, 0.025, 0.01), halo * 0.8);
+	col = mix(col, rc, r);
+	col *= 1.0 - low * 0.2 * rust;
+	ALBEDO = col;
+	ROUGHNESS = mix(shine, 0.97, max(r, low * 0.5 * rust));
+	METALLIC = metal * (1.0 - r);
+}
+"""
+
+## how rusty the old truck is (1 = as found; fixing it up brings this down)
+func set_truck_rust(k: float) -> void:
+	truck_paint.set_shader_parameter("rust", 1.0 * k)
+	truck_chrome.set_shader_parameter("rust", 0.6 * k)
 
 func _ready() -> void:
 	var nz := FastNoiseLite.new()
@@ -56,10 +101,18 @@ func _ready() -> void:
 	paint = vcol.duplicate(); paint.roughness = 0.42; paint.metallic_specular = 0.6
 	chrome = vcol.duplicate(); chrome.metallic = 0.85; chrome.roughness = 0.22
 	lamp = vcol.duplicate(); lamp.emission_enabled = true; lamp.emission = Color(0.25, 0.22, 0.18); lamp.roughness = 0.2
+	var rsh := Shader.new(); rsh.code = RUST_SHADER
+	truck_paint = ShaderMaterial.new(); truck_paint.shader = rsh
+	truck_chrome = ShaderMaterial.new(); truck_chrome.shader = rsh
+	truck_chrome.set_shader_parameter("metal", 0.55); truck_chrome.set_shader_parameter("shine", 0.35)
+	set_truck_rust(1.0)
 	glass = vcol.duplicate()
 	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	glass.albedo_color = Color(1, 1, 1, 0.22)
 	glass.roughness = 0.1; glass.metallic_specular = 0.9
+	truck_glass = glass.duplicate()
+	truck_glass.albedo_color = Color(0.82, 0.78, 0.66, 0.34)     # years of grime and pollen
+	truck_glass.roughness = 0.45
 	# ground: a soft mottled detail texture in world space, multiplied over the painted colours
 	var gn := FastNoiseLite.new(); gn.frequency = 0.02; gn.fractal_octaves = 4
 	var gg := Gradient.new(); gg.set_color(0, Color(0.8, 0.82, 0.78)); gg.set_color(1, Color(1.06, 1.06, 1.0))

@@ -30,6 +30,7 @@ var _nB := FastNoiseLite.new()
 var _nC := FastNoiseLite.new()
 var _grid := PackedFloat32Array()
 var _base := 0.0
+var mown := true                # the yard's mown in stripes (not round an old cabin in the woods)
 
 func _pick(a: Array):
 	return a[rng.randi_range(0, a.size() - 1)]
@@ -197,7 +198,7 @@ func _build_terrain(root: Node3D) -> void:
 			var n := _noise(_nC, x / 6, z / 6)
 			var fo := forestness(x, z)
 			var c := lawn.lerp(lawn2, n)
-			if fo < 0.05: c = MeshBuilder.shade(c, 1.025 if int(floor((x + z * 0.15) / 2.2)) % 2 != 0 else 0.975)
+			if fo < 0.05 and mown: c = MeshBuilder.shade(c, 1.025 if int(floor((x + z * 0.15) / 2.2)) % 2 != 0 else 0.975)
 			# the forest floor: needles and leaf litter, with mossy patches
 			var floor_c := floor_dirt.lerp(floor_moss, smoothstep(0.35, 0.75, _noise(_nB, x / 9, z / 9)))
 			floor_c = floor_c.lerp(floor_leaf, smoothstep(0.55, 0.85, _noise(_nA, x / 5, z / 5)) * 0.7)

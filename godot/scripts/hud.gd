@@ -5,6 +5,8 @@ extends CanvasLayer
 
 signal start_pressed
 signal next_job_pressed
+signal job_chosen(idx: int)
+signal computer_closed
 
 var root: Control
 var crosshair: ColorRect
@@ -219,6 +221,7 @@ func _ready() -> void:
 	root.add_child(intro_card)
 	_build_title()
 	_build_summary()
+	_build_computer()
 	_ignore_mouse(root)
 	title.mouse_filter = Control.MOUSE_FILTER_STOP
 
@@ -237,7 +240,7 @@ func _build_title() -> void:
 	t.add_theme_constant_override("outline_size", 12); t.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
 	v.add_child(t)
 	var st := _label("A chainsaw, a chipper and a square-body. Start small.", 20, INK); st.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; v.add_child(st)
-	var b := Button.new(); b.text = "  Start the job  "; b.add_theme_font_size_override("font_size", 24)
+	var b := Button.new(); b.text = "  Start  "; b.add_theme_font_size_override("font_size", 24)
 	b.custom_minimum_size = Vector2(280, 56)
 	var bs := StyleBoxFlat.new(); bs.bg_color = Color("#d9861c"); bs.set_corner_radius_all(10)
 	var bh := bs.duplicate(); bh.bg_color = Color("#f0a030")
@@ -247,6 +250,79 @@ func _build_title() -> void:
 	var bc := CenterContainer.new(); bc.add_child(b); v.add_child(bc)
 	var hint := _label("Mouse to look · WASD to walk · E to use · H for all controls", 15, DIM); hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; v.add_child(hint)
 	root.add_child(title)
+
+# ---------------------------------------------------------------- the old computer (job select)
+var pc_screen: Control
+var pc_list: VBoxContainer
+var pc_head: Label
+const CRT := Color("#7dff8a")
+const CRT_DIM := Color("#3f8a48")
+
+func _crt_label(t: String, size := 18, col := CRT) -> Label:
+	var l := _label(t, size, col)
+	l.add_theme_font_override("font", _mono())
+	return l
+
+func _mono() -> Font:
+	var f := SystemFont.new(); f.font_names = PackedStringArray(["DejaVu Sans Mono", "Courier New", "Consolas", "monospace"])
+	return f
+
+func _build_computer() -> void:
+	pc_screen = ColorRect.new(); (pc_screen as ColorRect).color = Color(0, 0, 0, 0.55)
+	pc_screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var c := CenterContainer.new(); c.set_anchors_preset(Control.PRESET_FULL_RECT); pc_screen.add_child(c)
+	# a beige monitor bezel round a green-screen CRT
+	var bezel := PanelContainer.new()
+	var bs := StyleBoxFlat.new(); bs.bg_color = Color("#c9bfa4"); bs.set_corner_radius_all(26)
+	bs.content_margin_left = 34; bs.content_margin_right = 34; bs.content_margin_top = 30; bs.content_margin_bottom = 42
+	bs.border_color = Color("#9e9478"); bs.set_border_width_all(3)
+	bezel.add_theme_stylebox_override("panel", bs); c.add_child(bezel)
+	var scr := PanelContainer.new()
+	var ss := StyleBoxFlat.new(); ss.bg_color = Color("#06140a"); ss.set_corner_radius_all(18)
+	ss.content_margin_left = 26; ss.content_margin_right = 26; ss.content_margin_top = 20; ss.content_margin_bottom = 20
+	ss.border_color = Color("#1a2a1e"); ss.set_border_width_all(6)
+	scr.add_theme_stylebox_override("panel", ss); scr.custom_minimum_size = Vector2(640, 420); bezel.add_child(scr)
+	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 10); scr.add_child(v)
+	pc_head = _crt_label("", 18); v.add_child(pc_head)
+	v.add_child(_crt_label("--------------------------------------------------", 16, CRT_DIM))
+	pc_list = VBoxContainer.new(); pc_list.add_theme_constant_override("separation", 12); v.add_child(pc_list)
+	var sp := Control.new(); sp.size_flags_vertical = Control.SIZE_EXPAND_FILL; v.add_child(sp)
+	var close := _crt_button("[ LOG OFF ]")
+	close.pressed.connect(func(): hide_computer(); computer_closed.emit())
+	v.add_child(close)
+	pc_screen.visible = false
+	root.add_child(pc_screen)
+
+func _crt_button(t: String) -> Button:
+	var b := Button.new(); b.text = t
+	b.add_theme_font_override("font", _mono()); b.add_theme_font_size_override("font_size", 18)
+	var n := StyleBoxFlat.new(); n.bg_color = Color(0, 0, 0, 0); n.content_margin_left = 6; n.content_margin_right = 6
+	var hv := StyleBoxFlat.new(); hv.bg_color = CRT; hv.content_margin_left = 6; hv.content_margin_right = 6
+	b.add_theme_stylebox_override("normal", n); b.add_theme_stylebox_override("hover", hv); b.add_theme_stylebox_override("pressed", hv)
+	b.add_theme_stylebox_override("focus", n); b.add_theme_stylebox_override("disabled", n)
+	b.add_theme_color_override("font_color", CRT); b.add_theme_color_override("font_hover_color", Color("#06140a"))
+	b.add_theme_color_override("font_pressed_color", Color("#06140a")); b.add_theme_color_override("font_disabled_color", CRT_DIM)
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	return b
+
+## jobs: [{title, text, pay, open}]
+func show_computer(jobs: Array, bank: int, jobs_done: int) -> void:
+	pc_head.text = "TREE-MAIL v1.2        BANK: $%d   JOBS DONE: %d" % [bank, jobs_done]
+	for ch in pc_list.get_children(): ch.queue_free()
+	pc_list.add_child(_crt_label("> NEW WORK IN YOUR AREA:", 18))
+	for i in range(jobs.size()):
+		var j: Dictionary = jobs[i]
+		var b := _crt_button(("  %d. %s   $%d" % [i + 1, j.title, j.pay]) if j.open else ("  %d. %s" % [i + 1, j.title]))
+		b.disabled = not j.open
+		b.pressed.connect(func(): hide_computer(); job_chosen.emit(i))
+		pc_list.add_child(b)
+		var d := _crt_label("     " + j.text, 15, CRT if j.open else CRT_DIM)
+		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; d.custom_minimum_size = Vector2(580, 0)
+		pc_list.add_child(d)
+	pc_screen.visible = true
+
+func hide_computer() -> void:
+	pc_screen.visible = false
 
 func _build_summary() -> void:
 	summary = ColorRect.new(); (summary as ColorRect).color = Color(0, 0, 0, 0.6)
@@ -267,7 +343,7 @@ func _build_summary() -> void:
 	v.add_child(_label("Job done · Earl's dead ash", 26, Color("#ffe1b8")))
 	sum_rows = VBoxContainer.new(); v.add_child(sum_rows)
 	sum_notes = _label("", 15, DIM); sum_notes.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; sum_notes.custom_minimum_size = Vector2(420, 0); v.add_child(sum_notes)
-	var b := Button.new(); b.text = "Next property"; b.add_theme_font_size_override("font_size", 20)
+	var b := Button.new(); b.text = "Head home"; b.add_theme_font_size_override("font_size", 20)
 	b.pressed.connect(func(): next_job_pressed.emit())
 	v.add_child(b)
 	summary.visible = false
