@@ -1208,3 +1208,29 @@ func _weather() -> void:
 		g.weather.force(k)
 		await _view("weather-" + k, at, Vector3(h.x, g.world.H(h.x, h.z) + 3.0, h.z))
 	note("kind", g.weather.kind)
+
+func _carrymeter() -> void:
+	await wait(0.5)
+	g._start()
+	g.objs.talk = true
+	await _fell_tree_quick()
+	var st: WoodPiece = g.tree.stem
+	for id in st.limbs.duplicate(): Lumber.limb_off(g, st, id)
+	await wait(1.0)
+	var brush: Array = g.pieces().filter(func(b): return b.is_brush() and g.haul.liftable(b))
+	brush.sort_custom(func(a, b): return a.mass < b.mass)
+	var shots := 0
+	for b: WoodPiece in brush:
+		if not g.haul.can_add(b): continue
+		var p := b.center_world() + Vector3(1.0, 0, 0)
+		g.player.teleport(Vector3(p.x, g.world.H(p.x, p.z) + 0.05, p.z))
+		look_at_point(b.center_world())
+		await wait(0.3)
+		g.aim = g.compute_aim()
+		var ok: bool = g._grab_aimed()
+		note("grab", [ok, g.haul.carry.size(), g.haul.carry_mass()])
+		await wait(0.2)
+		if g.haul.carry.size() in [1, 3]:
+			await shot("carry-%d" % g.haul.carry.size())
+		if g.haul.carry.size() >= 5: break
+	await shot("carry-final")

@@ -48,6 +48,7 @@ func _ready() -> void:
 	money = Career.load().money
 	new_level(randi() % 1000000 + 1)
 	Sfx.start_ambience()
+	_prewarm_shaders()
 	if OS.get_environment("ARBOR_LOW") != "": set_detail(0)
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--test="):
@@ -407,6 +408,13 @@ func _unhandled_input(ev: InputEvent) -> void:
 		if ev.is_action_pressed("interact"): exit_truck()
 		elif ev.is_action_pressed("camera"): truck.toggle_cam()
 		return
+	if ev is InputEventMouseButton and ev.pressed and player.tool == "hands" and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		if ev.button_index == MOUSE_BUTTON_LEFT and _grab_aimed(): return
+		if ev.button_index == MOUSE_BUTTON_RIGHT and haul.carrying():
+			# into the truck bed if you're by it, otherwise set one down
+			if haul.throw_target() != null: haul.throw_one()
+			else: haul.drop_one()
+			return
 	if ev.is_action_pressed("interact"): interact()
 	elif ev.is_action_pressed("drop") and haul.carrying(): haul.drop_one()
 	elif ev.is_action_pressed("throw") and haul.carrying(): haul.throw_one()
@@ -480,6 +488,55 @@ func compute_aim() -> Dictionary:
 		if d >= 0 and (best.is_empty() or (best.kind != "piece" and d > best.t) or (best.kind == "piece" and d > 0.97)):
 			best = {kind = c[0], t = d}
 	return best
+
+## left click with your hands: pick up what you're looking at (adding to what's on your shoulder),
+## or feed the chipper if you're carrying brush at the hopper
+func _grab_aimed() -> bool:
+	var a := aim
+	if a.get("kind", "") == "piece":
+		var b: WoodPiece = a.piece
+		if haul.liftable(b) and (not haul.carrying() or haul.can_add(b)):
+			haul.pick_up(b); return true
+		if haul.carrying() and haul.liftable(b):
+			hud.toast("That's all you can carry. Right click to set one down.", 2.0); return true
+	if haul.carrying():
+		var brush: bool = haul.carry[0].is_brush() or haul.carry[0].kind == "wedge"
+		if brush and haul.near_hopper() and chipper.running: haul.feed(); return true
+	return false
+
+## Compile every shader the level uses up front, behind the title screen, instead of hitching the first time
+## each tree, plant or material comes into view: one copy of every mesh, tiny, right in front of the camera
+## for a few frames (MultiMesh copies for the instanced plants, since that's a different shader variant).
+func _prewarm_shaders() -> void:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null: return
+	var holder := Node3D.new(); holder.name = "Prewarm"
+	add_child(holder)
+	holder.global_transform = cam.global_transform * Transform3D(Basis.from_scale(Vector3.ONE * 0.0005), Vector3(0, 0, -1.0))
+	var seen := {}
+	var i := 0
+	for n in level_root.find_children("*", "GeometryInstance3D", true, false):
+		var mesh: Mesh = null; var multi := false
+		if n is MeshInstance3D: mesh = n.mesh
+		elif n is MultiMeshInstance3D and n.multimesh: mesh = n.multimesh.mesh; multi = true
+		if mesh == null: continue
+		var key := str(mesh.get_instance_id()) + (":m" if multi else "") + str((n as GeometryInstance3D).material_override)
+		if seen.has(key): continue
+		seen[key] = true
+		var gi: GeometryInstance3D
+		if multi:
+			var mm := MultiMesh.new(); mm.transform_format = MultiMesh.TRANSFORM_3D; mm.use_colors = n.multimesh.use_colors
+			mm.mesh = mesh; mm.instance_count = 1
+			var mmi := MultiMeshInstance3D.new(); mmi.multimesh = mm; gi = mmi
+		else:
+			var mi := MeshInstance3D.new(); mi.mesh = mesh; gi = mi
+		gi.material_override = (n as GeometryInstance3D).material_override
+		gi.position = Vector3((i % 10) * 0.5 - 2.5, (i / 10) * 0.5 - 1.0, 0)
+		i += 1
+		holder.add_child(gi)
+	# a handful of frames is enough for the renderer to build every pipeline; then let it go
+	for f in range(4): await get_tree().process_frame
+	holder.queue_free()
 
 ## the truck or chipper lying on its side or roof within reach: "truck", "chipper" or ""
 func _tipped_near() -> String:
@@ -730,6 +787,12 @@ func update_objectives() -> void:
 # ================================================================ HUD
 func _update_hud() -> void:
 	hud.money.text = "$%d" % money
+	var nc := haul.carry.size()
+	if nc > 0:
+		var brushy: bool = haul.carry[0].is_brush() or haul.carry[0].kind == "wedge"
+		hud.set_carry(nc, ("piece" if nc == 1 else "pieces") + (" of brush" if brushy else "") if brushy else ("round" if nc == 1 else "rounds"), haul.carry_mass(), Wood.LIFT_MAX, lb)
+	else:
+		hud.set_carry(0, "", 0.0, 1.0, lb)
 	hud.tool_state.text = ("Saw: running" if saw.on else "Saw: off · R to start") if player.tool == "saw" else ""
 	hud.tilt.visible = player.tool == "saw" and not player.in_truck and phase == "play"
 	if not saw.guide.is_empty():
@@ -758,12 +821,11 @@ func _update_hud() -> void:
 		var n := haul.carry.size()
 		var brush: bool = haul.carry[0].is_brush() or haul.carry[0].kind == "wedge"
 		if a.get("kind", "") == "piece" and player.tool == "hands" and haul.liftable(a.piece) and haul.can_add(a.piece):
-			t = "[b]E[/b] Pick up another · %s total" % lb(haul.carry_mass() + a.piece.mass)
+			t = "[b]Left click[/b] Grab another · %s total" % lb(haul.carry_mass() + a.piece.mass)
 		elif brush and haul.near_hopper() and chipper.running:
-			t = "[b]E[/b] Feed the chipper" + (" (%d)" % n if n > 1 else "")
+			t = "[b]Left click[/b] Feed the chipper" + (" (%d)" % n if n > 1 else "")
 		else:
-			t = "[b]E[/b] Drop%s · [b]Q[/b] drop one · [b]G[/b] %s" % [" all" if n > 1 else "", "Throw in the truck" if haul.throw_target() != null else "Toss one"]
-		t += " · " + lb(haul.carry_mass())
+			t = "[b]Right click[/b] %s · [b]E[/b] drop all" % ("Throw one in the truck" if haul.throw_target() != null else "Set one down")
 	elif not a.is_empty():
 		match a.kind:
 			"earl": t = "[b]E[/b] Talk to Earl" + (" · get paid" if objs.limbed and objs.stacked and not objs.paid else "")
@@ -777,7 +839,7 @@ func _update_hud() -> void:
 				if player.tool == "saw": t = "" if saw.on else "[b]R[/b] Pull-start the saw"
 				elif b.kind == "trunk" and not b.limbs.is_empty(): t = lb(b.mass) + (" · [b]T[/b] Drag" if haul.can_drag(b) else "")
 				elif b.mass > Wood.LIFT_MAX: t = ("[b]T[/b] Drag · %s" % lb(b.mass)) if haul.can_drag(b) else "%s · too heavy" % lb(b.mass)
-				else: t = "[b]E[/b] Pick up %s · %s" % [b.label(), lb(b.mass)]
+				else: t = "[b]Left click[/b] Pick up %s · %s" % [b.label(), lb(b.mass)]
 	hud.set_prompt(t)
 
 # ================================================================ frame loop

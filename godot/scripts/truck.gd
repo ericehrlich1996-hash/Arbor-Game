@@ -181,7 +181,11 @@ func _physics_process(dt: float) -> void:
 	else:
 		engine_force = 0
 		brake = 400.0
-		# parked: once it has settled (less than a few cm of drift over half a second), pin it so it can't creep
+		# parked: as soon as it's rolled to a stop on its wheels, pin it, so logs thrown in (or a pile it's
+		# backed against) can't rock it, creep it or flip it; and failing that, once it stops drifting
+		if not freeze and linear_velocity.length() < 0.6 and angular_velocity.length() < 0.4 and global_transform.basis.y.y > 0.85:
+			freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+			freeze = true
 		_still_t += dt
 		if _still_t > 0.5:
 			if global_position.distance_to(_last_pos) < 0.06 and not freeze:

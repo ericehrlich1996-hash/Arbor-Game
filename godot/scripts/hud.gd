@@ -30,6 +30,10 @@ var summary: Control
 var sum_rows: VBoxContainer
 var sum_notes: Label
 var tilt: Label
+var carry_box: PanelContainer
+var carry_lbl: Label
+var carry_fill: ColorRect
+var carry_wt: Label
 var fade: ColorRect
 var intro_card: Label
 var _t := 0.0
@@ -52,6 +56,17 @@ func _label(text: String, size := 16, col := INK) -> Label:
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", col)
 	return l
+
+func set_carry(n: int, what: String, kg: float, max_kg: float, to_lb: Callable) -> void:
+	carry_box.visible = n > 0
+	if n == 0: return
+	var fr := clampf(kg / max_kg, 0.0, 1.0)
+	var col := GREEN if fr < 0.7 else (Color("#f0a030") if fr < 0.92 else Color("#e5533d"))
+	carry_lbl.text = "Carrying %d %s" % [n, what]
+	carry_lbl.add_theme_color_override("font_color", col)
+	carry_fill.color = col
+	carry_fill.size = Vector2(200.0 * fr, 10)
+	carry_wt.text = "%s of %s" % [to_lb.call(kg), to_lb.call(max_kg)] + ("  ·  full" if fr >= 0.92 else "")
 
 func _ready() -> void:
 	layer = 5
@@ -101,6 +116,21 @@ func _ready() -> void:
 	tilt.offset_left = -300; tilt.offset_right = 300; tilt.offset_top = -100; tilt.offset_bottom = -76
 	tilt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8)); tilt.add_theme_constant_override("outline_size", 5)
 	root.add_child(tilt)
+	# what's on your shoulder: how many pieces, and how close to the limit (green, orange, red)
+	carry_box = PanelContainer.new(); var cb := _panel(0.8); cb.content_margin_top = 8; cb.content_margin_bottom = 8
+	carry_box.add_theme_stylebox_override("panel", cb)
+	carry_box.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	carry_box.offset_left = -250; carry_box.offset_right = -16; carry_box.offset_top = -112; carry_box.offset_bottom = -16
+	var cv := VBoxContainer.new(); cv.add_theme_constant_override("separation", 5); carry_box.add_child(cv)
+	carry_lbl = _label("", 15); cv.add_child(carry_lbl)
+	var track := ColorRect.new(); track.color = Color(1, 1, 1, 0.12); track.custom_minimum_size = Vector2(200, 10)
+	cv.add_child(track)
+	carry_fill = ColorRect.new(); carry_fill.color = GREEN; carry_fill.size = Vector2(0, 10)
+	track.add_child(carry_fill)
+	carry_wt = _label("", 13, DIM); cv.add_child(carry_wt)
+	carry_box.visible = false
+	carry_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(carry_box)
 	# toast
 	toast_lbl = _label("", 17); toast_lbl.set_anchors_preset(Control.PRESET_CENTER); toast_lbl.position = Vector2(-300, -170)
 	toast_lbl.custom_minimum_size = Vector2(600, 0); toast_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -128,7 +158,7 @@ func _ready() -> void:
 	help.set_anchors_preset(Control.PRESET_TOP_RIGHT); help.position = Vector2(-410, 90); help.custom_minimum_size = Vector2(390, 0)
 	var hl := RichTextLabel.new(); hl.bbcode_enabled = true; hl.fit_content = true; hl.scroll_active = false; hl.custom_minimum_size = Vector2(360, 0)
 	hl.add_theme_font_size_override("normal_font_size", 14); hl.add_theme_font_size_override("bold_font_size", 14)
-	hl.text = "[b]WASD[/b] walk · [b]Shift[/b] run · [b]Space[/b] jump · [b]C[/b] crouch\n[b]Mouse[/b] look (click to capture)\n[b]E[/b] talk / pick up / use / drive / hitch\n[b]1 2 3[/b] hands · chainsaw · ear muffs\n[b]R[/b] pull-start the saw · [b]Right mouse[/b] rev and cut\n[b]Wheel[/b] angle the cut (aim at a trunk or log: the line shows where it goes)\n[b]Q[/b] drop one · [b]G[/b] throw · [b]T[/b] drag · [b]F[/b] kick\n[b]F3[/b] graphics detail (high / low) · [b]H[/b] this help"
+	hl.text = "[b]WASD[/b] walk · [b]Shift[/b] run · [b]Space[/b] jump · [b]C[/b] crouch\n[b]Mouse[/b] look (click to capture)\n[b]E[/b] talk / pick up / use / drive / hitch\n[b]1 2 3[/b] hands · chainsaw · ear muffs\n[b]R[/b] pull-start the saw · [b]Right mouse[/b] rev and cut\n[b]Wheel[/b] angle the cut (aim at a trunk or log: the line shows where it goes)\n[b]Left click[/b] grab · [b]Right click[/b] set down / throw in the truck · [b]T[/b] drag · [b]F[/b] kick\n[b]F3[/b] graphics detail (high / low) · [b]H[/b] this help"
 	help.add_child(hl); help.visible = false
 	root.add_child(help)
 	# fade + intro card
