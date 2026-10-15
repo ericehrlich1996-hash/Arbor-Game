@@ -1377,3 +1377,46 @@ func _limbring() -> void:
 	g.force_rev = false
 	note("limb_cut", [tt, is_instance_valid(stem) and stem.limbs.size() < n0])
 	await shot("limbring-after")
+
+func _tlapse() -> void:
+	await wait(0.5)
+	g._start()
+	g.objs.talk = true
+	g.timelapse.interval = 0.6
+	var tr: AshTree = g.tree
+	var R: float = Wood.r_at(tr.T, 0.6)
+	var p0 := tr.global_position + Vector3(R + 0.8, 0, 0)
+	g.player.teleport(Vector3(p0.x, g.world.H(p0.x, p0.z) + 0.05, p0.z))
+	g.equip("saw")
+	look_at_point(tr.global_position + Vector3(0, 0.6, 0))
+	await wait(3.0)
+	await _fell_tree_quick()
+	var pile := Vector3(g.world.pile.x, 0, g.world.pile.z)
+	for k in range(6):
+		var q := tr.global_position.lerp(pile, k / 5.0) + Vector3(1.5, 0, 0)
+		g.player.teleport(Vector3(q.x, g.world.H(q.x, q.z) + 0.05, q.z))
+		g.equip("hands" if k % 2 else "saw")
+		await wait(0.8)
+	note("frames", g.timelapse.frames.size())
+	note("tl_cam", [g.timelapse.cam.global_position, Vector3(g.world.tree.x, 0, g.world.tree.z), Vector3(g.world.pile.x, 0, g.world.pile.z)])
+	if g.timelapse.frames.size() > 0:
+		g.timelapse.frames[0].save_png(out_dir + "/tl-f0.png")
+		g.timelapse.frames[g.timelapse.frames.size() - 1].save_png(out_dir + "/tl-flast.png")
+	if OS.get_environment("TL_QUICK") != "": return
+	await shot("tl-play")
+	g.payday()
+	for i in range(10):
+		await wait(0.4)
+		if g.dlg != null: g.advance_dialog()
+	await wait(1.5)
+	await shot("tl-summary")
+	await wait(1.0)
+	await shot("tl-summary2")
+
+func _kickleg() -> void:
+	await wait(0.5)
+	g._start()
+	g.player.pitch = -0.7
+	g.haul.kick()
+	await wait(0.22)
+	await shot("kick-out")

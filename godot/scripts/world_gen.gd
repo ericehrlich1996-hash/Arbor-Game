@@ -128,6 +128,21 @@ func _smooth_h(x: float, z: float) -> float:
 	if dr < 9: h = lerpf(h, _base - 0.15, smoothstep(0, 1, clampf((9 - dr) / 5, 0, 1)))
 	return h
 
+## what you stand on: the ground, or the porch deck and its steps (so Earl doesn't wade through them)
+func floor_h(x: float, z: float) -> float:
+	var g := H(x, z)
+	if house.is_empty(): return g
+	var y0 := H(house.x, house.z)
+	var lx: float = x - house.x; var lz: float = z - house.z
+	var dx: float = house.w * 0.18; var fz: float = -house.d / 2 - 0.02
+	if absf(lx - dx) < 1.62 and lz < fz + 0.05 and lz > fz - 2.5:
+		return maxf(g, y0 + 0.465)
+	if absf(lx - dx) < 0.72:
+		for k in range(3):
+			var cz := fz - 2.5 - 0.1 - k * 0.3
+			if absf(lz - cz) < 0.15: return maxf(g, y0 + 0.44 - 0.12 - k * 0.14)
+	return g
+
 ## ground height, matching the drawn triangles exactly
 func H(x: float, z: float) -> float:
 	var st := S / N

@@ -99,7 +99,7 @@ func step(dt: float, look_at_pos: Vector3, truck: Truck) -> void:
 	else:
 		var want := atan2(look_at_pos.x - position.x, look_at_pos.z - position.z)
 		rotation.y = lerp_angle(rotation.y, want, minf(1, dt * 3))
-	position.y = world.H(position.x, position.z)
+	position.y = lerpf(position.y, world.floor_h(position.x, position.z), minf(1.0, dt * 12.0)) if absf(position.y - world.floor_h(position.x, position.z)) < 0.6 else world.floor_h(position.x, position.z)
 	body.global_transform = Transform3D(Basis(), global_position)
 	if bubble.visible and t > bubble_until: bubble.visible = false
 	_pose()

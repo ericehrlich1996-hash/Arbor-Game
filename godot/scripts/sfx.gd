@@ -133,6 +133,10 @@ func _build() -> void:
 	sounds.wind = _wind_loop()
 	sounds.creek = _creek_loop()
 	sounds.rain = _rain_loop()
+	# the column shifter dropped into park: a lever click, then the transmission's heavy clunk
+	b = _buf(0.6); _noise(b, 0.04, 3200, 3, 0.35); _tone(b, 0.05, 1400, 1100, 0.12, "triangle")
+	_noise(b, 0.22, 220, 1.2, 0.8, "lowpass", 0.13); _tone(b, 0.25, 85, 55, 0.6, "sine", 0.13); _noise(b, 0.08, 900, 2, 0.25, "bandpass", 0.14)
+	sounds.park = _wav(b)
 	sounds.thunder = _thunder()
 	for v in range(5): sounds["bird%d" % v] = _bird(v)
 	b = _buf(1.1)

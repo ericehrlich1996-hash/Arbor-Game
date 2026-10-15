@@ -223,6 +223,7 @@ func step_drag(dt: float) -> void:
 func kick() -> void:
 	var p: Player = game.player
 	if not carry.is_empty() or p.in_truck: return
+	game.start_kick()
 	var e := p.eye()
 	var d := p.aim_dir()
 	if d.y > -0.15: d = Vector3(d.x, -0.15, d.z).normalized()

@@ -293,6 +293,9 @@ func pose_hands(carrying: bool) -> void:
 		var p := Vector3(side * 0.24, -0.3 + boby, -0.55) if carrying else Vector3(side * (0.25 + bobx), -0.255 + boby, -0.52)
 		# the forearm runs straight back and down from the fist, in line with it (no kink at the wrist)
 		_fist_at(fist, arm, p, p + Vector3(side * 0.02, -0.3, 0.55))
+		# rounds ride on the right shoulder: that hand's up holding them, out of sight
+		var shouldering: bool = carrying and side > 0 and game.haul.carry.any(func(b): return not b.brushy())
+		if shouldering: fist.visible = false; arm.visible = false
 	guide = {}
 	_draw_guide()
 

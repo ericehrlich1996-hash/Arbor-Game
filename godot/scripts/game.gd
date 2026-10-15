@@ -152,6 +152,7 @@ func _setup_env() -> void:
 # ================================================================ graphics detail
 var detail := 1
 var done_frac := 0.0
+var timelapse: Timelapse
 var ambient: Ambient
 var sky_mat: ShaderMaterial
 var weather: Weather
@@ -223,6 +224,8 @@ func new_level(sd: int) -> void:
 	haul = Haul.new(); haul.name = "Haul"; add_child(haul)
 	haul.setup(self)
 	title_cam = Camera3D.new(); title_cam.fov = 60; level_root.add_child(title_cam); title_cam.make_current()
+	timelapse = Timelapse.new(); timelapse.name = "Timelapse"; level_root.add_child(timelapse)
+	timelapse.setup(self)
 	objs = {talk = false, felled = false, limbed = false, stacked = false, paid = false}
 	called_pay = false
 	update_objectives()
@@ -291,6 +294,7 @@ func _step_intro(dt: float) -> void:
 	if I.has("eng") and I.eng:
 		I.eng.setv(clampf(speed / 9, 0, 1) * (1.0 if I.t < INTRO_DRIVE else 0.0) + 0.15, clampf(speed / 12, 0, 0.6), 0.5 if I.t < INTRO_DRIVE + 0.6 else 0.0)
 		if I.t > INTRO_DRIVE + 0.6: I.eng.stop(); I.eng = null
+	if I.t > INTRO_DRIVE + 0.15 and not I.flags.has("park"): I.flags.park = true; Sfx.play("park", 0.9)
 	# the title card
 	hud.intro_card.modulate.a = clampf(minf(I.t - 1.0, 9.0 - I.t), 0, 1)
 	if I.t > 9.5 and not I.flags.has("om"):
@@ -743,7 +747,8 @@ func payday() -> void:
 			notes.append("Time: %d min." % roundi(mins))
 			phase = "done"
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-			hud.show_summary(rows, total, notes, money))
+			hud.show_summary(rows, total, notes, money)
+			hud.play_timelapse(timelapse.frames, timelapse.stamps))
 
 func _on_fell(kind: String) -> void:
 	hud.shout("BARBER CHAIR!" if kind == "barber" else "TIMBER!")
@@ -882,6 +887,8 @@ func _process(dt: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if ambient and cam: ambient.step(dt, cam.global_position)
 	if weather and cam: weather.step(dt, cam.global_position)
+	if timelapse: timelapse.step(dt)
+	_step_kick(dt)
 	if phase == "title":
 		# a slow orbit over the yard, between the house and the dead ash
 		var a := clock * 0.04
@@ -918,7 +925,7 @@ func _process(dt: float) -> void:
 		saw.pose_hands(haul.carrying())
 		saw.step(dt, false, true)
 	if tree.state == "down":
-		if tree.t - tree.down_t < 8.0: _break_under_limbs()
+		_break_under_limbs()
 		if not objs.felled and (tree.t - tree.down_t > 5.0 or (is_instance_valid(tree.stem) and tree.stem.sleeping)):
 			objs.felled = true; update_objectives(); Sfx.play("ding")
 	# Earl heads for the porch once the saw's running near the tree
@@ -943,18 +950,83 @@ func _process(dt: float) -> void:
 	_update_hud()
 
 ## limbs under a stem that's come down snap off instead of propping it up
+var _prop_t := 0.0
+## branches snap when the tree comes down on them, and a stem left propped up on its branches keeps
+## breaking the ones holding it until it lies down (a dead ash's branches are brittle)
 func _break_under_limbs() -> void:
 	var st: WoodPiece = tree.stem
 	if st == null or not is_instance_valid(st) or st.freeze or st.limbs.is_empty(): return
+	var fresh: bool = tree.t - tree.down_t < 8.0
+	var tilt := absf(st.global_transform.basis.y.normalized().y)       # 0 lying flat, 1 standing up
+	var propped := tilt > 0.18 and st.linear_velocity.length() < 1.5
+	_prop_t += get_process_delta_time()
+	var best_id := -1; var best_low := 1e9
 	for id in st.limbs.duplicate():
 		var L: Dictionary = st.T.limbs[id]
 		var low := 1e9
 		for tt in [0.35, 0.7, 1.0]:
 			var w := st.to_world(Wood.limb_pt(L, tt))
-			low = minf(low, w.y - world.H(w.x, w.z))
+			low = minf(low, w.y - world.floor_h(w.x, w.z))
 		var bw := st.to_world(L.base)
 		var base_h := bw.y - world.H(bw.x, bw.z)
-		if low < 0.08 and base_h > Wood.r_at(st.T, L.y) + 0.1 and low < base_h - 0.15:
-			var lp := Lumber.limb_off(self, st, id)
-			lp.linear_velocity *= 0.5
-			Sfx.play("crack", 0.6, randf_range(0.9, 1.3))
+		if fresh and low < 0.12 and low < base_h - 0.15:
+			_snap_limb(st, id)
+		elif propped and low < 0.35 and low < base_h - 0.1 and low < best_low:
+			best_low = low; best_id = id
+	if best_id >= 0 and _prop_t > 0.25 and is_instance_valid(st) and st.limbs.has(best_id):
+		_prop_t = 0.0
+		_snap_limb(st, best_id)
+		st.sleeping = false
+
+## your leg, for kicking: hip to boot, swung out from under you and back
+var kick_leg: Node3D
+var kick_t := -1.0
+var kick_foot: MeshInstance3D
+func _make_leg() -> void:
+	kick_leg = Node3D.new()
+	var mb := MeshBuilder.new()
+	var jeans := Color("#3d5070"); var boot := Color("#4a3626"); var sole := Color("#1e1a16")
+	mb.tube(Vector3(0, 0, 0), Vector3(0, -0.48, 0.02), 0.085, 0.07, jeans, 10)
+	mb.sphere(0, -0.48, 0.02, 0.072, 0.072, 0.072, jeans, 10, 6)
+	mb.tube(Vector3(0, -0.48, 0.02), Vector3(0, -0.88, 0), 0.068, 0.058, jeans, 10)
+	mb.cyl(0, -0.86, 0, 0.066, 0.066, 0.05, Color("#4a5d80"), 10, false)          # rolled cuff
+	var fb := MeshBuilder.new()          # the boot hinges at the ankle, so the toe stays pointing out
+	fb.bevel_box(0, -0.05, -0.06, 0.12, 0.13, 0.26, boot, 0.035)
+	fb.box(0, -0.115, -0.06, 0.125, 0.025, 0.28, sole)
+	for k in range(4): fb.box(0, 0.02 - k * 0.02, -0.12 + k * 0.025, 0.07, 0.008, 0.008, Color("#d8c890"))
+	kick_foot = fb.instance(); kick_foot.position = Vector3(0, -0.88, 0); kick_foot.layers = 16
+	kick_foot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var mi := mb.instance()
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.layers = 16                   # first person only: the timelapse figure has his own legs
+	kick_leg.add_child(mi)
+	kick_leg.add_child(kick_foot)
+	kick_leg.visible = false
+	player.add_child(kick_leg)
+
+func start_kick() -> void:
+	if kick_leg == null: _make_leg()
+	kick_t = 0.0
+
+func _step_kick(dt: float) -> void:
+	if kick_leg == null or kick_t < 0.0: return
+	kick_t += dt
+	const DUR := 0.5
+	if kick_t > DUR: kick_t = -1.0; kick_leg.visible = false; return
+	# wind up a touch, snap out, hold a beat, come back
+	var u := kick_t / DUR
+	var a := 0.0
+	if u < 0.15: a = -0.25 * (u / 0.15)
+	elif u < 0.35: a = lerpf(-0.25, 1.35, smoothstep(0.0, 1.0, (u - 0.15) / 0.2))
+	elif u < 0.55: a = 1.35
+	else: a = lerpf(1.35, 0.0, smoothstep(0.0, 1.0, (u - 0.55) / 0.45))
+	kick_leg.visible = true
+	kick_leg.position = Vector3(0.14, player.eye_h - 0.66, 0.08)
+	kick_leg.rotation = Vector3(a, 0, 0.06)
+	kick_foot.rotation = Vector3(-a * 0.75, 0, 0)
+
+func _snap_limb(st: WoodPiece, id: int) -> void:
+	var lp := Lumber.limb_off(self, st, id)
+	if lp: lp.linear_velocity *= 0.5
+	Sfx.play("crack", 0.6, randf_range(0.9, 1.3))
+	if tree.stem and is_instance_valid(tree.stem): tree.stem.sleeping = false

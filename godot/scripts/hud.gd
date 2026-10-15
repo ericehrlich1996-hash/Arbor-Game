@@ -27,6 +27,13 @@ var drive: PanelContainer
 var drive_lbl: RichTextLabel
 var title: Control
 var summary: Control
+var tl_panel: PanelContainer
+var tl_rect: TextureRect
+var tl_lbl: Label
+var tl_frames: Array = []
+var tl_stamps: Array = []
+var tl_i := 0
+var tl_t := 0.0
 var sum_rows: VBoxContainer
 var sum_notes: Label
 var tilt: Label
@@ -245,11 +252,21 @@ func _build_summary() -> void:
 	summary = ColorRect.new(); (summary as ColorRect).color = Color(0, 0, 0, 0.6)
 	summary.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var c := CenterContainer.new(); c.set_anchors_preset(Control.PRESET_FULL_RECT); summary.add_child(c)
-	var p := PanelContainer.new(); p.add_theme_stylebox_override("panel", _panel(0.95)); p.custom_minimum_size = Vector2(520, 0); c.add_child(p)
+	var row := HBoxContainer.new(); row.add_theme_constant_override("separation", 18); c.add_child(row)
+	# the timelapse of the job, playing on a loop beside the pay slip
+	tl_panel = PanelContainer.new(); tl_panel.add_theme_stylebox_override("panel", _panel(0.95)); row.add_child(tl_panel)
+	var tv := VBoxContainer.new(); tv.add_theme_constant_override("separation", 6); tl_panel.add_child(tv)
+	tv.add_child(_label("Timelapse", 18, Color("#ffe1b8")))
+	tl_rect = TextureRect.new(); tl_rect.custom_minimum_size = Vector2(528, 297)
+	tl_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; tl_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tv.add_child(tl_rect)
+	tl_lbl = _label("", 14, DIM); tv.add_child(tl_lbl)
+	tl_panel.visible = false
+	var p := PanelContainer.new(); p.add_theme_stylebox_override("panel", _panel(0.95)); p.custom_minimum_size = Vector2(460, 0); row.add_child(p)
 	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 8); p.add_child(v)
 	v.add_child(_label("Job done · Earl's dead ash", 26, Color("#ffe1b8")))
 	sum_rows = VBoxContainer.new(); v.add_child(sum_rows)
-	sum_notes = _label("", 15, DIM); sum_notes.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; sum_notes.custom_minimum_size = Vector2(480, 0); v.add_child(sum_notes)
+	sum_notes = _label("", 15, DIM); sum_notes.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; sum_notes.custom_minimum_size = Vector2(420, 0); v.add_child(sum_notes)
 	var b := Button.new(); b.text = "Next property"; b.add_theme_font_size_override("font_size", 20)
 	b.pressed.connect(func(): next_job_pressed.emit())
 	v.add_child(b)
@@ -270,6 +287,27 @@ func show_summary(rows: Array, total: int, notes: Array, bank: int) -> void:
 	sum_rows.add_child(ht)
 	sum_notes.text = "\n".join(notes) + "\n\nBank: $%d" % bank
 	summary.visible = true
+
+func play_timelapse(frames: Array, stamps: Array) -> void:
+	tl_frames = []
+	for img in frames: tl_frames.append(ImageTexture.create_from_image(img))
+	tl_stamps = stamps
+	tl_panel.visible = tl_frames.size() >= 3
+	tl_i = 0; tl_t = 0.0
+	if tl_panel.visible: tl_rect.texture = tl_frames[0]
+
+func _step_timelapse(dt: float) -> void:
+	if not summary.visible or tl_frames.size() < 3: return
+	tl_t += dt
+	# about ten seconds for the whole job, then hold on the finished yard for a moment and go round again
+	var fps := clampf(tl_frames.size() / 10.0, 6.0, 24.0)
+	var hold := 2.0 if tl_i == tl_frames.size() - 1 else 1.0 / fps
+	if tl_t < hold: return
+	tl_t = 0.0
+	tl_i = (tl_i + 1) % tl_frames.size()
+	tl_rect.texture = tl_frames[tl_i]
+	var m: float = tl_stamps[tl_i]
+	tl_lbl.text = "%d:%02d into the job" % [int(m), int(fmod(m * 60.0, 60.0))]
 
 func set_play_visible(on: bool) -> void:
 	for n in [crosshair, obj_panel, hotbar, prompt, tilt]:
@@ -314,6 +352,7 @@ func set_prompt(t: String) -> void:
 
 func _process(dt: float) -> void:
 	_t += dt
+	_step_timelapse(dt)
 	if toast_lbl.text != "" and _t > toast_until:
 		toast_lbl.modulate.a = maxf(0, toast_lbl.modulate.a - dt * 2)
 		if toast_lbl.modulate.a <= 0: toast_lbl.text = ""
