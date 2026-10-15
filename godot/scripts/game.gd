@@ -812,7 +812,8 @@ func _update_hud() -> void:
 	if not saw.guide.is_empty():
 		var tdeg := int(round(rad_to_deg(saw.tilt)))
 		var ang := "level" if tdeg == 0 else ("%d° down" % tdeg if tdeg > 0 else "%d° up" % -tdeg)
-		if saw.guide.get("too_far", false): hud.tilt.text = "Step closer to cut there"
+		if saw.guide.get("too_close", false): hud.tilt.text = "Step back a little to get the saw in"
+		elif saw.guide.get("too_far", false): hud.tilt.text = "Step closer to cut there"
 		elif saw.guide.existing != null: hud.tilt.text = "Carrying on your cut · hold right mouse"
 		else: hud.tilt.text = "Wheel to angle the cut · hold right mouse to cut"
 	else:

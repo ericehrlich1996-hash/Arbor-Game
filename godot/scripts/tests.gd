@@ -1001,29 +1001,31 @@ func _guided() -> void:
 	var R: float = Wood.r_at(tr.T, 0.6)
 	var house := Vector3(g.world.house.x, 0, g.world.house.z)
 	var away := tr.global_position - house; away.y = 0; away = away.normalized()
+	var side := away.cross(Vector3.UP).normalized()
 	var base := tr.global_position
 	g.equip("saw"); g.saw.on = true; g.saw.engine_snd = Sfx.engine("saw")
 	g.player.crouch = true
-	# stand on the fall side, aim at the bark facing us
-	var stand := base + away * (R + 0.55)
+	# stand beside the tree, square to the way it should fall; the bar points across the trunk
+	var stand := base + side * (R + float(OS.get_environment('STAND_D') if OS.get_environment('STAND_D') != '' else '0.8'))
 	g.player.teleport(Vector3(stand.x, g.world.H(stand.x, stand.z) + 0.05, stand.z))
 	await wait(0.5)
 	var hb := 0.55
 	var top_h := hb + 2 * R * 0.33 * tan(deg_to_rad(50))
-	look_at_point(tr.to_world(Vector3(0, top_h, 0)) + away * R)
+	# aim at the fall side of the trunk: the notch opens that way
+	look_at_point(tr.to_world(Vector3(0, top_h, 0)) + away * R * 0.8 + side * R * 0.5)
 	g.saw.tilt = deg_to_rad(50)
-	await wait(0.4)
-	note("guide_top", [not g.saw.guide.is_empty(), g.saw.guide.get("kind", ""), g.saw.guide.get("too_far", null)])
+	await wait(0.5)
+	note("guide_top", [not g.saw.guide.is_empty(), g.saw.guide.get("kind", ""), g.saw.guide.get("too_far", null), g.saw.guide.get("too_close", null), g.saw.guide.get("hand_ahead", null)])
 	await shot("guided-aim")
 	g.force_rev = true
 	var tt := 0.0
-	while tt < 12.0 and (g.saw.cut == null or Vector3(g.saw.cut.f).dot(Vector3(g.saw.cut.f)) > 0 and g.saw.cut.s < 2 * R * 0.33 / cos(deg_to_rad(50))):
+	while tt < 12.0 and (g.saw.cut == null or g.saw.cut.s < 2 * R * 0.33 / cos(deg_to_rad(50))):
 		await wait(0.1); tt += 0.1
 	note("top_cut", [g.saw.cut.s if g.saw.cut else -1.0, tt])
 	await shot("guided-topcut")
 	g.force_rev = false
 	await wait(0.3)
-	look_at_point(tr.to_world(Vector3(0, hb, 0)) + away * R)
+	look_at_point(tr.to_world(Vector3(0, hb, 0)) + away * R * 0.8 + side * R * 0.5)
 	g.saw.tilt = 0.0
 	await wait(0.4)
 	g.force_rev = true
@@ -1034,12 +1036,9 @@ func _guided() -> void:
 	note("notch_out", [not tr.freed.is_empty(), tt])
 	await wait(0.6)
 	await shot("guided-notch")
-	# back cut from the other side, a little above the notch floor
-	var back := base - away * (R + 0.55)
-	g.player.teleport(Vector3(back.x, g.world.H(back.x, back.z) + 0.05, back.z))
-	await wait(0.4)
-	look_at_point(tr.to_world(Vector3(0, hb + 0.04, 0)) - away * R)
-	await wait(0.4)
+	# back cut from the same spot: aim at the back of the trunk, a little above the notch floor
+	look_at_point(tr.to_world(Vector3(0, hb + 0.04, 0)) - away * R * 0.8 + side * R * 0.5)
+	await wait(0.5)
 	await shot("guided-backaim")
 	g.force_rev = true
 	tt = 0.0
@@ -1298,3 +1297,32 @@ func _ringaim() -> void:
 	look_at_point(tr.to_world(Vector3(0, 0.5, 0)) + dir * R)
 	await wait(0.6)
 	await shot("ring-aim0")
+
+func _bucktime() -> void:
+	await wait(0.5)
+	g._start()
+	g.objs.talk = true
+	await _fell_tree_quick()
+	var st: WoodPiece = g.tree.stem
+	for id in st.limbs.duplicate(): Lumber.limb_off(g, st, id)
+	await wait(3.0)
+	st = g.tree.stem
+	var wp := st.to_world(Vector3(0, st.span.x + 3.0, 0))
+	var ax := st.global_transform.basis.y.normalized()
+	var sd := ax.cross(Vector3.UP).normalized()
+	var ey := wp + sd * 0.95
+	g.player.teleport(Vector3(ey.x, g.world.H(ey.x, ey.z) + 0.05, ey.z))
+	g.equip("saw"); g.saw.on = true; g.saw.engine_snd = Sfx.engine("saw")
+	await wait(0.3)
+	look_at_point(wp + Vector3(0, 0.12, 0))
+	await wait(0.5)
+	note("guide", [g.saw.guide.get("kind", ""), g.saw.guide.get("too_far", null), g.saw.guide.get("hand_ahead", null)])
+	g.force_rev = true
+	var tt := 0.0
+	var n0: int = g.pieces().size()
+	while tt < 15.0:
+		await wait(0.5); tt += 0.5
+		var c = g.saw.cut
+		note("s", [tt, c.s if c else -1.0, c.exit if c else -1.0, g.pieces().size() - n0])
+		if g.pieces().size() != n0: break
+	g.force_rev = false

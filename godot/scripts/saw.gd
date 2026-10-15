@@ -33,6 +33,7 @@ var n := Vector3.RIGHT         # kerf normal (saw's +X), world
 var _kerf_t := 0.0
 var _t := 0.0
 # guided cutting: aim at the trunk or a log and the cut goes exactly there, square across unless you tilt it
+var _side := 1.0               # which side of the wood the cut starts from (sticky while you aim near the middle)
 var tilt := 0.0                # radians; + slopes down into the wood (a notch's top cut), − slopes up
 var guide := {}                # what the crosshair is on: {kind, xf, e, f, n, existing, piece}
 var chain_mm: MultiMeshInstance3D
@@ -46,8 +47,8 @@ const CHAIN_Z0 := -0.24        # drive sprocket centre
 const CHAIN_Z1 := -0.83        # nose sprocket centre
 const CHAIN_R := 0.041
 const CHAIN_LINKS := 60
-const SHOULDER_R := Vector3(0.26, -0.55, 0.12)
-const SHOULDER_L := Vector3(-0.38, -0.52, 0.08)
+const SHOULDER_R := Vector3(0.24, -0.72, 0.2)
+const SHOULDER_L := Vector3(-0.32, -0.7, 0.18)
 # sawdust
 var chips: Array = []
 var chip_mm: MultiMeshInstance3D
@@ -140,19 +141,26 @@ func pose(dt: float, rev: bool, carrying: bool) -> void:
 		var depth := 0.0
 		if cut != null: depth = cut.s
 		elif g.existing != null: depth = g.existing.s
-		# the bar lies across the wood in the cut's plane, its chain edge on the cut front; the body on your right
+		# the bar points away from you across the wood, in the cut's plane; its chain edge on the cut front
 		var gw := nw.cross(fw).normalized()
-		var bar_dir := -gw if gw.dot(cw0.basis.x) > 0 else gw
+		var bar_dir := gw if gw.dot(-cw0.basis.z) > 0 else -gw
 		var front := ew + fw * (depth - 0.01)
+		# centre the bar on the wood: the heart of the trunk, carried onto the cut front line
+		var heart: Vector3 = xf * Vector3(0, (g.e as Vector3).y, 0)
+		var mid := front + bar_dir * bar_dir.dot(heart - front)
 		var zb := -bar_dir
 		var xb := nw
 		var yb := zb.cross(xb)
-		if yb.dot(fw) > 0: xb = -xb; yb = -yb          # the top of the saw faces away from the cut
-		var bw := front + yb * 0.036 - bar_dir * (BAR_L * 0.5)
+		if yb.dot(fw) > 0: xb = -xb; yb = -yb          # the chain edge (underneath) faces into the cut
+		var bw := mid + yb * 0.036 - bar_dir * (BAR_L * 0.5)
 		var wxf := Transform3D(Basis(xb, yb, zb), bw - zb * BAR_BASE)
 		# only within arm's reach: further off, the line shows where you'd cut but you have to step in
 		var reach_d := (wxf * Vector3(0, 0.1, -0.1) - cw0.origin).length()
+		var hand_ahead := -(cw0.affine_inverse() * (wxf * Vector3(0, 0.1, -0.05))).z
 		g.too_far = reach_d > MAX_REACH
+		g.too_close = hand_ahead < 0.36          # the saw would be in your face: stand back from the wood
+		g.hand_ahead = hand_ahead
+		if g.too_close: g.too_far = true
 		if not g.too_far:
 			var lx := cw0.affine_inverse() * wxf
 			eq = Quaternion(lx.basis.orthonormalized()); ep = lx.origin
@@ -267,7 +275,7 @@ func _fist_at(fist: MeshInstance3D, arm: MeshInstance3D, p: Vector3, shoulder: V
 	to_sh = to_sh.normalized()
 	var up := Vector3.UP if absf(to_sh.y) < 0.95 else Vector3.BACK
 	fist.transform = Transform3D(Basis.looking_at(-to_sh, up), p)
-	_arm(arm, p + to_sh * 0.065, shoulder, 0.04)
+	_arm(arm, p + to_sh * 0.065, shoulder, 0.037)
 
 func _arm(m: MeshInstance3D, a: Vector3, b: Vector3, r := 0.042) -> void:
 	var d := b - a; var L := d.length()
@@ -331,22 +339,34 @@ func _find_guide() -> Dictionary:
 	if ch == null: return {}
 	var P: Vector3 = e0 + dl * ch.x
 	if kind == "tree" and (P.y > AshTree.CSG_TOP - 0.35 or P.y < -0.25): return {}
-	var rad := Vector3(P.x, 0, P.z)
-	if rad.length() < 0.02: return {}
-	var d := -rad.normalized()
+	# You stand behind the saw: the bar points away from you, across the wood, and lies in the cut.
+	# The chain edge eats in from the side of the trunk (or top of the log) you're aiming at, toward
+	# the middle, so the cut advances square to the bar.
+	var bh := Vector3(dl.x, 0, dl.z)                       # your line of sight, flattened across the wood
+	if bh.length() < 0.05: return {}
+	bh = bh.normalized()
+	var qa := Vector3.UP.cross(bh).normalized()            # square to the bar, across the wood
+	var off := Vector2(P.x, P.z).dot(Vector2(qa.x, qa.z))
+	var R_here := Wood.r_at(TT, clampf(P.y, 0.0, TT.H))
+	if absf(off) > R_here * 0.22: _side = -signf(off)
+	var fh: Vector3 = qa * _side                            # from the aimed-at side toward the heart
 	# an old cut right here, cut from this side: carry on with it
 	var best = null; var best_d := 0.06
 	for c in list:
 		var hd := Vector2(c.f.x, c.f.z)
-		if hd.length() < 0.2 or hd.normalized().dot(Vector2(d.x, d.z)) < 0.45: continue
+		if hd.length() < 0.2 or hd.normalized().dot(Vector2(fh.x, fh.z)) < 0.45: continue
 		var pd := absf((c.n as Vector3).dot(P - c.e))
 		if pd < best_d: best_d = pd; best = c
 	if best != null:
 		return {kind = kind, xf = xf, e = best.e, f = best.f, n = best.n, existing = best, piece = pc, T = TT}
-	var r := d.cross(Vector3.UP).normalized()
-	var fl := (d * cos(tilt) + Vector3.DOWN * sin(tilt)).normalized()
-	var nl := r.cross(fl).normalized()
-	return {kind = kind, xf = xf, e = P, f = fl, n = nl, existing = null, piece = pc, T = TT}
+	var fl := (fh * cos(tilt) + Vector3.DOWN * sin(tilt)).normalized()
+	var nl := bh.cross(fl).normalized()
+	# the cut starts where its plane meets the bark on that side, level with what you're aiming at
+	var yc: float = P.y + (nl.x * P.x + nl.z * P.z) / nl.y if absf(nl.y) > 0.05 else P.y
+	var C := Vector3(0, yc, 0)
+	var back = AshTree.chord(inside, C, -fl, 0.0, 1.5)
+	var e: Vector3 = C - fl * ((back.y if back != null else R_here) + 0.01)
+	return {kind = kind, xf = xf, e = e, f = fl, n = nl, existing = null, piece = pc, T = TT, aim = P}
 
 ## the line where the cut will meet the bark (green when you'd be carrying on an old cut), and how deep it is
 func _draw_guide() -> void:
@@ -502,7 +522,7 @@ func _start_guided(g: Dictionary):
 		"stump": c = tree.stump_start_cut(g.e, g.f, g.n)
 		_:
 			if not is_instance_valid(g.piece): return null
-			c = _start_cut({kind = "piece", piece = g.piece, part = {trunk = true}, p = (g.xf as Transform3D) * g.e})
+			c = _start_cut({kind = "piece", piece = g.piece, part = {trunk = true}, p = (g.xf as Transform3D) * g.e, fl = g.f, nl = g.n})
 	if c == null: return null
 	c.part = c.get("part", {trunk = true})
 	c.guided = true
@@ -523,6 +543,7 @@ func _start_cut(h: Dictionary):
 	var pc: WoodPiece = h.piece
 	var inv := pc.global_transform.basis.inverse()
 	var e := pc.to_wood(h.p); var fl := (inv * f).normalized(); var nl := (inv * n).normalized()
+	if h.has("fl"): fl = h.fl; nl = h.nl          # a guided cut says exactly which way it goes
 	var part: Dictionary = h.part
 	# a cut already started in this piece at the same place picks up where it left off
 	if not part.has("limb"):
