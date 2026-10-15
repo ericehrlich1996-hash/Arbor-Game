@@ -705,4 +705,5 @@ func _build_grass(root: Node3D) -> void:
 		mmi.visibility_range_end = 38.0
 		mmi.visibility_range_end_margin = 6.0
 		mmi.set_meta("vr", Vector2(0.0, 38.0))
+		mmi.layers = 2
 		root.add_child(mmi)

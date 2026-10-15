@@ -327,7 +327,7 @@ static func fir(seed: int, lod: int) -> ArrayMesh:
 	while y < H - 0.4:
 		var t := (y - base) / (H - base)
 		var spread := (1.0 - t) * r.randf_range(2.8, 3.6) + 0.5
-		var nb := 6 if lod == 0 else (5 if lod == 1 else 4)
+		var nb := 6 if lod == 0 else (5 if lod == 1 else 3)
 		var rot := r.randf() * TAU
 		for k in range(nb):
 			var az := rot + TAU * k / nb + r.randf_range(-0.25, 0.25)
@@ -339,17 +339,17 @@ static func fir(seed: int, lod: int) -> ArrayMesh:
 			var along := (tip - root).normalized()
 			var side := along.cross(Vector3.UP).normalized()
 			var up := side.cross(along).normalized()
-			var cards := 3 if lod == 0 else 1
+			var cards := 2 if lod == 0 else 1
 			for c in range(cards):
 				var f := (c + 0.5) / cards if lod == 0 else 0.5
 				var p := root.lerp(tip, f * 0.9 + 0.05)
-				var sz := spread * (0.55 if lod == 0 else (0.95 if lod == 1 else 1.15)) + (0.3 if lod < 2 else 0.6)
+				var sz := spread * (0.68 if lod == 0 else (0.95 if lod == 1 else 1.3)) + (0.3 if lod < 2 else 0.8)
 				var tone := green * r.randf_range(0.78, 1.15)
 				var nrm := _soft_normal(p, ctr)
 				var sag := along.lerp(Vector3.DOWN, 0.18 + f * 0.25).normalized()
 				leaf.card(p, sag * sz * 0.6, side * sz * 0.55, tone, nrm, Vector4(0, 0, 1, 1), 0.2, 0.9)
 				if lod < 2: leaf.card(p, sag * sz * 0.6, (side * 0.4 + up * 0.9).normalized() * sz * 0.4, tone * 0.9, nrm, Vector4(0, 0, 1, 1), 0.2, 0.9)
-		y += r.randf_range(0.42, 0.62) if lod == 0 else (r.randf_range(0.85, 1.1) if lod == 1 else r.randf_range(1.5, 1.9))
+		y += r.randf_range(0.42, 0.62) if lod == 0 else (r.randf_range(0.85, 1.1) if lod == 1 else r.randf_range(2.3, 2.7))
 	# core: vertical crossed sprays hugging the trunk through the crown
 	var cy := base + 0.6
 	while cy < H - 0.5:
@@ -359,7 +359,7 @@ static func fir(seed: int, lod: int) -> ArrayMesh:
 			var az := r.randf() * TAU
 			var ax := Vector3(cos(az), 0, sin(az)) * cs
 			leaf.card(Vector3(0, cy, 0), ax, Vector3(0, 0.9, 0), green * r.randf_range(0.7, 0.9), _soft_normal(Vector3(ax.x, cy, ax.z), ctr), Vector4(0, 0, 1, 1), 0.1, 0.5)
-		cy += 1.6 if lod < 2 else 2.6
+		cy += 1.6 if lod < 2 else 4.5
 	leaf.card(Vector3(0, H - 0.3, 0), Vector3(0.0, 0.55, 0.0), Vector3(0.3, 0, 0), green, Vector3.UP, Vector4(0, 0, 1, 1), 0.3, 1.0)
 	return _mesh([[wood, mats.bark_fir], [leaf, mats.fir]])
 
@@ -400,11 +400,11 @@ static func broadleaf(seed: int, lod: int, birch := false) -> ArrayMesh:
 	else: tint = Color(0.48, 0.65, 0.3)                    # still green
 	var mat: Material = mats.leaves_small if birch else mats.leaves
 	for e in ends:
-		var count := 4 if lod == 0 else 1
-		if lod == 2 and r.randf() < 0.3: continue
+		var count := 3 if lod == 0 else 1
+		if lod == 2 and r.randf() < 0.5: continue
 		for c in range(count):
 			var p: Vector3 = e + Vector3(r.randf_range(-0.8, 0.8), r.randf_range(-0.4, 0.6), r.randf_range(-0.8, 0.8))
-			var sz := r.randf_range(1.0, 1.45) * (1.0 if lod == 0 else (1.8 if lod == 1 else 2.6))
+			var sz := r.randf_range(1.0, 1.45) * (1.0 if lod == 0 else (1.8 if lod == 1 else 3.1))
 			var nrm := _soft_normal(p, ctr)
 			var a := r.randf() * TAU
 			var ax := Vector3(cos(a), 0, sin(a)) * sz; var ay := Vector3(0, sz * 0.9, 0)

@@ -56,6 +56,7 @@ func force(k: String) -> void:
 	kind = k
 	target = PRESETS[k].duplicate()
 	cur = target.duplicate()
+	_applied = {}
 	_apply()
 
 func announce() -> void:
@@ -146,7 +147,19 @@ func step(dt: float, eye: Vector3) -> void:
 	_flash = maxf(0.0, _flash - dt * 2.2)
 	_apply()
 
+var _applied := {}
 func _apply() -> void:
+	# only touch the renderer when something actually changed (a sky change re-renders its lighting)
+	var changed := _flash > 0.0 or _applied.is_empty()
+	if not changed:
+		for key in cur:
+			var a = cur[key]; var b = _applied.get(key)
+			if b == null or (a is Color and not (a as Color).is_equal_approx(b)) or (a is float and absf(a - b) > 0.0005): changed = true; break
+	if not changed: return
+	_applied = cur.duplicate()
+	_apply_now()
+
+func _apply_now() -> void:
 	var env: Environment = _find_env()
 	var fl := 0.0
 	if _flash > 0.0: fl = 3.5 * _flash if fmod(_flash, 0.5) > 0.2 else 0.6 * _flash      # a flicker

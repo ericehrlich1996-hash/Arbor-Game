@@ -1234,3 +1234,48 @@ func _carrymeter() -> void:
 			await shot("carry-%d" % g.haul.carry.size())
 		if g.haul.carry.size() >= 5: break
 	await shot("carry-final")
+
+## per-frame CPU cost from launch: script process time, physics time, and frame time
+func _startprof() -> void:
+	if OS.get_environment("NORENDER") != "": RenderingServer.render_loop_enabled = false
+	var t0 := Time.get_ticks_msec()
+	for i in range(40):
+		var f0 := Time.get_ticks_usec()
+		await get_tree().process_frame
+		print("SP title %d frame %.1fms proc %.1fms phys %.1fms" % [i, (Time.get_ticks_usec() - f0) / 1000.0, Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0])
+	g.start_intro()
+	for i in range(60):
+		var f0 := Time.get_ticks_usec()
+		await get_tree().process_frame
+		if OS.get_environment("NOMIRROR") != "": g.truck.mirror_live = false
+		print("SP intro %d frame %.1fms prims %d draws %d" % [i, (Time.get_ticks_usec() - f0) / 1000.0, RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME), RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)])
+	g.end_intro()
+	for i in range(60):
+		var f0 := Time.get_ticks_usec()
+		await get_tree().process_frame
+		print("SP play %d frame %.1fms prims %d draws %d" % [i, (Time.get_ticks_usec() - f0) / 1000.0, RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME), RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)])
+	print("SP total ", Time.get_ticks_msec() - t0)
+
+func _introablate() -> void:
+	await wait(0.5)
+	g.start_intro()
+	for i in range(15): await get_tree().process_frame
+	g.truck.mirror_live = false
+	var all: Array = g.get_tree().root.find_children("*", "GeometryInstance3D", true, false)
+	var groups := {"near": "^(fir|oak|birch)\\\\d$", "mid": "_mid", "far": "_far", "shadow": "_shadow", "plants": "^(fern|grass|flower|bush|litter|Grass)", "rocklog": "^(rock|log|stump|snag|sapling)", "terrain": "Terrain", "truck": "Body|Glass|Tailgate", "power": "PowerLine"}
+	await _ptime("base")
+	for gname in groups:
+		var re := RegEx.create_from_string(groups[gname])
+		var hid := []
+		for n: GeometryInstance3D in all:
+			if n.visible and re.search(str(n.get_meta("key", n.name))) != null:
+				n.visible = false; hid.append(n)
+		await _ptime("no-" + gname + " (" + str(hid.size()) + ")")
+		for n: GeometryInstance3D in hid: n.visible = true
+
+func _woodsview() -> void:
+	await wait(0.5)
+	g._start()
+	await _view("wv-woods", Vector3(-70, 0, 20), Vector3(-90, 3, 32))
+	await _view("wv-edge", Vector3(-30, 0, 10), Vector3(-80, 6, 10))
+	await _view("wv-road", Vector3(10, 0, g.world.road_z + 2), Vector3(60, 4, g.world.road_z))

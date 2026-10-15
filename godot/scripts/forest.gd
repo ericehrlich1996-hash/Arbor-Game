@@ -57,6 +57,7 @@ func _models() -> void:
 
 const NEAR := 42.0
 const MID := 88.0
+const FAR := 280.0              # past this the fog and the painted treeline take over
 
 ## the three models cross-fade (a dithered blend in the foliage shader) instead of popping
 func _lods(key: String, make: Callable) -> void:
@@ -64,9 +65,11 @@ func _lods(key: String, make: Callable) -> void:
 	_fade(near, Vector4(-2, -1, NEAR - 7.0, NEAR), false)
 	_fade(mid, Vector4(NEAR - 7.0, NEAR, MID - 9.0, MID), true)
 	_fade(far, Vector4(MID - 9.0, MID, 1e5, 1e5 + 1.0), true)
-	models[key] = {mesh = near, end = NEAR + 1.0, shadow = true}
+	# up close the detailed tree is drawn, but its shadow comes from the lighter model (a fraction of the cost)
+	models[key] = {mesh = near, end = NEAR + 1.0, shadow = false}
+	models[key + "_shadow"] = {mesh = make.call(1), end = 60.0, shadow = true, shadow_only = true}
 	models[key + "_mid"] = {mesh = mid, begin = NEAR - 8.0, end = MID + 1.0, shadow = false}
-	models[key + "_far"] = {mesh = far, begin = MID - 10.0, end = 420.0, shadow = false}
+	models[key + "_far"] = {mesh = far, begin = MID - 10.0, end = FAR, shadow = false}
 
 static func _fade(m: ArrayMesh, f: Vector4, inv: bool) -> void:
 	for i in range(m.get_surface_count()):
@@ -78,7 +81,7 @@ static func _fade(m: ArrayMesh, f: Vector4, inv: bool) -> void:
 			m.surface_set_material(i, d)
 
 func _tree(key: String, x: float, z: float, yaw: float, s: float) -> void:
-	_add(key, x, z, yaw, s); _add(key + "_mid", x, z, yaw, s); _add(key + "_far", x, z, yaw, s)
+	_add(key, x, z, yaw, s); _add(key + "_mid", x, z, yaw, s); _add(key + "_far", x, z, yaw, s); _add(key + "_shadow", x, z, yaw, s)
 
 func _add(key: String, x: float, z: float, yaw: float, s: float, tint := Color.WHITE, sink := 0.0) -> void:
 	var c := Vector2i(floori(x / CELL), floori(z / CELL))
@@ -215,6 +218,9 @@ func _emit() -> void:
 			mi.multimesh = mm
 			mi.name = key
 			mi.set_meta("key", key)
+			# small plants live on render layer 2, which the truck mirror skips
+			if key.begins_with("fern") or key.begins_with("grass") or key.begins_with("flower") or key.begins_with("litter") or key.begins_with("bush"):
+				mi.layers = 2
 			mi.visibility_range_begin = md.get("begin", 0.0)
 			mi.visibility_range_end = md.end
 			mi.visibility_range_end_margin = 1.0
@@ -222,6 +228,7 @@ func _emit() -> void:
 			mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 			mi.set_meta("vr", Vector2(mi.visibility_range_begin, mi.visibility_range_end))
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if md.shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			if md.get("shadow_only", false): mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 			root.add_child(mi)
 
 func _colliders() -> void:

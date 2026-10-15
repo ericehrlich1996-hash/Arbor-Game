@@ -18,6 +18,8 @@ var wheels: Array[VehicleWheel3D] = []
 var paint := {}
 var engine_snd = null
 var _still_t := 0.0
+var mirror_live := false        # the mirror is redrawn a few times a second while someone's driving
+var _mirror_n := 0
 var _last_pos := Vector3.ZERO
 
 const BED_FLOOR_Y := 0.8
@@ -89,7 +91,8 @@ func setup(rng: RandomNumberGenerator) -> void:
 	mirror_vp.size = Vector2i(360, 120)
 	mirror_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	add_child(mirror_vp)
-	mirror_cam = Camera3D.new(); mirror_cam.fov = 28; mirror_cam.near = 0.1; mirror_cam.far = 400
+	mirror_cam = Camera3D.new(); mirror_cam.fov = 28; mirror_cam.near = 0.1; mirror_cam.far = 160
+	mirror_cam.cull_mask = 1             # no grass, ferns or flowers in the mirror: you'd never see them
 	mirror_vp.add_child(mirror_cam)
 	mirror_quad = MeshInstance3D.new()
 	var qm := QuadMesh.new(); qm.size = Vector2(0.37, 0.12)
@@ -142,12 +145,12 @@ func enter() -> void:
 	driving = true
 	look_yaw = 0; look_pitch = 0
 	_set_cam()
-	mirror_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	mirror_live = true
 
 func exit() -> void:
 	driving = false
 	engine_force = 0; brake = 30.0; steering = 0
-	mirror_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	mirror_live = false
 	exited.emit()
 
 func _set_cam() -> void:
@@ -195,6 +198,10 @@ func _physics_process(dt: float) -> void:
 			_still_t = 0.0
 
 func _process(dt: float) -> void:
+	# the rear-view mirror is a second render of the world: only refresh it every third frame
+	if mirror_live:
+		_mirror_n += 1
+		if _mirror_n % 3 == 0: mirror_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	if driving:
 		cab_cam.rotation = Vector3(look_pitch, PI + look_yaw, 0)
 		var back := -global_transform.basis.z

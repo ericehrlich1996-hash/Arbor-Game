@@ -169,7 +169,7 @@ func set_detail(d: int) -> void:
 		if n.has_meta("vr"):
 			var vr: Vector2 = n.get_meta("vr")
 			(n as GeometryInstance3D).visibility_range_begin = vr.x * k
-			(n as GeometryInstance3D).visibility_range_end = vr.y * k if vr.y < 400.0 else vr.y
+			(n as GeometryInstance3D).visibility_range_end = vr.y * (k if vr.y < 200.0 else (0.65 if d == 0 else 1.0))
 
 ## if the first few seconds of play run badly, drop to low detail once and say so
 func _watch_fps(dt: float) -> void:
@@ -259,7 +259,7 @@ func start_intro() -> void:
 	chipper.hitch_now()
 	chipper.follow_kinematic(true)
 	player.visible = false
-	truck.mirror_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	truck.mirror_live = true
 	truck.cab_cam.make_current()
 	truck.cab_cam.rotation = Vector3(-0.06, PI, 0)
 	intro.eng = Sfx.engine("truck")
@@ -336,7 +336,7 @@ func end_intro() -> void:
 	_place_on_path(path_len[path_len.size() - 1])
 	truck.freeze = false
 	truck.brake = 400
-	truck.mirror_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	truck.mirror_live = false
 	chipper.follow_kinematic(false)
 	chipper.hitch_now()
 	player.visible = true
