@@ -53,11 +53,11 @@ void fragment() {
 	float m = fbm(lp * 2.1) + low * 0.6 * rust + (n3(lp * 22.0) - 0.5) * 0.18;
 	float r = smoothstep(0.78 - rust * 0.32, 0.86 - rust * 0.3, m);
 	float pit = step(0.975 - rust * 0.03, n3(lp * 48.0)) * rust;
-	r = max(r, pit * 0.8);
+	r = max(r, pit * 0.8) * smoothstep(0.0, 0.15, rust);
 	vec3 rc = mix(vec3(0.2, 0.085, 0.035), vec3(0.52, 0.24, 0.08), n3(lp * 9.0));
 	rc = mix(rc, vec3(0.45, 0.27, 0.12), smoothstep(0.7, 0.95, n3(lp * 17.0)) * 0.5);
 	// a dirty halo where paint meets rust, and road grime along the bottom
-	float halo = smoothstep(0.62 - rust * 0.3, 0.78 - rust * 0.3, m) * (1.0 - r);
+	float halo = smoothstep(0.62 - rust * 0.3, 0.78 - rust * 0.3, m) * (1.0 - r) * smoothstep(0.0, 0.15, rust);
 	vec3 col = mix(faded, faded * 0.62 + vec3(0.04, 0.025, 0.01), halo * 0.8);
 	col = mix(col, rc, r);
 	col *= 1.0 - low * 0.2 * rust;
@@ -71,6 +71,13 @@ void fragment() {
 func set_truck_rust(k: float) -> void:
 	truck_paint.set_shader_parameter("rust", 1.0 * k)
 	truck_chrome.set_shader_parameter("rust", 0.6 * k)
+	# fixed up: glossy fresh paint, bright chrome, clean glass
+	truck_paint.set_shader_parameter("shine", lerpf(0.22, 0.45, k))
+	truck_chrome.set_shader_parameter("shine", lerpf(0.15, 0.35, k))
+	truck_chrome.set_shader_parameter("metal", lerpf(0.85, 0.55, k))
+	if truck_glass:
+		truck_glass.albedo_color = Color(1, 1, 1, 0.22).lerp(Color(0.82, 0.78, 0.66, 0.34), k)
+		truck_glass.roughness = lerpf(0.1, 0.45, k)
 
 func _ready() -> void:
 	var nz := FastNoiseLite.new()

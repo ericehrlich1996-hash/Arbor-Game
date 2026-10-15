@@ -7,6 +7,7 @@ signal start_pressed
 signal next_job_pressed
 signal job_chosen(idx: int)
 signal computer_closed
+signal upgrade_chosen(id: String)
 
 var root: Control
 var crosshair: ColorRect
@@ -255,6 +256,10 @@ func _build_title() -> void:
 var pc_screen: Control
 var pc_list: VBoxContainer
 var pc_head: Label
+var pc_tab := "jobs"
+var pc_data := {}
+var pc_msg := ""
+var pc_tabs: HBoxContainer
 const CRT := Color("#7dff8a")
 const CRT_DIM := Color("#3f8a48")
 
@@ -284,6 +289,7 @@ func _build_computer() -> void:
 	scr.add_theme_stylebox_override("panel", ss); scr.custom_minimum_size = Vector2(640, 420); bezel.add_child(scr)
 	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 10); scr.add_child(v)
 	pc_head = _crt_label("", 18); v.add_child(pc_head)
+	pc_tabs = HBoxContainer.new(); pc_tabs.add_theme_constant_override("separation", 18); v.add_child(pc_tabs)
 	v.add_child(_crt_label("--------------------------------------------------", 16, CRT_DIM))
 	pc_list = VBoxContainer.new(); pc_list.add_theme_constant_override("separation", 12); v.add_child(pc_list)
 	var sp := Control.new(); sp.size_flags_vertical = Control.SIZE_EXPAND_FILL; v.add_child(sp)
@@ -305,21 +311,52 @@ func _crt_button(t: String) -> Button:
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	return b
 
-## jobs: [{title, text, pay, open}]
-func show_computer(jobs: Array, bank: int, jobs_done: int) -> void:
-	pc_head.text = "TREE-MAIL v1.2        BANK: $%d   JOBS DONE: %d" % [bank, jobs_done]
-	for ch in pc_list.get_children(): ch.queue_free()
-	pc_list.add_child(_crt_label("> NEW WORK IN YOUR AREA:", 18))
-	for i in range(jobs.size()):
-		var j: Dictionary = jobs[i]
-		var b := _crt_button(("  %d. %s   $%d" % [i + 1, j.title, j.pay]) if j.open else ("  %d. %s" % [i + 1, j.title]))
-		b.disabled = not j.open
-		b.pressed.connect(func(): hide_computer(); job_chosen.emit(i))
-		pc_list.add_child(b)
-		var d := _crt_label("     " + j.text, 15, CRT if j.open else CRT_DIM)
-		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; d.custom_minimum_size = Vector2(580, 0)
-		pc_list.add_child(d)
+## jobs: [{title, text, pay, open}]; upgrades: [{id, title, text, cost, owned}]
+func show_computer(jobs: Array, bank: int, jobs_done: int, upgrades: Array = [], msg := "") -> void:
+	pc_data = {jobs = jobs, bank = bank, done = jobs_done, upgrades = upgrades}
+	pc_msg = msg
+	_render_pc()
 	pc_screen.visible = true
+
+func _render_pc() -> void:
+	pc_head.text = "TREE-MAIL v1.2        BANK: $%d   JOBS DONE: %d" % [pc_data.bank, pc_data.done]
+	for ch in pc_tabs.get_children(): ch.queue_free()
+	for tb in [["jobs", "JOBS"], ["upgrades", "UPGRADES"]]:
+		var b := _crt_button(("[ %s ]" if pc_tab == tb[0] else "  %s  ") % tb[1])
+		var id: String = tb[0]
+		b.pressed.connect(func(): pc_tab = id; pc_msg = ""; _render_pc())
+		pc_tabs.add_child(b)
+	for ch in pc_list.get_children(): ch.queue_free()
+	if pc_tab == "jobs":
+		pc_list.add_child(_crt_label("> NEW WORK IN YOUR AREA:", 18))
+		var jobs: Array = pc_data.jobs
+		for i in range(jobs.size()):
+			var j: Dictionary = jobs[i]
+			var b := _crt_button(("  %d. %s   $%d" % [i + 1, j.title, j.pay]) if j.open else ("  %d. %s" % [i + 1, j.title]))
+			b.disabled = not j.open
+			b.pressed.connect(func(): hide_computer(); job_chosen.emit(i))
+			pc_list.add_child(b)
+			_pc_text("     " + j.text, j.open)
+	else:
+		pc_list.add_child(_crt_label("> FIX UP YOUR GEAR:", 18))
+		var ups: Array = pc_data.upgrades
+		for u: Dictionary in ups:
+			var can: bool = not u.owned and int(pc_data.bank) >= int(u.cost)
+			var label: String = ("  %s   DONE" % u.title) if u.owned else ("  %s   $%d" % [u.title, u.cost])
+			if not u.owned and not can: label += "   (NEED $%d MORE)" % (int(u.cost) - int(pc_data.bank))
+			var b := _crt_button(label)
+			b.disabled = not can
+			var id: String = u.id
+			b.pressed.connect(func(): upgrade_chosen.emit(id))
+			pc_list.add_child(b)
+			_pc_text("     " + u.text, not u.owned)
+	if pc_msg != "":
+		pc_list.add_child(_crt_label("> " + pc_msg, 18))
+
+func _pc_text(t: String, bright: bool) -> void:
+	var d := _crt_label(t, 15, CRT if bright else CRT_DIM)
+	d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; d.custom_minimum_size = Vector2(580, 0)
+	pc_list.add_child(d)
 
 func hide_computer() -> void:
 	pc_screen.visible = false

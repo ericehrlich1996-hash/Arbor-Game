@@ -49,6 +49,7 @@ func _ready() -> void:
 	hud.next_job_pressed.connect(func(): Hub.come_home = true; get_tree().reload_current_scene())
 	hud.job_chosen.connect(start_job)
 	hud.computer_closed.connect(_close_computer)
+	hud.upgrade_chosen.connect(buy_upgrade)
 	var car := Career.load()
 	money = car.money
 	Mats.set_truck_rust(car.truck_rust)
@@ -117,7 +118,21 @@ func open_computer() -> void:
 	hud.set_prompt("")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	Sfx.play("blip")
-	hud.show_computer(JOBS, money, Career.load().jobs)
+	hud.show_computer(JOBS, money, Career.load().jobs, _upgrades())
+
+func _upgrades() -> Array:
+	var c := Career.load()
+	return [{id = "truck", title = "Fix up the truck", cost = 400, owned = float(c.truck_rust) <= 0.0,
+		text = "Rust cut out and patched, fresh paint, new chrome, clean glass. She'll look like she just rolled off the lot."}]
+
+func buy_upgrade(id: String) -> void:
+	var c := Career.load()
+	if id == "truck" and float(c.truck_rust) > 0.0 and int(c.money) >= 400:
+		c.money -= 400; c.truck_rust = 0.0
+		Career.save(c); money = c.money
+		Mats.set_truck_rust(0.0)
+		Sfx.play("cash")
+		hud.show_computer(JOBS, money, c.jobs, _upgrades(), "TRUCK FIXED UP. GO TAKE A LOOK!")
 
 func _close_computer() -> void:
 	hub.busy = false

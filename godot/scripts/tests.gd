@@ -1458,3 +1458,22 @@ func _hub2() -> void:
 	await _hview("hub2-yard", Vector3(9, 0, -12), Vector3(0, 2, 0))
 	await _hview("hub2-truckside", Vector3(10.5, 0, -8.5), Vector3(7, 1, -9.5))
 	await _hview("hub2-door", Vector3(1.3, 0.5, -2.6), Vector3(-1.5, 1.2, 1.5))
+
+func _hubup() -> void:
+	await wait(1.0)
+	g.hub_begin()
+	var c := Career.load(); c.truck_rust = 1.0; c.money = maxi(int(c.money), 500); Career.save(c); g.money = c.money
+	Mats.set_truck_rust(1.0)
+	await _hview("hubup-before", Vector3(10.5, 0, -8.5), Vector3(7, 1, -9.5))
+	g.open_computer()
+	g.hud.pc_tab = "upgrades"; g.hud._render_pc()
+	await wait(0.5)
+	await shot("hubup-tab")
+	g.buy_upgrade("truck")
+	await wait(0.5)
+	await shot("hubup-bought")
+	note("rust", Career.load().truck_rust)
+	g.hud.hide_computer(); g._close_computer()
+	await _hview("hubup-after", Vector3(10.5, 0, -8.5), Vector3(7, 1, -9.5))
+	await _hview("hubup-after2", Vector3(9, 0, -12), Vector3(6, 1, -8))
+	c = Career.load(); c.truck_rust = 1.0; c.money += 400; Career.save(c)
