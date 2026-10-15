@@ -500,7 +500,7 @@ func _grab_aimed() -> bool:
 		if haul.carrying() and haul.liftable(b):
 			hud.toast("That's all you can carry. Right click to set one down.", 2.0); return true
 	if haul.carrying():
-		var brush: bool = haul.carry[0].is_brush() or haul.carry[0].kind == "wedge"
+		var brush: bool = haul.carry.any(func(b): return b.chippable())
 		if brush and haul.near_hopper() and chipper.running: haul.feed(); return true
 	return false
 
@@ -565,7 +565,7 @@ func interact() -> void:
 	if haul.carrying():
 		if aim.get("kind", "") == "piece" and player.tool == "hands" and haul.liftable(aim.piece) and haul.can_add(aim.piece):
 			haul.pick_up(aim.piece); return
-		var brush: bool = haul.carry[0].is_brush() or haul.carry[0].kind == "wedge"
+		var brush: bool = haul.carry.any(func(b): return b.chippable())
 		if brush and haul.near_hopper() and chipper.running: haul.feed(); return
 		haul.drop_all(); return
 	if aim.is_empty(): return
@@ -581,7 +581,7 @@ func interact() -> void:
 			if player.tool == "saw":
 				if not saw.on: hud.toast("The saw is off. R to pull-start it.", 1.8)
 				return
-			if b.kind == "trunk" and not b.limbs.is_empty(): hud.toast("Can't lift that. Limb it first."); return
+			if b.kind == "trunk" and not b.limbs.is_empty() and b.mass > Wood.LIFT_MAX: hud.toast("Can't lift that. Limb it first."); return
 			if b.mass > Wood.LIFT_MAX:
 				hud.toast(("Too heavy to lift (%s). T to drag it." if haul.can_drag(b) else "Too heavy to lift (%s). Buck it smaller.") % lb(b.mass)); return
 			haul.pick_up(b)
@@ -758,8 +758,11 @@ func update_objectives() -> void:
 		if b.kind == "limb" or b.kind == "wedge":
 			if b.mode != "feed" and b.mode != "feedwait": brush += 1
 		elif b.kind == "trunk" and not b.limbs.is_empty():
-			brush += b.limbs.size()
-			rounds += 1; heavy += 1
+			if b.mass <= Wood.LIFT_MAX:
+				if b.mode != "feed" and b.mode != "feedwait": brush += 1      # a liftable top with twigs on is just brush
+			else:
+				brush += b.limbs.size()
+				rounds += 1; heavy += 1
 		else:
 			rounds += 1
 			if b.mass > Wood.LIFT_MAX: heavy += 1
@@ -789,7 +792,7 @@ func _update_hud() -> void:
 	hud.money.text = "$%d" % money
 	var nc := haul.carry.size()
 	if nc > 0:
-		var brushy: bool = haul.carry[0].is_brush() or haul.carry[0].kind == "wedge"
+		var brushy: bool = haul.carry.all(func(b): return b.brushy())
 		hud.set_carry(nc, ("piece" if nc == 1 else "pieces") + (" of brush" if brushy else "") if brushy else ("round" if nc == 1 else "rounds"), haul.carry_mass(), Wood.LIFT_MAX, lb)
 	else:
 		hud.set_carry(0, "", 0.0, 1.0, lb)
@@ -798,7 +801,8 @@ func _update_hud() -> void:
 	if not saw.guide.is_empty():
 		var tdeg := int(round(rad_to_deg(saw.tilt)))
 		var ang := "level" if tdeg == 0 else ("%d° down" % tdeg if tdeg > 0 else "%d° up" % -tdeg)
-		if saw.guide.existing != null: hud.tilt.text = "Carrying on your cut · hold right mouse"
+		if saw.guide.get("too_far", false): hud.tilt.text = "Step closer to cut there"
+		elif saw.guide.existing != null: hud.tilt.text = "Carrying on your cut · hold right mouse"
 		else: hud.tilt.text = "Cut: %s · wheel to angle · hold right mouse" % ang
 	else:
 		hud.tilt.text = "Bar roll %d°" % int(rad_to_deg(saw.roll))
@@ -819,7 +823,7 @@ func _update_hud() -> void:
 		t = "Dragging · %s · [b]T[/b] let go" % lb(haul.drag.b.mass)
 	elif haul.carrying():
 		var n := haul.carry.size()
-		var brush: bool = haul.carry[0].is_brush() or haul.carry[0].kind == "wedge"
+		var brush: bool = haul.carry.any(func(b): return b.chippable())
 		if a.get("kind", "") == "piece" and player.tool == "hands" and haul.liftable(a.piece) and haul.can_add(a.piece):
 			t = "[b]Left click[/b] Grab another · %s total" % lb(haul.carry_mass() + a.piece.mass)
 		elif brush and haul.near_hopper() and chipper.running:
@@ -837,9 +841,9 @@ func _update_hud() -> void:
 			"piece":
 				var b: WoodPiece = a.piece
 				if player.tool == "saw": t = "" if saw.on else "[b]R[/b] Pull-start the saw"
-				elif b.kind == "trunk" and not b.limbs.is_empty(): t = lb(b.mass) + (" · [b]T[/b] Drag" if haul.can_drag(b) else "")
+				elif b.kind == "trunk" and not b.limbs.is_empty() and b.mass > Wood.LIFT_MAX: t = lb(b.mass) + (" · [b]T[/b] Drag" if haul.can_drag(b) else "")
 				elif b.mass > Wood.LIFT_MAX: t = ("[b]T[/b] Drag · %s" % lb(b.mass)) if haul.can_drag(b) else "%s · too heavy" % lb(b.mass)
-				else: t = "[b]Left click[/b] Pick up %s · %s" % [b.label(), lb(b.mass)]
+				else: t = "[b]Left click[/b] Pick up %s · %s" % [b.label(), lb(b.mass)] + (" · small enough to chip" if b.chippable() and b.kind == "trunk" and b.limbs.is_empty() else "")
 	hud.set_prompt(t)
 
 # ================================================================ frame loop

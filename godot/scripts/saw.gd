@@ -40,6 +40,7 @@ var chain_pos := 0.0           # how far the chain has run round the bar (m)
 var guide_mi: MeshInstance3D
 var guide_im: ImmediateMesh
 const GUIDE_REACH := 1.75
+const MAX_REACH := 0.95         # how far from your eyes the saw can be held (arms stay arm-length)
 # the chain loop: straight along the top and bottom of the bar, round the nose and the drive sprocket
 const CHAIN_Z0 := -0.24        # drive sprocket centre
 const CHAIN_Z1 := -0.83        # nose sprocket centre
@@ -146,8 +147,12 @@ func pose(dt: float, rev: bool, carrying: bool) -> void:
 		if yb.dot(fw) > 0: xb = -xb; yb = -yb          # the top of the saw faces away from the cut
 		var bw := front + yb * 0.036 - bar_dir * (BAR_L * 0.5)
 		var wxf := Transform3D(Basis(xb, yb, zb), bw - zb * BAR_BASE)
-		var lx := cw0.affine_inverse() * wxf
-		eq = Quaternion(lx.basis.orthonormalized()); ep = lx.origin
+		# only within arm's reach: further off, the line shows where you'd cut but you have to step in
+		var reach_d := (wxf * Vector3(0, 0.1, -0.1) - cw0.origin).length()
+		g.too_far = reach_d > MAX_REACH
+		if not g.too_far:
+			var lx := cw0.affine_inverse() * wxf
+			eq = Quaternion(lx.basis.orthonormalized()); ep = lx.origin
 	k = smoothstep(0, 1, clampf(eng, 0, 1))
 	var pos := ip.lerp(ep, k)
 	var q := iq.slerp(eq, k)
@@ -349,6 +354,7 @@ func _draw_guide() -> void:
 	var TT: Dictionary = g.T
 	var e: Vector3 = g.e; var nn: Vector3 = g.n
 	var col := Color(1.0, 0.62, 0.15, 0.9) if g.existing == null else Color(0.45, 1.0, 0.35, 0.9)
+	if g.get("too_far", false): col = Color(1, 1, 1, 0.45)
 	if absf(nn.y) > 0.2:
 		# a thin glowing band round the bark (a strip, so it reads at any distance)
 		var nw := (xf.basis * nn).normalized()
@@ -430,6 +436,8 @@ func step(dt: float, rev: bool, carrying: bool) -> void:
 	if engine_snd: engine_snd.setv(rpm * (0.82 if cutting else 1.0), 0.0, 0.42)
 	if player.tool != "saw" or not on or carrying: cut = null; return
 	if not rev or k < 0.96: cut = null; return
+	if not guide.is_empty() and guide.get("too_far", false):
+		cut = null; return
 	if cut == null and not guide.is_empty():
 		cut = _start_guided(guide)
 		if cut == null: return

@@ -1005,7 +1005,7 @@ func _guided() -> void:
 	g.equip("saw"); g.saw.on = true; g.saw.engine_snd = Sfx.engine("saw")
 	g.player.crouch = true
 	# stand on the fall side, aim at the bark facing us
-	var stand := base + away * (R + 0.95)
+	var stand := base + away * (R + 0.55)
 	g.player.teleport(Vector3(stand.x, g.world.H(stand.x, stand.z) + 0.05, stand.z))
 	await wait(0.5)
 	var hb := 0.55
@@ -1013,7 +1013,7 @@ func _guided() -> void:
 	look_at_point(tr.to_world(Vector3(0, top_h, 0)) + away * R)
 	g.saw.tilt = deg_to_rad(50)
 	await wait(0.4)
-	note("guide_top", [not g.saw.guide.is_empty(), g.saw.guide.get("kind", "")])
+	note("guide_top", [not g.saw.guide.is_empty(), g.saw.guide.get("kind", ""), g.saw.guide.get("too_far", null)])
 	await shot("guided-aim")
 	g.force_rev = true
 	var tt := 0.0
@@ -1035,7 +1035,7 @@ func _guided() -> void:
 	await wait(0.6)
 	await shot("guided-notch")
 	# back cut from the other side, a little above the notch floor
-	var back := base - away * (R + 0.95)
+	var back := base - away * (R + 0.55)
 	g.player.teleport(Vector3(back.x, g.world.H(back.x, back.z) + 0.05, back.z))
 	await wait(0.4)
 	look_at_point(tr.to_world(Vector3(0, hb + 0.04, 0)) - away * R)

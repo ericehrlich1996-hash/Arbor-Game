@@ -23,12 +23,10 @@ func carrying() -> bool:
 	return not carry.is_empty()
 
 func can_add(b: WoodPiece) -> bool:
-	if carry.is_empty(): return b.mass <= Wood.LIFT_MAX
-	if carry[0].is_brush() != b.is_brush(): return false
 	return carry_mass() + b.mass <= Wood.LIFT_MAX
 
 func liftable(b: WoodPiece) -> bool:
-	return b.mass <= Wood.LIFT_MAX and not (b.kind == "trunk" and not b.limbs.is_empty())
+	return b.mass <= Wood.LIFT_MAX          # anything you can lift counts as limbed enough
 
 func _hold(b: WoodPiece, on: bool) -> void:
 	if on:
@@ -94,7 +92,7 @@ func step_carry(dt: float) -> void:
 		var held_t: float = b.get_meta("held_t", 0.0) + dt
 		b.set_meta("held_t", held_t)
 		var k := 1.0 if held_t > 0.3 else minf(1.0, dt * 14)
-		if b.is_brush() or b.kind == "wedge":
+		if b.brushy():
 			var ba: Dictionary = b.brush_axis()
 			var dir := (fw * 0.8 + rt * (-0.55 + i * 0.06) + Vector3(0, -0.08 + i * 0.03, 0)).normalized()
 			var hands := p.global_position + Vector3(0, 1.0 + i * 0.05, 0) + fw * 0.5 + rt * (0.22 - i * 0.05)
@@ -258,8 +256,8 @@ func near_hopper() -> bool:
 func feed() -> void:
 	var c: Chipper = game.chipper
 	if not c.running: game.hud.toast("The chipper isn't running."); return
-	var brush := carry.filter(func(b): return b.is_brush() or b.kind == "wedge")
-	carry = carry.filter(func(b): return not (b.is_brush() or b.kind == "wedge"))
+	var brush := carry.filter(func(b): return b.chippable())
+	carry = carry.filter(func(b): return not b.chippable())
 	for b in brush:
 		b.mode = "feedwait"
 		feed_queue.append(b)

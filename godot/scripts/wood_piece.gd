@@ -37,8 +37,20 @@ func is_round() -> bool:
 func is_brush() -> bool:
 	return kind == "limb"
 
+## anything the chipper will take: brush, notch wedges, a liftable top still wearing its branches,
+## and any little round under ten pounds
+const CHIP_MAX := 4.54          # kg (10 lb)
+func chippable() -> bool:
+	if kind == "limb" or kind == "wedge": return true
+	if kind == "trunk" and not limbs.is_empty() and mass <= Wood.LIFT_MAX: return true
+	return mass < CHIP_MAX
+
+## carried under the arm like brush (rather than a round on the shoulder)
+func brushy() -> bool:
+	return kind == "limb" or kind == "wedge" or (kind == "trunk" and not limbs.is_empty())
+
 func label() -> String:
-	if kind == "limb": return "brush"
+	if kind == "limb" or (kind == "trunk" and not limbs.is_empty()): return "brush"
 	if kind == "wedge": return "wedge"
 	if kind == "slab": return "slab"
 	return "round" if limbs.is_empty() else "stem"
