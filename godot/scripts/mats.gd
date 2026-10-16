@@ -67,8 +67,11 @@ void fragment() {
 }
 """
 
+var truck_rust := 1.0
+
 ## how rusty the old truck is (1 = as found; fixing it up brings this down)
 func set_truck_rust(k: float) -> void:
+	truck_rust = k
 	truck_paint.set_shader_parameter("rust", 1.0 * k)
 	truck_chrome.set_shader_parameter("rust", 0.6 * k)
 	# fixed up: glossy fresh paint, bright chrome, clean glass

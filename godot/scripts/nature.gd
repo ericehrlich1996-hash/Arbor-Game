@@ -227,6 +227,7 @@ static func init() -> void:
 	mats.bark_oak = _bark(_noise_tex(0.05, 3, Color("#2e2925"), Color("#5f574c"), Vector2.ONE, true), Vector3(5, 0.7, 5))
 	mats.bark_birch = _bark(_noise_tex(0.04, 2, Color("#2a2826"), Color("#ecebe4"), Vector2.ONE, false), Vector3(2, 6, 2))
 	mats.rock = _bark(_noise_tex(0.03, 4, Color("#6a6862"), Color("#a6a49c"), Vector2.ONE, false), Vector3(0.6, 0.6, 0.6))
+	mats.rock.cull_mode = BaseMaterial3D.CULL_DISABLED      # the blob's faces wind inward: draw both sides so it reads solid
 
 ## alpha cut-out foliage with soft lighting and wind; vertex/instance colour tints, vertex alpha = how much it sways
 static func _foliage(t: Texture2D, wind: float) -> ShaderMaterial:

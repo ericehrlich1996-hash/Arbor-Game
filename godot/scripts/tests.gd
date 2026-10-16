@@ -1477,3 +1477,78 @@ func _hubup() -> void:
 	await _hview("hubup-after", Vector3(10.5, 0, -8.5), Vector3(7, 1, -9.5))
 	await _hview("hubup-after2", Vector3(9, 0, -12), Vector3(6, 1, -8))
 	c = Career.load(); c.truck_rust = 1.0; c.money += 400; Career.save(c)
+
+## the cabin fixes: porch steps, door frame, yard props, chimney smoke, the fixed-up truck, the boulders
+func _hubfix() -> void:
+	await wait(1.0)
+	g.hub_begin()
+	var y0: float = g.hub.y0
+	var p: Player = g.player
+	# walk straight up the porch steps
+	p.teleport(Vector3(1.3, g.world.H(1.3, -7.6) + 0.05, -7.6), 0.0)
+	p.yaw = PI; p.pitch = -0.2
+	await wait(0.4)
+	Input.action_press("move_fwd")
+	await wait(2.2)
+	Input.action_release("move_fwd")
+	await wait(0.3)
+	note("steps_climbed", [snappedf(p.global_position.y - y0, 0.01), snappedf(p.global_position.z, 0.01)])
+	await shot("fix-porch-top")
+	await _hview("fix-steps", Vector3(3.6, 0, -8.5), Vector3(1.3, 0.2, -5.3))
+	await _hview("fix-jamb-in", Vector3(1.3, 0.5, -2.75), Vector3(0.78, 1.3, -3.3))
+	await _hview("fix-jamb-out", Vector3(2.4, 0.5, -4.4), Vector3(1.3, 1.4, -3.25))
+	await _hview("fix-corner", Vector3(-8.0, 0, 7.5), Vector3(-5.0, 0.3, 3.9))
+	await _hview("fix-tire", Vector3(-6.5, 0, -9.0), Vector3(-5.5, 0.0, -6.5))
+	await _hview("fix-smoke", Vector3(9, 0, -14), Vector3(-3.0, 4.5, -0.5))
+	note("smoke", [g.hub.smoke != null, g.hub.smoke.emitting if g.hub.smoke else false])
+	# the truck, fixed up: no more grumbling
+	Mats.set_truck_rust(0.0)
+	await _hview("fix-truck", Vector3(4.5, 0, -12.5), Vector3(7, 1, -9.5))
+	note("truck_fixed_aim_prompt", [g.hub.aim, g.hud.prompt.text if "prompt" in g.hud else "?"])
+	Mats.set_truck_rust(1.0)
+	await wait(0.3)
+	note("truck_rusty_prompt", [g.hub.aim, g.hud.prompt.text if "prompt" in g.hud else "?"])
+	# the nearest boulder in the woods: look at it, then stand over it
+	var best = null; var bd := 1e9
+	var trunks: Node = g.hub.find_child("ForestTrunks", true, false)
+	for cs in trunks.get_children():
+		var cy := (cs as CollisionShape3D).shape as CylinderShape3D
+		if cy == null or cy.height > 4.0: continue
+		var d := Vector2(cs.position.x, cs.position.z).length()
+		if d > 17.0 and d < bd: bd = d; best = cs
+	note("rock_found", best != null)
+	if best:
+		var rp: Vector3 = best.position
+		var away := Vector2(rp.x, rp.z).normalized() * -4.5
+		var at := Vector3(rp.x + away.x, 0, rp.z + away.y)
+		p.teleport(Vector3(at.x, g.world.H(at.x, at.z) + 0.05, at.z))
+		look_at_point(rp + Vector3(0, 0.3, 0))
+		await wait(0.8)
+		await shot("fix-rock")
+		var near := Vector3(rp.x + away.x * 0.3, 0, rp.z + away.y * 0.3)
+		p.teleport(Vector3(near.x, g.world.H(near.x, near.z) + 0.05, near.z))
+		look_at_point(rp)
+		await wait(0.8)
+		await shot("fix-rock-close")
+		# walk into it: it should stop you
+		var from := p.global_position
+		Input.action_press("move_fwd"); await wait(1.5); Input.action_release("move_fwd")
+		note("rock_blocks", [snappedf(Vector2(p.global_position.x - rp.x, p.global_position.z - rp.z).length(), 0.01), snappedf((cs_radius(best)), 0.01)])
+
+func cs_radius(cs) -> float:
+	return ((cs as CollisionShape3D).shape as CylinderShape3D).radius
+
+func _hubfix2() -> void:
+	await wait(1.0)
+	g.hub_begin()
+	await _hview("fix2-smoke", Vector3(6, 0, -11), Vector3(-3.5, 4.5, -0.5))
+	var tp: Vector3 = g.hub.spots.truck[0]
+	var p: Player = g.player
+	var at := tp + Vector3(1.6, 0, -0.6)
+	for rust: float in [1.0, 0.0]:
+		Mats.set_truck_rust(rust)
+		p.teleport(Vector3(at.x, g.world.H(at.x, at.z) + 0.05, at.z))
+		look_at_point(tp)
+		await wait(0.6)
+		note("truck_prompt_rust_%d" % int(rust), [g.hub.aim, g.hud.prompt.text])
+	await shot("fix2-truck-fixed")

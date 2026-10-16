@@ -31,6 +31,7 @@ var busy := false
 var t := 0.0
 var flame_mat: StandardMaterial3D
 var screen_mat: StandardMaterial3D
+var smoke: CPUParticles3D
 
 func build(g) -> void:
 	game = g
@@ -95,9 +96,10 @@ func _build_cabin() -> void:
 	for o in right: _window(mb, "z", HX, o)
 	# the door: a plank door standing open inside, in a rough frame
 	var trim := Color("#5a4632")
-	mb.box(0.75, F + 1.04, -HZ, 0.1, 2.1, 0.36, trim); mb.box(1.85, F + 1.04, -HZ, 0.1, 2.1, 0.36, trim)
-	mb.box(1.3, F + 2.1, -HZ, 1.2, 0.12, 0.36, trim)
-	mb.push(Transform3D(Basis(Vector3.UP, -1.75), Vector3(1.8, F, -HZ + 0.12)))
+	# the jambs sit over the sawn log ends (wider and deeper than a log) so no end pokes through
+	mb.box(0.79, F + 1.05, -HZ, 0.15, 2.12, 0.42, trim); mb.box(1.81, F + 1.05, -HZ, 0.15, 2.12, 0.42, trim)
+	mb.box(1.3, F + 2.12, -HZ, 1.36, 0.14, 0.42, trim)
+	mb.push(Transform3D(Basis(Vector3.UP, -1.75), Vector3(1.72, F, -HZ + 0.12)))
 	for k in range(5): mb.box(-0.1 - k * 0.19, 1.0, 0, 0.18, 2.0, 0.05, Color("#6a5238").lerp(Color("#7d6448"), r.randf()))
 	for yy: float in [0.35, 1.65]: mb.box(-0.5, yy, 0.04, 0.95, 0.12, 0.03, Color("#5a4430"))
 	mb.box(-0.85, 1.0, -0.05, 0.05, 0.05, 0.05, Color("#2a2a28"))
@@ -223,6 +225,7 @@ func _chimney_and_fire(mb: MeshBuilder, r: RandomNumberGenerator) -> void:
 		mb.box((cx0 + narrow * 0.5 + cx1) / 2, y + 0.11, (cz0 + cz1) / 2, cx1 - cx0 - narrow * 0.5 - 0.06, 0.2, cz1 - cz0 - 2 * narrow - 0.04, Color("#5c574f"))
 		y += 0.22
 	mb.box((cx0 + 0.1 + cx1) / 2, RIDGE + 0.82, (cz0 + cz1) / 2, cx1 - cx0 - 0.1, 0.08, cz1 - cz0 - 0.3, Color("#4e4a44"))
+	_smoke_at(W(Vector3((cx0 + 0.1 + cx1) / 2, RIDGE + 0.95, (cz0 + cz1) / 2)))
 	# inside: the firebox, built of stone round a dark opening, a hearth, a mantel
 	var fx0 := -HX + 0.12; var fx1 := -HX + 0.78
 	var fz0 := -1.3; var fz1 := 0.3; var oz0 := -0.85; var oz1 := -0.15
@@ -268,6 +271,51 @@ func _chimney_and_fire(mb: MeshBuilder, r: RandomNumberGenerator) -> void:
 	fire_light.light_energy = 1.6; fire_light.position = Vector3(0.5, 0.35, 0)
 	flames.add_child(fire_light)
 	spots.fire = [W(Vector3(fx1 + 0.3, F + 0.6, -0.5)), 2.2]
+
+## wood smoke billowing out of the chimney: soft grey puffs that swell, drift off on the breeze and fade
+func _smoke_at(p: Vector3) -> void:
+	var tex := GradientTexture2D.new()
+	tex.width = 64; tex.height = 64
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5); tex.fill_to = Vector2(1.0, 0.5)
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1)); g.set_color(1, Color(1, 1, 1, 0))
+	g.add_point(0.45, Color(1, 1, 1, 0.75))
+	tex.gradient = g
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = tex
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	mat.vertex_color_use_as_albedo = true
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	var quad := QuadMesh.new(); quad.size = Vector2(1, 1); quad.material = mat
+	smoke = CPUParticles3D.new(); smoke.name = "ChimneySmoke"
+	smoke.mesh = quad
+	smoke.amount = 64
+	smoke.lifetime = 8.0
+	smoke.preprocess = 8.0                        # already billowing when you arrive
+	smoke.local_coords = false
+	smoke.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	smoke.emission_sphere_radius = 0.12
+	smoke.direction = Vector3(0, 1, 0)
+	smoke.spread = 12.0
+	smoke.initial_velocity_min = 0.7; smoke.initial_velocity_max = 1.1
+	smoke.gravity = Vector3(0.32, 0.1, 0.12)      # a light breeze bends the column over
+	smoke.damping_min = 0.08; smoke.damping_max = 0.15
+	smoke.angle_min = 0; smoke.angle_max = 360
+	smoke.angular_velocity_min = -12; smoke.angular_velocity_max = 12
+	smoke.scale_amount_min = 0.75; smoke.scale_amount_max = 1.15
+	var c := Curve.new(); c.add_point(Vector2(0, 0.4)); c.add_point(Vector2(0.3, 1.5)); c.add_point(Vector2(1, 3.8))
+	smoke.scale_amount_curve = c
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(0.42, 0.41, 0.4, 0.0)); ramp.set_color(1, Color(0.82, 0.82, 0.84, 0.0))
+	ramp.add_point(0.07, Color(0.4, 0.39, 0.38, 0.8))
+	ramp.add_point(0.45, Color(0.6, 0.6, 0.6, 0.48))
+	smoke.color_ramp = ramp
+	smoke.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	smoke.position = p
+	add_child(smoke)
 
 ## the porch along the front: plank deck, two posts, a tin lean-to roof, steps, a bench
 func _porch(mb: MeshBuilder, r: RandomNumberGenerator) -> void:
@@ -419,18 +467,30 @@ func _box_col(c: Vector3, size: Vector3) -> void:
 	bs.size = size; cs.shape = bs; sb.add_child(cs); sb.position = W(c)
 	add_child(sb)
 
+## a sloped slab you can walk up, from a (low end) to b (high end), its top face on the line a-b
+func _ramp_col(a: Vector3, b: Vector3, width: float) -> void:
+	var d := b - a
+	var th := 0.12
+	var up := d.cross(Vector3.RIGHT).normalized()
+	if up.y < 0: up = -up
+	var sb := StaticBody3D.new(); var cs := CollisionShape3D.new(); var bs := BoxShape3D.new()
+	bs.size = Vector3(width, th, d.length()); cs.shape = bs; sb.add_child(cs)
+	var z := d.normalized()
+	sb.transform = Transform3D(Basis(Vector3.RIGHT, up, z), W((a + b) / 2 - up * th / 2))
+	add_child(sb)
+
 func _cabin_collision() -> void:
 	var t2 := (TOP - F)
 	_box_col(Vector3(0, F / 2 - 0.25, 0), Vector3(2 * HX + 0.3, F + 0.5, 2 * HZ + 0.3))            # floor
-	_box_col(Vector3((-HX - 0.2 + 0.78) / 2, F + t2 / 2, -HZ), Vector3(0.78 + HX + 0.2, t2, 0.34))   # front, left of the door
-	_box_col(Vector3((1.82 + HX + 0.2) / 2, F + t2 / 2, -HZ), Vector3(HX + 0.2 - 1.82, t2, 0.34))
+	_box_col(Vector3((-HX - 0.2 + 0.86) / 2, F + t2 / 2, -HZ), Vector3(0.86 + HX + 0.2, t2, 0.34))   # front, left of the door
+	_box_col(Vector3((1.74 + HX + 0.2) / 2, F + t2 / 2, -HZ), Vector3(HX + 0.2 - 1.74, t2, 0.34))
 	_box_col(Vector3(1.3, F + 2.05 + (t2 - 2.05) / 2, -HZ), Vector3(1.1, t2 - 2.05, 0.34))
 	_box_col(Vector3(0, F + t2 / 2, HZ), Vector3(2 * HX + 0.4, t2, 0.34))
 	for sx: float in [-1.0, 1.0]: _box_col(Vector3(sx * HX, F + t2 / 2, 0), Vector3(0.34, t2, 2 * HZ + 0.4))
 	_box_col(Vector3(-HX - 0.55, 2.0, -0.5), Vector3(0.95, 4.0, 1.45))                              # chimney
 	_box_col(Vector3(-HX + 0.45, F + 0.7, -0.5), Vector3(0.7, 1.4, 1.6))                            # fireplace
 	_box_col(Vector3(1.4, F / 2 - 0.2, -HZ - 0.95), Vector3(5.6, F + 0.4, 1.7))                      # porch
-	_box_col(Vector3(1.3, F / 2 - 0.3, -HZ - 1.95), Vector3(1.1, F * 0.6, 0.3))                       # step
+	_ramp_col(Vector3(1.3, -0.15, -HZ - 2.95), Vector3(1.3, F + 0.02, -HZ - 1.78), 1.1)               # the steps
 	# furniture
 	_box_col(Vector3(-3.15, F + 0.4, -2.82), Vector3(1.4, 0.8, 0.66))
 	_box_col(Vector3(-0.7, F + 0.4, 0.45), Vector3(1.2, 0.8, 0.8))
@@ -470,18 +530,52 @@ func _build_yard() -> void:
 		mb.box(0, 0, 0, 0.09, 0.3, 0.12, Color("#c8a878").lerp(Color("#8a7458"), r.randf()))
 		mb.pop()
 	# a rain barrel, an old tire, a rusty wheelbarrow tipped over
-	var rb := Vector3(HX + 0.6, 0, HZ + 0.6); rb.y = world.H(rb.x, rb.z)
-	mb.cyl(rb.x, rb.y, rb.z, 0.32, 0.3, 0.9, Color("#4a5a6a"), 14, true, Color("#1a2a30"))
-	for yy: float in [0.2, 0.7]: mb.cyl(rb.x, rb.y + yy, rb.z, 0.335, 0.335, 0.05, Color("#6a4a30"), 14, false)
-	var tr := Vector3(-5.5, 0, -6.5); tr.y = world.H(tr.x, tr.z)
-	mb.cyl(tr.x, tr.y, tr.z, 0.38, 0.38, 0.22, Color("#1e1e1e"), 16, false)
-	mb.cyl(tr.x, tr.y + 0.21, tr.z, 0.24, 0.24, 0.01, Color("#3a3a36"), 16, true)
-	var wb := Vector3(-5.0, 0, 3.8); wb.y = world.H(wb.x, wb.z)
-	mb.push(Transform3D(Basis(Vector3.BACK, 2.5) * Basis(Vector3.UP, 0.6), wb + Vector3(0, 0.35, 0)))
-	mb.box(0, 0, 0, 0.6, 0.25, 0.9, Color("#7a3a20")); mb.cyl(0, -0.3, 0.55, 0.15, 0.15, 0.08, Color("#1e1e1e"), 12, true)
+	# the barrel stands upright, sunk a touch so no edge floats on the slope
+	var rb := Vector3(HX + 0.6, 0, HZ + 0.6); rb.y = _ground_low(rb.x, rb.z, 0.34) - 0.03
+	mb.cyl(rb.x, rb.y, rb.z, 0.32, 0.3, 0.93, Color("#4a5a6a"), 14, true, Color("#1a2a30"))
+	for yy: float in [0.23, 0.73]: mb.cyl(rb.x, rb.y + yy, rb.z, 0.335, 0.335, 0.05, Color("#6a4a30"), 14, false)
+	# the old tire lies flat, following the ground
+	mb.push(_ground_xf(-5.5, -6.5, 0.4, 0.03))
+	mb.cyl(0, 0, 0, 0.38, 0.38, 0.22, Color("#1e1e1e"), 16, false)
+	mb.cyl(0, 0.2, 0, 0.36, 0.36, 0.02, Color("#262624"), 16, true)
+	mb.cyl(0, 0.21, 0, 0.22, 0.22, 0.012, Color("#0e0e0e"), 16, true)
+	mb.pop()
+	# the rusty wheelbarrow, parked on its wheel and back legs
+	mb.push(_ground_xf(-5.2, 3.9, 0.9, 0.0))
+	var rust := Color("#7a3a20"); var steel := Color("#3a3634")
+	mb.box(0, 0.38, 0, 0.5, 0.03, 0.6, rust)                                    # tray floor
+	for sx: float in [-1.0, 1.0]: mb.box(sx * 0.27, 0.5, 0, 0.03, 0.25, 0.72, rust * 0.92)
+	mb.box(0, 0.5, -0.33, 0.56, 0.25, 0.03, rust * 0.85)
+	mb.box(0, 0.5, 0.36, 0.56, 0.25, 0.03, rust * 0.95)
+	for sx: float in [-1.0, 1.0]:
+		mb.tube(Vector3(sx * 0.2, 0.36, 0.38), Vector3(sx * 0.27, 0.6, -1.0), 0.022, 0.022, steel, 6, true)   # handle
+		mb.tube(Vector3(sx * 0.27, 0.6, -0.86), Vector3(sx * 0.27, 0.6, -1.06), 0.03, 0.03, Color("#1e1e1e"), 6, true)
+		mb.tube(Vector3(sx * 0.2, 0.0, -0.32), Vector3(sx * 0.21, 0.37, -0.26), 0.02, 0.02, steel, 6, true)   # leg
+		mb.tube(Vector3(sx * 0.05, 0.19, 0.62), Vector3(sx * 0.2, 0.37, 0.36), 0.018, 0.018, steel, 6, true)  # wheel fork
+	mb.push(Transform3D(Basis(Vector3.BACK, -PI / 2), Vector3(0, 0.19, 0.62)))
+	mb.cyl(0, -0.045, 0, 0.19, 0.19, 0.09, Color("#1e1e1e"), 16, true)        # tire, touching the ground
+	mb.cyl(0, -0.055, 0, 0.08, 0.08, 0.11, Color("#6a6e72"), 10, true)        # hub
+	mb.pop()
 	mb.pop()
 	var mi := mb.instance(); mi.name = "Yard"
 	add_child(mi)
+
+## the lowest ground within r of (x, z), so something flat-bottomed never hangs over a dip
+func _ground_low(x: float, z: float, r: float) -> float:
+	var lo := world.H(x, z)
+	for k in range(8):
+		var a := TAU * k / 8.0
+		lo = minf(lo, world.H(x + cos(a) * r, z + sin(a) * r))
+	return lo
+
+## a frame sitting on the ground at (x, z): y up along the slope's normal, turned to yaw
+func _ground_xf(x: float, z: float, yaw: float, sink: float) -> Transform3D:
+	var e := 0.35
+	var gx := (world.H(x + e, z) - world.H(x - e, z)) / (2 * e)
+	var gz := (world.H(x, z + e) - world.H(x, z - e)) / (2 * e)
+	var n := Vector3(-gx, 1, -gz).normalized()
+	var b := Basis(Quaternion(Vector3.UP, n)) * Basis(Vector3.UP, yaw)
+	return Transform3D(b, Vector3(x, world.H(x, z) - sink, z))
 
 # ================================================================ play
 func begin() -> void:
@@ -493,6 +587,7 @@ func step(dt: float) -> void:
 	var fk := 0.75 + 0.15 * sin(t * 11.0) + 0.1 * sin(t * 23.0 + 1.3) + 0.08 * sin(t * 5.3)
 	fire_light.light_energy = 1.5 * fk
 	flames.scale = Vector3(1.0, 0.85 + 0.25 * fk, 1.0)
+	if smoke: smoke.emitting = flames.visible             # smoke only while the fire's lit
 	lamp_light.light_energy = 0.65 + 0.04 * sin(t * 9.0)
 	if game.phase == "title":
 		var a := t * 0.05
@@ -515,7 +610,7 @@ func step(dt: float) -> void:
 	var txt := ""
 	match aim:
 		"computer": txt = "[b]E[/b] Use the computer"
-		"truck": txt = "Your truck. She's seen better days."
+		"truck": txt = "" if Mats.truck_rust <= 0.0 else "Your truck. She's seen better days."
 		"bed": txt = "[b]E[/b] Have a nap"
 		"fire": txt = "Nice and warm."
 	game.hud.set_prompt(txt)
@@ -536,4 +631,5 @@ func interact() -> void:
 			tw.tween_callback(func(): game.hud.toast("You slept like a log.", 2.5))
 			tw.tween_property(game.hud.fade, "color:a", 0.0, 1.0)
 			tw.tween_callback(func(): busy = false)
-		"truck": game.hud.toast("Rust holding it together. Once there's money in the bank, she gets fixed up.", 3.5)
+		"truck":
+			if Mats.truck_rust > 0.0: game.hud.toast("Rust holding it together. Once there's money in the bank, she gets fixed up.", 3.5)

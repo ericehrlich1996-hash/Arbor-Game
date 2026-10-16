@@ -14,6 +14,10 @@ var cells := {}                 # Vector2i -> {key -> Array[Transform3D/color pa
 var models := {}                # key -> {mesh, range_begin, range_end, shadow}
 var rng := RandomNumberGenerator.new()
 var trunks: Array = []          # [x, z, r] for collision near the yard
+var rocks: Array = []           # [x, z, r, top] for collision near the yard
+var occ := {}                   # Vector2i(4 m cell) -> [[x, z, r]]: trunks, rocks, logs and stumps already placed
+const OCC := 4.0
+const OCC_MAX := 3.2            # the biggest footprint anything records
 var _edge := FastNoiseLite.new()
 var _patch := FastNoiseLite.new()
 
@@ -25,6 +29,7 @@ func build(world: WorldGen, parent: Node3D) -> void:
 	_patch.seed = w.seed + 9; _patch.frequency = 0.06
 	_models()
 	_place_trees()
+	_place_floor()
 	_place_underbrush()
 	_emit()
 	_colliders()
@@ -106,6 +111,30 @@ func _clear(x: float, z: float, pad: float) -> bool:
 	if Vector2(x, z).distance_to(Vector2(w.mailbox.x, w.mailbox.y)) < 2 + pad: return false
 	return true
 
+## remember a round footprint so later things keep out of it
+func _occupy(x: float, z: float, r: float) -> void:
+	var c := Vector2i(floori(x / OCC), floori(z / OCC))
+	if not occ.has(c): occ[c] = []
+	occ[c].append([x, z, minf(r, OCC_MAX)])
+
+## does a circle at (x, z) of radius r overlap anything already placed?
+func _overlaps(x: float, z: float, r: float) -> bool:
+	var c := Vector2i(floori(x / OCC), floori(z / OCC))
+	var k := ceili((r + OCC_MAX) / OCC)
+	for j in range(-k, k + 1):
+		for i in range(-k, k + 1):
+			var list = occ.get(c + Vector2i(i, j))
+			if list == null: continue
+			for o in list:
+				var dx: float = o[0] - x; var dz: float = o[1] - z; var rr: float = o[2] + r
+				if dx * dx + dz * dz < rr * rr: return true
+	return false
+
+## how far a model reaches out from its centre on the ground, at scale 1
+func _reach(key: String) -> float:
+	var bb: AABB = (models[key].mesh as Mesh).get_aabb()
+	return maxf(maxf(absf(bb.position.x), absf(bb.end.x)), maxf(absf(bb.position.z), absf(bb.end.z)))
+
 func _place_trees() -> void:
 	var step := 4.6
 	var x := -170.0
@@ -125,27 +154,57 @@ func _place_trees() -> void:
 			if kind < 0.58:
 				var v := rng.randi() % 4
 				_tree("fir%d" % v, px, pz, yaw, s)
+				_occupy(px, pz, 0.3 * s + 0.35)
 				if near: trunks.append([px, pz, 0.3 * s])
 			elif kind < 0.86:
 				var v := rng.randi() % 4
 				_tree("oak%d" % v, px, pz, yaw, s)
+				_occupy(px, pz, 0.25 * s + 0.35)
 				if near: trunks.append([px, pz, 0.25 * s])
 			elif kind < 0.96:
 				var v := rng.randi() % 2
 				_tree("birch%d" % v, px, pz, yaw, s)
+				_occupy(px, pz, 0.16 * s + 0.35)
 				if near: trunks.append([px, pz, 0.16 * s])
 			else:
 				_add("snag%d" % (rng.randi() % 2), px, pz, yaw, s)
+				_occupy(px, pz, 0.25 * s + 0.35)
 				if near: trunks.append([px, pz, 0.25 * s])
 		x += step
 	# a few big yard trees, well away from the work
 	for t in w.yard_trees:
 		trunks.append([t.x, t.z, 0.28])
+		_occupy(t.x, t.z, 0.65)
 		var yaw := rng.randf() * TAU
 		if t.pine:
 			_tree("fir0", t.x, t.z, yaw, 0.8)
 		else:
 			_tree("oak1", t.x, t.z, yaw, 1.05)
+
+## rocks, fallen logs and old stumps on the forest floor: never through a tree or each other
+func _place_floor() -> void:
+	for k in range(900):
+		var px := rng.randf_range(-160, 160); var pz := rng.randf_range(-150, 165)
+		var f := forestness(px, pz)
+		if f < 0.3 or not _clear(px, pz, 1.5): continue
+		var roll := rng.randf()
+		var yaw := rng.randf() * TAU
+		var key := "stump0"
+		var s := rng.randf_range(0.8, 1.3)
+		var sink := 0.0
+		if roll < 0.45: key = "rock%d" % (rng.randi() % 3); s = rng.randf_range(0.6, 1.6); sink = 0.15
+		elif roll < 0.75: key = "log%d" % (rng.randi() % 3); s = rng.randf_range(0.8, 1.2); sink = 0.12
+		var r := _reach(key) * s
+		if _overlaps(px, pz, r): continue
+		_add(key, px, pz, yaw, s, Color.WHITE, sink)
+		_occupy(px, pz, r)
+		if key.begins_with("rock") and Vector2(px, pz).length() < 95:
+			var bb: AABB = (models[key].mesh as Mesh).get_aabb()
+			rocks.append([px, pz, r * 0.8, bb.end.y * s - sink])
+
+## true if a plant at (x, z) would poke through a rock, log, stump or trunk
+func _crowded(x: float, z: float, pad: float) -> bool:
+	return _overlaps(x, z, pad)
 
 func _place_underbrush() -> void:
 	# ferns, bushes, tall grass and flowers: thick in the woods and along the edge
@@ -161,27 +220,18 @@ func _place_underbrush() -> void:
 			var yaw := rng.randf() * TAU
 			var roll := rng.randf()
 			var edge := 1.0 - absf(f - 0.35) * 2.0       # strongest right at the woods' edge
+			if f > 0.05 and _crowded(px, pz, 0.3): continue   # nothing growing up through a rock or a trunk
 			if f > 0.3 and rng.randf() < 0.22 * f: _add("litter%d" % (rng.randi() % 3), px + 0.4, pz - 0.3, yaw, rng.randf_range(0.8, 1.4))
 			if f > 0.5 and rng.randf() < 0.035 * f: _add("sapling%d" % (rng.randi() % 2), px - 0.5, pz + 0.4, yaw, rng.randf_range(0.1, 0.26))
 			if roll < 0.5 * f * (0.5 + patch):
 				_add("fern%d" % (rng.randi() % 3), px, pz, yaw, rng.randf_range(0.8, 1.5))
 			elif roll < 0.5 * f + 0.12 * maxf(edge, 0.25) * (0.6 + patch):
-				_add("bush%d" % (rng.randi() % 3), px, pz, yaw, rng.randf_range(0.7, 1.3), Color.WHITE, 0.1)
+				if not _crowded(px, pz, 0.85): _add("bush%d" % (rng.randi() % 3), px, pz, yaw, rng.randf_range(0.7, 1.3), Color.WHITE, 0.1)
 			elif roll < 0.5 and f < 0.75:
 				_add("grass%d" % (rng.randi() % 2), px, pz, yaw, rng.randf_range(0.8, 1.3))
 			elif roll < 0.53 and f < 0.6:
 				_add("flower%d" % (rng.randi() % 2), px, pz, yaw, rng.randf_range(0.8, 1.3))
 		x += 1.7
-	# rocks, fallen logs and old stumps on the forest floor
-	for k in range(900):
-		var px := rng.randf_range(-160, 160); var pz := rng.randf_range(-150, 165)
-		var f := forestness(px, pz)
-		if f < 0.3 or not _clear(px, pz, 1.5): continue
-		var roll := rng.randf()
-		var yaw := rng.randf() * TAU
-		if roll < 0.45: _add("rock%d" % (rng.randi() % 3), px, pz, yaw, rng.randf_range(0.6, 1.6), Color.WHITE, 0.15)
-		elif roll < 0.75: _add("log%d" % (rng.randi() % 3), px, pz, yaw, rng.randf_range(0.8, 1.2), Color.WHITE, 0.12)
-		else: _add("stump0", px, pz, yaw, rng.randf_range(0.8, 1.3))
 	# stones and ferns crowding the creek banks
 	var cx := -150.0
 	while cx < 150.0:
@@ -237,6 +287,13 @@ func _colliders() -> void:
 		var cs := CollisionShape3D.new(); var cy := CylinderShape3D.new()
 		cy.radius = t[2]; cy.height = 6.0
 		cs.shape = cy; cs.position = Vector3(t[0], w.H(t[0], t[1]) + 2.5, t[1])
+		sb.add_child(cs)
+	for rk in rocks:
+		var top: float = rk[3]
+		if top < 0.25: continue                   # low enough to just walk over
+		var cs := CollisionShape3D.new(); var cy := CylinderShape3D.new()
+		cy.radius = rk[2]; cy.height = top + 0.3
+		cs.shape = cy; cs.position = Vector3(rk[0], w.H(rk[0], rk[1]) + (top - 0.3) / 2, rk[1])
 		sb.add_child(cs)
 	root.add_child(sb)
 
