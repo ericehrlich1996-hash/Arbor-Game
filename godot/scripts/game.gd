@@ -180,6 +180,13 @@ func _hub_input(ev: InputEvent) -> void:
 	if ev is InputEventKey and ev.pressed and ev.physical_keycode == KEY_ESCAPE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE; return
 	if ev.is_action_pressed("help"): hud.help.visible = not hud.help.visible; return
+	var ws: WoodSplit = hub.split
+	if ws and ws.active:
+		if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
+			if ev.pressed: ws.press()
+			else: ws.release()
+		elif ev.is_action_pressed("interact"): ws.stop_chopping()
+		return
 	if ev.is_action_pressed("interact") or (ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT): hub.interact()
 
 func _setup_input() -> void:
@@ -943,7 +950,10 @@ func payday() -> void:
 		func():
 			objs.paid = true; update_objectives(); Sfx.play("cash")
 			var c := Career.load(); c.money += total; c.jobs += 1
-			if trailer: c.trailer = true; c.firewood = true
+			if trailer:
+				c.trailer = true; c.firewood = true
+				var loaded := pieces().filter(func(b): return b.kind == "trunk" and trailer.in_bed(b.center_world())).size()
+				c.rounds = int(c.get("rounds", 0)) + maxi(12, loaded)
 			Career.save(c); money = c.money
 			var notes := []
 			if g.has("notch_pct"):

@@ -1867,3 +1867,67 @@ func _haletrailer() -> void:
 	look_at_point(bxf * Vector3(0, 1.0, -1.7))
 	await wait(0.6)
 	await shot("ht-tarped2")
+
+## splitting firewood at the cabin: take rounds from the trailer, split them, tie bundles
+func _hubchop() -> void:
+	var c0 := Career.load()
+	var c := c0.duplicate(); c.trailer = true; c.rounds = 4; c.bundles = 0; Career.save(c)
+	g.enter_hub()
+	await wait(1.0)
+	g.hub_begin()
+	await wait(0.5)
+	var ws: WoodSplit = g.hub.split
+	var tr: Trailer = g.hub.get_node("Trailer")
+	var m0: int = Career.load().money
+	var swings := 0; var splits_done := 0
+	for rnd in range(3):
+		var tp := tr.bed_xf() * Vector3(-2.2, 0, -1.7)
+		g.player.teleport(Vector3(tp.x, g.world.H(tp.x, tp.z) + 0.05, tp.z))
+		look_at_point(tr.bed_xf() * Vector3(0, 1.2, -1.7))
+		await wait(0.3)
+		if rnd == 0: await shot("chop-trailer")
+		note("aim_trailer", g.hub.aim)
+		g.hub.interact()
+		await wait(0.3)
+		var bt: Vector3 = g.hub.block_top
+		var sp := bt + Vector3(0, 0, -1.2)
+		g.player.teleport(Vector3(sp.x, g.world.H(sp.x, sp.z) + 0.05, sp.z))
+		look_at_point(bt + Vector3(0, 0.3, 0))
+		await wait(0.3)
+		if rnd == 0: await shot("chop-carry")
+		g.hub.interact()
+		await wait(0.4)
+		note("active", [ws.active, ws.pieces.size()])
+		var guard := 0
+		while not ws.pieces.is_empty() and guard < 30:
+			guard += 1
+			# aim at the middle of the first piece on the block
+			var pc: Dictionary = ws.pieces[0]
+			var mid: float = (pc.a0 + pc.a1) / 2.0
+			var full: bool = pc.a1 - pc.a0 > TAU - 0.01
+			var off: Vector2 = pc.off
+			var aimp: Vector3 = ws.block_c + Vector3(off.x, pc.h, off.y) + (Vector3.ZERO if full else Vector3(cos(mid), 0, sin(mid)) * pc.R * 0.5)
+			look_at_point(aimp)
+			await wait(0.05)
+			ws.press()
+			await wait(0.42 if guard % 3 else 0.7)
+			if rnd == 0 and guard == 1: await shot("chop-windup")
+			var n0 := ws.pieces.size() + ws.pile.size()
+			ws.release()
+			await wait(0.13)
+			if rnd == 0 and guard <= 2: await shot("chop-hit%d" % guard)
+			await wait(0.6)
+			swings += 1
+			if ws.pieces.size() + ws.pile.size() > n0 or ws.pile.size() == 0: splits_done += 1
+		note("round_done", [rnd, guard, ws.pile.size()])
+		ws.stop_chopping()
+		await wait(0.3)
+	await shot("chop-pile")
+	var c1 := Career.load()
+	note("result", {swings = swings, bundles = c1.bundles, money_gained = int(c1.money) - m0, rounds_left = c1.rounds})
+	var rk: Vector3 = g.hub.spots.rack[0]
+	g.player.teleport(Vector3(rk.x - 3.0, g.world.H(rk.x - 3.0, rk.z) + 0.05, rk.z + 1.0))
+	look_at_point(rk)
+	await wait(0.5)
+	await shot("chop-rack")
+	Career.save(c0)

@@ -28,6 +28,8 @@ var flames: Node3D
 var spots := {}                        # name -> [world point, reach]
 var aim := ""
 var busy := false
+var block_top := Vector3.ZERO
+var split: WoodSplit
 var t := 0.0
 var flame_mat: StandardMaterial3D
 var screen_mat: StandardMaterial3D
@@ -70,6 +72,12 @@ func build(g) -> void:
 	var to := Vector3(0.6, 0, 0) - sp
 	player.teleport(Vector3(sp.x, world.H(sp.x, sp.z) + 0.05, sp.z), atan2(-to.x, -to.z))
 	title_cam = Camera3D.new(); title_cam.fov = 55; add_child(title_cam)
+	# splitting firewood: the chopping block, and the honour-box rack down the track
+	split = WoodSplit.new(); split.name = "WoodSplit"; add_child(split)
+	var rk := Vector3(8.6, 0, -27.0); rk.y = world.H(rk.x, rk.z)
+	split.setup(self, block_top, rk, PI / 2)
+	spots.block = [block_top + Vector3(0, 0.25, 0), 2.6]
+	spots.rack = [rk + Vector3(0, 1.0, 0), 3.5]
 
 ## a cabin-local point in the world
 func W(p: Vector3) -> Vector3:
@@ -527,10 +535,7 @@ func _build_yard() -> void:
 	# a chopping block with the axe stuck in it
 	var cb := Vector3(4.2, 0, -6.0); cb.y = world.H(cb.x, cb.z)
 	mb.cyl(cb.x, cb.y - 0.05, cb.z, 0.32, 0.3, 0.55, Color("#6e604e"), 12, true, Color("#b89a6a"))
-	mb.push(Transform3D(Basis(Vector3.BACK, 0.35), cb + Vector3(0.05, 0.55, 0)))
-	mb.box(0, 0.02, 0, 0.04, 0.12, 0.18, Color("#5a5e62"))
-	mb.tube(Vector3(0, 0.05, 0), Vector3(0, 0.75, 0), 0.025, 0.022, Color("#a8844e"), 6, true)
-	mb.pop()
+	block_top = cb + Vector3(0, 0.5, 0)
 	for k in range(7):
 		var a := r.randf() * TAU; var d := r.randf_range(0.6, 1.4)
 		var p := cb + Vector3(cos(a) * d, 0, sin(a) * d); p.y = world.H(p.x, p.z) + 0.04
@@ -602,6 +607,12 @@ func step(dt: float) -> void:
 		title_cam.global_position = W(Vector3(sin(a) * 15.0, 7.5, cos(a) * 15.0 - 2.0))
 		title_cam.look_at(W(Vector3(0, 1.6, 0)))
 		return
+	split.step(dt)
+	game.saw.step_particles(dt)
+	if split.active:
+		aim = ""
+		game.hud.set_prompt("")
+		return
 	if busy:
 		aim = ""
 		return
@@ -621,16 +632,31 @@ func step(dt: float) -> void:
 		"truck": txt = "" if Mats.truck_rust <= 0.0 else "Your truck. She's seen better days."
 		"bed": txt = "[b]E[/b] Have a nap"
 		"fire": txt = "Nice and warm."
-		"trailer": txt = "Walter's old trailer, still loaded with his maple. Firewood for the winter."
+		"trailer":
+			var n := WoodSplit.rounds_left()
+			if split.carrying: txt = "Take it to the chopping block."
+			elif n > 0: txt = "[b]E[/b] Pull out a round of Walter's maple (%d left)" % n
+			else: txt = "Empty. Every stick split and sold."
+		"block":
+			if split.carrying: txt = "[b]E[/b] Set the round on the block and pick up the axe"
+			elif not split.pieces.is_empty(): txt = "[b]E[/b] Pick up the axe and keep splitting"
+			elif WoodSplit.rounds_left() > 0 and bool(Career.load().get("trailer", false)): txt = "Grab a round from the trailer to split."
+			else: txt = "The chopping block. Split wood here once you've got some rounds."
+		"rack": txt = "Firewood, $5 a bundle, honour box. %d sold so far." % WoodSplit.bundles_sold()
 	game.hud.set_prompt(txt)
-	# bare hands
+	# bare hands (or a round in them)
 	var s: Saw = game.saw
 	s.model.visible = false
-	for m in [s.fist_r, s.fist_l, s.arm_r, s.arm_l]: m.visible = true
-	s.pose_hands(false)
+	if not split.carrying:
+		for m in [s.fist_r, s.fist_l, s.arm_r, s.arm_l]: m.visible = true
+		s.pose_hands(false)
 
 func interact() -> void:
 	match aim:
+		"trailer":
+			if split.can_take_round(): split.take_round()
+		"block":
+			if split.carrying or not split.pieces.is_empty(): split.use_block()
 		"computer": game.open_computer()
 		"bed":
 			busy = true
