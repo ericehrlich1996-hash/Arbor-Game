@@ -1,4 +1,4 @@
-## Earl, the client. Posed procedurally: idles, waves, talks with his hands, walks (and gets out of the truck's way).
+## The client (Earl, or Mrs. Hale on the second job). Posed procedurally: idles, waves, talks with his hands, walks (and gets out of the truck's way).
 class_name Earl
 extends Node3D
 
@@ -14,6 +14,8 @@ const IDLE := [
 ]
 
 var world: WorldGen
+var display := NAME             # the name in the dialogue box
+var idle_lines: Array = IDLE
 var state := "wave"
 var t := 0.0
 var talking := false
@@ -29,10 +31,10 @@ var bubble: Label3D
 var bubble_until := 0.0
 var last_bark := 0.0
 
-func setup(w: WorldGen, at: Vector2) -> void:
+func setup(w: WorldGen, at: Vector2, look := "earl") -> void:
 	world = w
 	position = Vector3(at.x, w.H(at.x, at.y), at.y)
-	var P := Models.old_man()
+	var P := Models.old_lady() if look == "hale" else Models.old_man()
 	n_hip = Node3D.new(); add_child(n_hip)
 	n_torso = _part(P.torso, n_hip)
 	var neck := Node3D.new(); neck.position = Vector3(0, 0.58, 0); n_torso.add_child(neck)

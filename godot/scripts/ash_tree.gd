@@ -21,6 +21,12 @@ var last_build := 0.0
 var A = null                   # last analysis
 var grade := {}
 var lean_dir := Vector3.FORWARD
+# a heavy leaner (Mrs. Hale's maple) sits back on its hinge unless something tips it toward the face
+var push := Vector3.ZERO        # world, horizontal, in radians of tilt: wedges and the pull rope
+var net := Vector3.ZERO         # the tilt it actually has right now (lean + push, eased)
+var base_pos := Vector3.ZERO
+var sat_told := false
+var sat_back := false
 # standing visuals
 var stand_csg: CSGCombiner3D
 var stand_upper: Node3D
@@ -49,8 +55,52 @@ func setup(g, w: WorldGen) -> void:
 	T = Wood.make_tree_def(def)
 	lean_dir = Vector3(cos(def.lean_dir), 0, sin(def.lean_dir))
 	var axis := Vector3.UP.cross(lean_dir).normalized()
-	transform = Transform3D(Basis(axis, def.lean), Vector3(def.x, w.H(def.x, def.z), def.z))
+	base_pos = Vector3(def.x, w.H(def.x, def.z), def.z)
+	transform = Transform3D(Basis(axis, def.lean), base_pos)
+	net = lean_dir * def.lean
 	_build_standing()
+
+func sits_back() -> bool:
+	return def.get("sits_back", false)
+
+## the tilt in the wood's own frame, flat (which way the weight hangs, and how hard)
+func net_wood() -> Vector3:
+	var v := global_transform.basis.inverse() * net; v.y = 0
+	return v
+
+func _apply_tilt() -> void:
+	var a := net.length()
+	var b := Basis()
+	if a > 1e-4: b = Basis(Vector3.UP.cross(net / a).normalized(), a)
+	transform = Transform3D(b, base_pos)
+
+## the open face (deepest notch), in the wood frame, or null
+func _face():
+	var face = null; var depth := -1.0
+	for w in freed.values():
+		if w.depth > depth: depth = w.depth; face = w.face
+	return face
+
+## a heavy leaner: does it go over the hinge, sit back on it, or break the hinge and go with the lean?
+func _sit_decision(an: Dictionary) -> String:
+	if an.held == 0: return "drop"
+	if not freed.is_empty():
+		if an.frac > 0.13: return ""
+		var face: Vector3 = _face()
+		var nw := net_wood()
+		var toward: float = nw.x * face.x + nw.z * face.z
+		if toward > 0.008: return "hinge"
+		sat_back = true
+		if an.frac <= 0.035: return "back"          # cut the hinge away and it goes where it leans
+		if not sat_told:
+			sat_told = true
+			Sfx.play("creak", 0.7)
+			game.hud.toast("It's sitting back on the hinge. The weight leans the wrong way. Hammer wedges into the back cut, or take up the pull rope with the truck, to tip it toward your notch.", 7.0)
+			if game.has_method("customer_sits_back"): game.customer_sits_back()
+		return ""
+	if an.frac <= 0.3 and _leans_over_hold(an): return "barber"
+	if an.frac <= 0.08: return "drop"
+	return ""
 
 func to_wood(p: Vector3) -> Vector3:
 	return global_transform.affine_inverse() * p
@@ -211,6 +261,12 @@ func _leans_over_hold(an: Dictionary) -> bool:
 
 func step(dt: float) -> void:
 	t += dt
+	if state == "stand" and sits_back():
+		# wedges and the rope lift it back toward upright, a little at a time
+		var want: Vector3 = lean_dir * def.lean + push
+		var before := net
+		net = net.move_toward(want, dt * 0.06)
+		if not net.is_equal_approx(before): _apply_tilt()
 	if state == "stand":
 		if dirty and t - last_build > 0.05:
 			dirty = false; last_build = t
@@ -222,11 +278,13 @@ func step(dt: float) -> void:
 						freed[key] = w
 						_free_wedge(w)
 				var open := not freed.is_empty()
-				if A.held == 0: go_kind = "drop"
+				if sits_back(): go_kind = _sit_decision(A)
+				elif A.held == 0: go_kind = "drop"
 				elif open and A.frac <= 0.13: go_kind = "hinge"
 				elif not open and A.frac <= 0.3 and _leans_over_hold(A): go_kind = "barber"
 				elif not open and A.frac <= 0.08: go_kind = "drop"
 				else: go_kind = ""
+		if sits_back() and A != null and not dirty: go_kind = _sit_decision(A)
 		if go_kind != "":
 			go_acc += dt
 			if go_acc > 0.05: start_fall(go_kind)
@@ -270,7 +328,15 @@ func start_fall(kind: String) -> void:
 	var lean_w: Vector3 = global_transform.basis.inverse() * lean_dir
 	lean_w.y = 0; lean_w = lean_w.normalized()
 	var fd: Vector3
-	if kind == "hinge" and face != null:
+	if sits_back():
+		# the hinge steers it, but the lean that's left pulls it off to the side
+		var nw := net_wood()
+		if kind == "hinge" and face != null:
+			var s: float = nw.dot(face)
+			fd = ((face as Vector3) + (nw - (face as Vector3) * s) * 3.5).normalized()
+		elif nw.length() > 0.001: fd = nw.normalized()
+		else: fd = lean_w
+	elif kind == "hinge" and face != null:
 		var dir: Vector3 = face
 		if Hc.size() > 3:
 			var xx := 0.0; var zz := 0.0; var xz := 0.0

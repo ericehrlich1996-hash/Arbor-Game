@@ -537,7 +537,8 @@ func step(dt: float, rev: bool, carrying: bool) -> void:
 	var crosses: bool = absf(W.n.dot(grain)) > 0.34
 	cutting = true
 	if engine_snd: engine_snd.setv(rpm * 0.82, 1.0, 0.42)
-	if not aligned or not crosses: bind = true; return
+	# felling cuts in the standing tree never bind (switched off for now); limbs and logs still do
+	if (not aligned or not crosses) and cut.kind != "tree": bind = true; return
 	# felling cuts go at full speed; bucking a lying log is slower work (the whole bar is buried in it)
 	var kind_k := 1.0
 	if cut.kind == "piece": kind_k = 0.75 if cut.part.has("limb") else 0.32
@@ -548,7 +549,7 @@ func step(dt: float, rev: bool, carrying: bool) -> void:
 	if cut.kind == "tree" and game.tree.go_kind != "": rate = 0.0
 	# a leaning tree sits its weight on the side it leans toward: cut in from that side and the kerf
 	# closes on the bar part way through. The more it leans, the sooner. Back-cut from the other side.
-	if cut.kind == "tree" and _pinched(cut): rate = 0.0; bind = true
+	# (pinching on the lean side is switched off for now: felling cuts run free)
 	if cut.s < max_s: cut.s = minf(max_s, cut.s + rate * dt)
 	_emit(W.e, -W.f * 1.6 + Vector3(0, 0.9, 0), 3, Color("#e2cfa0"), 1.4, 0.026)
 	if randf() < 0.5: _emit(W.e, -W.f + Vector3(0, 0.3, 0), 1, Color("#b89a6a"), 0.8, 0.045)

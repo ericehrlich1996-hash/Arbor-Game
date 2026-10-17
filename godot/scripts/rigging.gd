@@ -1,0 +1,345 @@
+## Felling wedges and the pull rope: the two ways to talk a leaning tree into going where you want.
+## Wedges: once the back cut is a few inches in, tap plastic wedges into the kerf behind the bar. Driven
+## tight, each one lifts the back of the tree a little, tipping it toward the notch.
+## Pull rope: tie it high on the trunk, hook the other end on the truck's hitch, and drive off to take up
+## the slack. While it's tight the rope pulls the top over toward the truck. Too tight and it snaps.
+class_name Rigging
+extends Node3D
+
+const WEDGE_LEN := 0.2
+const WEDGE_MAX := 0.17         # how deep a wedge goes (driven tight)
+const WEDGE_LIFT := 0.07        # radians of tilt one tight wedge gives
+const WEDGE_HIT := 0.034        # depth per hammer blow
+const ROPE_MAX_PULL := 0.22     # radians, rope bar-tight
+const ROPE_TIGHT := 1.0         # metres of stretch for a full pull
+const ROPE_SNAP := 2.6          # metres of stretch before it lets go
+
+var game
+var wedges: Array = []          # {cut, side, depth, node}
+var rope := ""                  # "" | "tree" (tied on the tree) | "rigged" (tree to truck)
+var rope_pt := Vector3.ZERO     # tie-off on the tree, in the wood frame
+var anchor_w := Vector3.ZERO    # where the tie-off was when you tied it: tension is measured from here, so
+                                # the tree easing over toward the truck doesn't quietly let the rope go slack
+var rope_len := 0.0
+var rope_stretch := 0.0
+var rope_im: ImmediateMesh
+var rope_mi: MeshInstance3D
+var hammer: MeshInstance3D
+var held_wedge: MeshInstance3D
+var coil: MeshInstance3D
+var swing := 0.0                # hammer swing, counts down
+var wedge_mesh: ArrayMesh
+var _tip := ""
+
+func setup(g) -> void:
+	game = g
+	wedge_mesh = _wedge_mb().commit()
+	var cam: Node3D = game.player.hands
+	hammer = _hammer_mb().instance(); cam.add_child(hammer)
+	held_wedge = MeshInstance3D.new(); held_wedge.mesh = wedge_mesh; held_wedge.material_override = Mats.vcol; cam.add_child(held_wedge)
+	coil = _coil_mb().instance(); cam.add_child(coil)
+	for m in [hammer, held_wedge, coil]:
+		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		m.visible = false
+	rope_im = ImmediateMesh.new()
+	rope_mi = MeshInstance3D.new(); rope_mi.mesh = rope_im; rope_mi.top_level = true
+	var rm := StandardMaterial3D.new()
+	rm.albedo_color = Color("#d8b030"); rm.roughness = 0.9
+	rm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	rope_mi.material_override = rm
+	rope_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(rope_mi)
+
+static func owned(id: String) -> bool:
+	return bool(Career.load().get(id, false))
+
+# ---------------------------------------------------------------- models
+## an orange plastic felling wedge: thick at the back, thin at the nose, with ribs on top. Nose toward +z.
+func _wedge_mb() -> MeshBuilder:
+	var mb := MeshBuilder.new()
+	var c := Color("#f07a1a"); var w := 0.07
+	var back := 0.032
+	var pts := [Vector3(-w / 2, back / 2, 0), Vector3(w / 2, back / 2, 0), Vector3(w / 2, 0.002, WEDGE_LEN), Vector3(-w / 2, 0.002, WEDGE_LEN)]
+	mb.face(pts, c)
+	var bot := [Vector3(-w / 2, -back / 2, 0), Vector3(-w / 2, -0.002, WEDGE_LEN), Vector3(w / 2, -0.002, WEDGE_LEN), Vector3(w / 2, -back / 2, 0)]
+	mb.face(bot, MeshBuilder.shade(c, 0.8))
+	for sx: float in [-1.0, 1.0]:
+		var side := [Vector3(sx * w / 2, back / 2, 0), Vector3(sx * w / 2, -back / 2, 0), Vector3(sx * w / 2, -0.002, WEDGE_LEN), Vector3(sx * w / 2, 0.002, WEDGE_LEN)]
+		if sx < 0: side.reverse()
+		mb.face(side, MeshBuilder.shade(c, 0.9))
+	mb.face([Vector3(-w / 2, -back / 2, 0), Vector3(w / 2, -back / 2, 0), Vector3(w / 2, back / 2, 0), Vector3(-w / 2, back / 2, 0)], MeshBuilder.shade(c, 0.7))
+	for k in range(3): mb.box(0, back / 2 - k * 0.004, 0.03 + k * 0.035, w * 0.9, 0.004, 0.006, MeshBuilder.shade(c, 0.75))
+	return mb
+
+## a short-handled sledge: steel head, hickory handle with a rubber grip. Handle along -y from the head.
+func _hammer_mb() -> MeshBuilder:
+	var mb := MeshBuilder.new()
+	mb.tube(Vector3(0, -0.02, 0), Vector3(0, 0.3, 0), 0.016, 0.014, Color("#b48a52"), 8, true)
+	mb.tube(Vector3(0, -0.04, 0), Vector3(0, 0.08, 0), 0.02, 0.02, Color("#2a2a28"), 8, true)
+	mb.bevel_box(0, 0.33, 0, 0.13, 0.055, 0.055, Color("#5a5e64"), 0.008)
+	for sx: float in [-1.0, 1.0]: mb.box(sx * 0.068, 0.33, 0, 0.01, 0.06, 0.06, Color("#8a8e92"))
+	return mb
+
+## a coil of yellow bull rope
+func _coil_mb() -> MeshBuilder:
+	var mb := MeshBuilder.new()
+	for k in range(4):
+		var rr := 0.11 + k * 0.012
+		var n := 14
+		for i in range(n):
+			var a0 := TAU * i / n; var a1 := TAU * (i + 1) / n
+			mb.tube(Vector3(cos(a0) * rr, sin(a0) * rr * 1.1, k * 0.012), Vector3(cos(a1) * rr, sin(a1) * rr * 1.1, k * 0.012), 0.012, 0.012, Color("#d8b030").lerp(Color("#b8902a"), k * 0.25), 5)
+	return mb
+
+# ---------------------------------------------------------------- held in your hands
+func pose(dt: float) -> void:
+	var tool: String = game.player.tool
+	var walking: bool = not game.player.in_truck
+	hammer.visible = walking and tool == "wedge"
+	held_wedge.visible = walking and tool == "wedge"
+	coil.visible = walking and tool == "rope"
+	swing = maxf(0.0, swing - dt)
+	if hammer.visible:
+		var k := sin(clampf(1.0 - swing / 0.28, 0, 1) * PI) if swing > 0 else 0.0
+		hammer.transform = Transform3D(Basis(Vector3.RIGHT, -0.35 - k * 1.3) * Basis(Vector3.BACK, 0.25), Vector3(0.25, -0.27 + k * 0.05, -0.52 - k * 0.12))
+		held_wedge.transform = Transform3D(Basis(Vector3.RIGHT, -0.25) * Basis(Vector3.UP, PI * 0.1), Vector3(-0.23, -0.23, -0.6))
+	if coil.visible:
+		coil.transform = Transform3D(Basis(Vector3.UP, 0.5).scaled(Vector3(0.55, 0.55, 0.55)), Vector3(-0.3, -0.3, -0.62))
+
+# ---------------------------------------------------------------- aiming
+## the back cut under the crosshair that can take a wedge, or {}
+func _wedge_target() -> Dictionary:
+	var tree: AshTree = game.tree
+	if tree.state != "stand": return {}
+	var notch := []
+	for w in tree.freed.values(): notch.append(w.c1); notch.append(w.c2)
+	var eye: Vector3 = game.player.eye(); var dir: Vector3 = game.player.aim_dir()
+	var best := {}; var bd := 1e9
+	for c in tree.cuts:
+		if notch.has(c) or c.s < 0.004 or absf((c.n as Vector3).y) < 0.7: continue
+		var e := tree.to_world(c.e)
+		var to := e - eye
+		if to.length() > 2.2 or to.normalized().dot(dir) < 0.72: continue
+		var score := to.length() - to.normalized().dot(dir) * 2.0
+		if score < bd: bd = score; best = {cut = c, e = e}
+	return best
+
+func _near_tree() -> bool:
+	var tree: AshTree = game.tree
+	if tree.state != "stand": return false
+	var p: Vector3 = game.player.global_position
+	var b := tree.global_position
+	if Vector2(p.x - b.x, p.z - b.z).length() > 3.4: return false
+	var to: Vector3 = (tree.to_world(Vector3(0, 1.6, 0)) - game.player.eye()).normalized()
+	return to.dot(game.player.aim_dir()) > 0.55
+
+func _near_hitch() -> bool:
+	return game.player.global_position.distance_to(game.truck.hitch_world()) < 2.8
+
+## what E / left click would do right now with the wedges or rope in hand ("" if nothing)
+func prompt() -> String:
+	var tool: String = game.player.tool
+	if tool == "wedge":
+		var tg := _wedge_target()
+		if tg.is_empty():
+			return "Aim at your back cut to set a wedge" if game.tree.state == "stand" and _near_tree() else ""
+		if tg.cut.s < 0.06: return "Cut the back cut a little deeper first"
+		var w = _wedge_in(tg.cut)
+		if w == null: return "[b]Left click[/b] Set a wedge in the back cut" + (" (%d in)" % wedges.size() if wedges.size() > 0 else "")
+		if w.depth >= _wedge_max(tg.cut) - 0.002: return "Driven tight · [b]Left click[/b] set another beside it" if _count_in(tg.cut) < 3 else "Wedges driven tight"
+		return "[b]Left click[/b] Drive the wedge · %d%%" % roundi(w.depth / _wedge_max(tg.cut) * 100)
+	if tool == "rope":
+		match rope:
+			"":
+				if _near_tree(): return "[b]Left click[/b] Throw the rope up and tie it off on the trunk"
+			"tree":
+				if _near_hitch(): return "[b]Left click[/b] Hook the rope on the truck's hitch"
+				if _near_tree(): return "[b]Left click[/b] Untie the rope"
+				return "Rope's on the tree · take the other end to the truck's hitch"
+			"rigged":
+				if _near_hitch() or _near_tree(): return "[b]Left click[/b] Unhook the rope" + _tension_txt()
+				return "Rope rigged" + _tension_txt() + " · drive the truck away to take up the slack"
+	return ""
+
+func _tension_txt() -> String:
+	if rope_stretch <= 0.0: return " · slack"
+	if rope_stretch > ROPE_SNAP * 0.7: return " · TOO TIGHT, ease off!"
+	if rope_stretch >= ROPE_TIGHT: return " · bar-tight, good"
+	return " · taking up slack %d%%" % roundi(rope_stretch / ROPE_TIGHT * 100)
+
+func _wedge_max(c: Dictionary) -> float:
+	return minf(WEDGE_MAX, c.s - 0.015)
+
+func _wedge_in(c: Dictionary):
+	var latest = null
+	for w in wedges:
+		if w.cut == c and (latest == null or w.depth < latest.depth): latest = w
+	return latest
+
+func _count_in(c: Dictionary) -> int:
+	return wedges.filter(func(w): return w.cut == c).size()
+
+# ---------------------------------------------------------------- using them
+func use() -> bool:
+	match game.player.tool:
+		"wedge": return _hit()
+		"rope": return _rope_action()
+	return false
+
+func _hit() -> bool:
+	var tg := _wedge_target()
+	if tg.is_empty():
+		if game.tree.state == "stand" and _near_tree():
+			game.hud.toast("Wedges go in the back cut, right behind the bar. Make your notch, then start the back cut from the other side.", 4.0)
+			return true
+		return false
+	var c: Dictionary = tg.cut
+	swing = 0.28
+	if c.s < 0.06:
+		game.hud.toast("Not deep enough for a wedge yet. Get the back cut a few inches in.", 2.5)
+		return true
+	var w = _wedge_in(c)
+	var tight: bool = w != null and w.depth >= _wedge_max(c) - 0.002
+	if w == null or (tight and _count_in(c) < 3):
+		w = {cut = c, side = [0.0, 0.12, -0.12][_count_in(c)], depth = 0.04, node = null}
+		var mi := MeshInstance3D.new(); mi.mesh = wedge_mesh; mi.material_override = Mats.vcol
+		game.tree.add_child(mi)
+		w.node = mi
+		wedges.append(w)
+		Sfx.play("pick", 0.8)
+		_place(w)
+		_update_push()
+		return true
+	if w.depth >= _wedge_max(c) - 0.002:
+		game.hud.toast("That's as tight as they go.", 1.5)
+		Sfx.play("clank", 0.5, 0.8)
+		return true
+	w.depth = minf(_wedge_max(c), w.depth + WEDGE_HIT)
+	_place(w)
+	_update_push()
+	Sfx.play("clank", 0.9, randf_range(0.85, 1.05))
+	Sfx.play("thud", 0.35, 1.6)
+	if game.tree.sits_back(): Sfx.play("creak", 0.25, randf_range(1.1, 1.4))
+	return true
+
+## seat the wedge in its kerf: nose in along the cut, sunk by how far it's been driven
+func _place(w: Dictionary) -> void:
+	var c: Dictionary = w.cut
+	var f: Vector3 = c.f; var n: Vector3 = c.n
+	if n.y < 0: n = -n
+	var across := n.cross(f).normalized()
+	var p: Vector3 = (c.e as Vector3) + across * w.side + f * (w.depth - WEDGE_LEN)
+	var basis := Basis(across, n, f).orthonormalized()
+	(w.node as Node3D).transform = Transform3D(basis, p)
+
+func _update_push() -> void:
+	var tree: AshTree = game.tree
+	var push := Vector3.ZERO
+	for w in wedges:
+		var c: Dictionary = w.cut
+		var f: Vector3 = tree.global_transform.basis * (c.f as Vector3); f.y = 0
+		if f.length() < 0.01: continue
+		push += f.normalized() * WEDGE_LIFT * clampf(w.depth / WEDGE_MAX, 0, 1)
+	if rope == "rigged" and rope_stretch > 0.0:
+		var d: Vector3 = game.truck.hitch_world() - tree.global_position; d.y = 0
+		push += d.normalized() * clampf(rope_stretch / ROPE_TIGHT, 0, 1) * ROPE_MAX_PULL
+	tree.push = push
+
+func _rope_action() -> bool:
+	var tree: AshTree = game.tree
+	match rope:
+		"":
+			if not _near_tree(): return false
+			var p: Vector3 = game.player.global_position
+			var lp := tree.to_wood(p); lp.y = 0
+			var y: float = minf(tree.T.H * 0.55, 9.5)
+			rope_pt = Vector3(0, y, 0) + lp.normalized() * Wood.r_at(tree.T, y)
+			rope = "tree"
+			anchor_w = _anchor()
+			Sfx.play("pick")
+			game.hud.toast("You toss a throw line over a limb and haul the rope up. Tied off about %d ft up. Now take the other end to the truck's hitch." % roundi(y * 3.28), 5.0)
+			return true
+		"tree":
+			if _near_hitch():
+				rope = "rigged"
+				rope_len = anchor_w.distance_to(game.truck.hitch_world()) + 0.6
+				Sfx.play("clank")
+				game.hud.toast("Rope's on the hitch. Get in and ease the truck away until it's bar-tight (don't overdo it), park, then go make your cuts.", 5.5)
+				return true
+			if _near_tree():
+				rope = ""; Sfx.play("pick"); game.hud.toast("Rope's off.", 1.5); return true
+			return false
+		"rigged":
+			if _near_hitch() or _near_tree():
+				rope = ""; rope_stretch = 0.0; _update_push()
+				Sfx.play("pick"); game.hud.toast("Rope's off.", 1.5)
+				return true
+	return false
+
+func _anchor() -> Vector3:
+	return game.tree.to_world(rope_pt)
+
+# ---------------------------------------------------------------- every frame
+func physics_step(_dt: float) -> void:
+	if rope != "rigged" or game.tree.state != "stand": return
+	var a := anchor_w; var hpt: Vector3 = game.truck.hitch_world()
+	var d := a.distance_to(hpt)
+	rope_stretch = d - rope_len
+	if rope_stretch > ROPE_SNAP:
+		rope = ""; rope_stretch = 0.0
+		Sfx.play("crack", 0.7, 1.4)
+		game.hud.toast("TWANG! You pulled too hard and the rope snapped. Tie on a fresh one and go easier.", 4.5)
+		_update_push()
+		return
+	if rope_stretch > 0.0 and game.truck.driving:
+		# while you're driving, the rope holds the truck back like a big spring; parked, the brakes hold it
+		var dir := (a - hpt).normalized()
+		game.truck.apply_central_force(dir * rope_stretch * 3000.0)
+	_update_push()
+
+func step(dt: float) -> void:
+	pose(dt)
+	_draw_rope()
+
+func _draw_rope() -> void:
+	rope_im.clear_surfaces()
+	if rope == "" or game.tree.state != "stand": return
+	var a := _anchor()
+	var b: Vector3
+	var slack := 0.0
+	if rope == "rigged":
+		b = game.truck.hitch_world()
+		slack = sqrt(maxf(rope_len * rope_len - a.distance_squared_to(b), 0.0)) * 0.5
+	else:
+		# hanging down the trunk to the ground, or to your hand when you're walking it to the truck
+		if game.player.tool == "rope" and not game.player.in_truck:
+			b = game.player.global_position + Vector3(0, 1.1, 0) + game.player.fwd() * 0.3
+			slack = clampf(a.distance_to(b) * 0.12, 0.3, 2.5)
+		else:
+			b = game.tree.global_position + Vector3(0.4, 0.05, 0.4)
+	var n := 18
+	var pts := []
+	for i in range(n + 1):
+		var t := float(i) / n
+		var p := a.lerp(b, t)
+		p.y -= slack * 4.0 * t * (1.0 - t)
+		pts.append(p)
+	var cam := get_viewport().get_camera_3d()
+	rope_im.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in range(n):
+		var p0: Vector3 = pts[i]; var p1: Vector3 = pts[i + 1]
+		var along := (p1 - p0).normalized()
+		var side := along.cross((cam.global_position - p0).normalized() if cam else Vector3.UP).normalized() * 0.018
+		for q in [p0 - side, p1 - side, p1 + side, p0 - side, p1 + side, p0 + side]:
+			rope_im.surface_set_normal(Vector3.UP)
+			rope_im.surface_add_vertex(q)
+	rope_im.surface_end()
+
+## the tree's going: the rope goes slack and the wedges drop out of the kerf
+func on_fell() -> void:
+	if rope != "": game.hud.toast("The rope goes slack as it comes down. You'll coil it back up.", 3.0)
+	rope = ""; rope_stretch = 0.0
+	for w in wedges:
+		if is_instance_valid(w.node): w.node.queue_free()
+	wedges.clear()
+	rope_im.clear_surfaces()

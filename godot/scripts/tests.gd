@@ -1552,3 +1552,259 @@ func _hubfix2() -> void:
 		await wait(0.6)
 		note("truck_prompt_rust_%d" % int(rust), [g.hub.aim, g.hud.prompt.text])
 	await shot("fix2-truck-fixed")
+
+# ================================================================ job 2: Widow Hale's leaning maple
+## notch facing away from the garage (the way it has to go), and a back cut that leaves a hinge
+func _hale_cuts(hinge_left := 0.05) -> Dictionary:
+	var tr: AshTree = g.tree
+	var T: Dictionary = tr.T
+	var gar := Vector3(g.world.garage.x, 0, g.world.garage.z)
+	var away := (tr.global_position - gar); away.y = 0; away = away.normalized()
+	var Fn: Vector3 = tr.global_transform.basis.inverse() * away; Fn.y = 0; Fn = Fn.normalized()
+	var h := 0.55; var R := Wood.r_at(T, h); var d := 2 * R * 0.3; var a := deg_to_rad(55)
+	var right := Fn.cross(Vector3.UP).normalized()
+	var bot := tr.start_cut(Fn * R + Vector3(0, h, 0), -Fn, Vector3.UP); bot.s = d + 0.005; tr.cut_progress(bot)
+	var ft := (-Fn * cos(a) + Vector3.DOWN * sin(a)).normalized()
+	var top := tr.start_cut(Fn * R + Vector3(0, h + d * tan(a), 0), ft, ft.cross(right).normalized()); top.s = d / cos(a) + 0.005; tr.cut_progress(top)
+	await wait(0.4)
+	var bc := tr.start_cut(-Fn * R + Vector3(0, h + 0.03, 0), Fn, Vector3.UP); bc.s = 2 * R - d - hinge_left; tr.cut_progress(bc)
+	await wait(1.0)
+	return {away = away, Fn = Fn, R = R, d = d, bc = bc, right = right}
+
+func _hale_side_view(away: Vector3) -> void:
+	var tr: AshTree = g.tree
+	var right := away.cross(Vector3.UP).normalized()
+	var side := tr.global_position + right * 16 + away * 2
+	g.player.teleport(Vector3(side.x, g.world.H(side.x, side.z) + 0.05, side.z))
+	look_at_point(tr.global_position + Vector3(0, 5, 0))
+
+func _hale() -> void:
+	await wait(1.0)
+	note("job", g.job.id)
+	note("tree", [g.tree.def.get("sits_back", false), snappedf(g.tree.def.lean, 0.001)])
+	await shot("hale-title")
+	g._start()
+	await wait(0.8)
+	var tr: AshTree = g.tree
+	var gar := Vector3(g.world.garage.x, 0, g.world.garage.z)
+	var away := (tr.global_position - gar); away.y = 0; away = away.normalized()
+	# the yard from the lawn: the house, the garage, and the maple leaning at it
+	var v: Vector3 = tr.global_position + away * 14 + away.cross(Vector3.UP) * 10
+	g.player.teleport(Vector3(v.x, g.world.H(v.x, v.z) + 0.05, v.z))
+	look_at_point((tr.global_position + gar) * 0.5 + Vector3(0, 3, 0))
+	await wait(1.0)
+	await shot("hale-yard")
+	_hale_side_view(away)
+	await wait(0.8)
+	await shot("hale-lean")
+	# Mrs. Hale
+	var hp: Vector3 = g.earl.global_position
+	var cp: Vector3 = hp + (g.truck.global_position - hp).normalized() * 2.3
+	g.player.teleport(Vector3(cp.x, g.world.H(cp.x, cp.z) + 0.05, cp.z))
+	look_at_point(hp + Vector3(0, 1.3, 0))
+	await wait(0.8)
+	await shot("hale-mrs")
+	g.talk_to_earl()
+	await wait(0.4)
+	await shot("hale-talk")
+	while g.dlg != null: g.advance_dialog(); g.advance_dialog(); await wait(0.05)
+	note("talked", g.objs.talk)
+
+## with wedges: it sits back, then two tight wedges tip it over toward the notch
+func _hale_wedge() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	var tr: AshTree = g.tree
+	var c := await _hale_cuts(0.05)
+	note("after_backcut", [tr.state, tr.sat_back, snappedf(tr.A.frac if tr.A else -1.0, 0.001)])
+	var back: Vector3 = tr.global_position - c.away * 1.25
+	g.player.teleport(Vector3(back.x, g.world.H(back.x, back.z) + 0.05, back.z))
+	g.player.tool = "wedge"
+	look_at_point(tr.to_world(c.bc.e) + Vector3(0, 0.0, 0))
+	g.player.pitch -= 0.05
+	await wait(0.5)
+	note("prompt", g.rig.prompt())
+	var hits := 0
+	while tr.state == "stand" and hits < 18:
+		look_at_point(tr.to_world(c.bc.e))
+		g.rig.use(); hits += 1
+		await wait(0.35)
+		if hits == 4: await shot("hale-wedge-in")
+	note("wedge_hits", [hits, g.rig.wedges.size(), tr.state])
+	_hale_side_view(c.away)
+	await wait(1.0)
+	await shot("hale-wedge-going")
+	await wait(6.0)
+	await shot("hale-wedge-down")
+	note("grade", tr.grade)
+	note("damage", g.damage)
+	var st: WoodPiece = tr.stem
+	var top := st.to_world(Vector3(0, tr.T.H * 0.8, 0)) - tr.global_position; top.y = 0
+	note("fell_dir_vs_away_deg", snappedf(rad_to_deg(top.normalized().angle_to(c.away)), 1))
+
+## no wedges, no rope: it sits back, you keep cutting, the hinge goes and it lands on the garage
+func _hale_back() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	var tr: AshTree = g.tree
+	var c := await _hale_cuts(0.05)
+	note("sat_back", [tr.state, tr.sat_back])
+	c.bc.s += 0.06; tr.cut_progress(c.bc)
+	var gar := Vector3(g.world.garage.x, 0, g.world.garage.z)
+	var rt: Vector3 = c.right
+	var v: Vector3 = gar + (gar - tr.global_position).normalized() * -2.0 + rt * 14
+	g.player.teleport(Vector3(v.x, g.world.H(v.x, v.z) + 0.05, v.z))
+	look_at_point(gar + Vector3(0, 2.5, 0))
+	await wait(1.2)
+	await shot("hale-back-going")
+	await wait(5.0)
+	await shot("hale-back-down")
+	note("state", tr.state)
+	note("damage", g.damage)
+	note("garage_crushed", g.world.garage_crushed)
+
+## the pull rope: tied high, truck out on the lawn the way it should go, rope taken up tight
+func _hale_rope() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	var tr: AshTree = g.tree
+	var gar := Vector3(g.world.garage.x, 0, g.world.garage.z)
+	var away := (tr.global_position - gar); away.y = 0; away = away.normalized()
+	# park the truck (and chipper) out on the lawn, 24 m out along the way it should fall
+	g.chipper.unhitch()
+	var tp := tr.global_position + away * 24.0
+	var yaw := atan2(-away.x, -away.z)
+	g.truck.global_transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(tp.x, g.world.H(tp.x, tp.z) + 0.6, tp.z))
+	# let it land and settle on its brakes before rigging
+	var waited := 0.0
+	while not g.truck.freeze and waited < 8.0: await wait(0.25); waited += 0.25
+	await wait(0.5)
+	# walk up and tie the rope on
+	var at := tr.global_position + away * 1.6
+	g.player.teleport(Vector3(at.x, g.world.H(at.x, at.z) + 0.05, at.z))
+	g.player.tool = "rope"
+	look_at_point(tr.global_position + Vector3(0, 1.6, 0))
+	await wait(0.3)
+	note("rope_prompt_tree", g.rig.prompt())
+	g.rig.use()
+	var hp: Vector3 = g.truck.hitch_world()
+	g.player.teleport(Vector3(hp.x, g.world.H(hp.x, hp.z) + 0.05, hp.z) + away * 1.0)
+	await wait(0.3)
+	note("rope_prompt_truck", g.rig.prompt())
+	g.rig.use()
+	# take up the slack (as if you'd eased the truck out a couple of metres)
+	g.rig.rope_len -= 1.6
+	await wait(1.0)
+	var v: Vector3 = tr.global_position + away * 10 + away.cross(Vector3.UP) * 9
+	g.player.teleport(Vector3(v.x, g.world.H(v.x, v.z) + 0.05, v.z))
+	look_at_point(tr.global_position + away * 6 + Vector3(0, 4, 0))
+	await wait(1.5)
+	note("rope", [g.rig.rope, snappedf(g.rig.rope_stretch, 0.01), snappedf(tr.push.length(), 0.001)])
+	await shot("hale-rope")
+	var c := await _hale_cuts(0.05)
+	await wait(1.0)
+	await shot("hale-rope-going")
+	await wait(6.0)
+	note("state", tr.state)
+	note("damage", g.damage)
+	var st: WoodPiece = tr.stem
+	var top := st.to_world(Vector3(0, tr.T.H * 0.8, 0)) - tr.global_position; top.y = 0
+	note("fell_dir_vs_away_deg", snappedf(rad_to_deg(top.normalized().angle_to(away)), 1))
+	await shot("hale-rope-down")
+
+## the pull rope the way you'd really do it: tie on, hook up, drive out until it's bar-tight, park, cut
+func _hale_drive() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	var tr: AshTree = g.tree
+	var gar := Vector3(g.world.garage.x, 0, g.world.garage.z)
+	var away := (tr.global_position - gar); away.y = 0; away = away.normalized()
+	g.chipper.unhitch()
+	# truck parked out on the lawn, nose pointing away from the tree
+	var tp := tr.global_position + away * 15.0
+	var yaw := atan2(away.x, away.z)
+	g.truck.global_transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(tp.x, g.world.H(tp.x, tp.z) + 0.4, tp.z))
+	await wait(1.5)
+	var at := tr.global_position + away * 1.6
+	g.player.teleport(Vector3(at.x, g.world.H(at.x, at.z) + 0.05, at.z))
+	g.player.tool = "rope"
+	look_at_point(tr.global_position + Vector3(0, 1.6, 0))
+	await wait(0.3)
+	g.rig.use()
+	var hp: Vector3 = g.truck.hitch_world()
+	g.player.teleport(Vector3(hp.x, g.world.H(hp.x, hp.z) + 0.05, hp.z) - away * 1.0)
+	await wait(0.3)
+	g.rig.use()
+	note("rigged", [g.rig.rope, snappedf(g.rig.rope_stretch, 0.01)])
+	g.enter_truck()
+	await wait(0.5)
+	var held := 0.0
+	Input.action_press("move_fwd")
+	while g.rig.rope_stretch < 1.05 and held < 12.0 and g.rig.rope == "rigged":
+		await wait(0.1); held += 0.1
+	Input.action_release("move_fwd")
+	Input.action_press("jump")
+	note("drove", [snappedf(held, 0.1), snappedf(g.rig.rope_stretch, 0.01), g.hud.prompt.text])
+	await shot("hale-drive-tight")
+	await wait(0.6)
+	Input.action_release("jump")
+	g.exit_truck()
+	await wait(2.0)
+	note("parked", [g.rig.rope, snappedf(g.rig.rope_stretch, 0.01), g.truck.freeze, snappedf(tr.push.length(), 0.001)])
+	var c := await _hale_cuts(0.05)
+	_hale_side_view(away)
+	await wait(1.5)
+	await shot("hale-drive-going")
+	await wait(6.0)
+	note("state", tr.state)
+	note("damage", g.damage)
+	if is_instance_valid(tr.stem):
+		var top := tr.stem.to_world(Vector3(0, tr.T.H * 0.8, 0)) - tr.global_position; top.y = 0
+		note("fell_dir_vs_away_deg", snappedf(rad_to_deg(top.normalized().angle_to(away)), 1))
+	await shot("hale-drive-down")
+
+## the computer: both jobs listed (the maple locked until you've done one), the new gear on the upgrades tab
+func _hubjobs() -> void:
+	await wait(1.0)
+	g.hub_begin()
+	var c := Career.load(); c.jobs = 1; c.money = 700; c.wedges = false; c.rope = false; Career.save(c); g.money = c.money
+	g.open_computer()
+	await wait(0.5)
+	await shot("pc-jobs")
+	g.hud.pc_tab = "upgrades"; g.hud._render_pc()
+	await wait(0.4)
+	await shot("pc-upgrades")
+	g.buy_upgrade("wedges")
+	await wait(0.3)
+	note("bought_wedges", [Career.load().wedges, Career.load().money])
+	await shot("pc-bought")
+	c = Career.load(); c.jobs = 0; c.money = 0; c.wedges = false; c.rope = false; Career.save(c)
+
+
+## skip to payday (as if limbed, chipped and piled) and read the pay off the summary
+func _hale_payday(tag: String) -> void:
+	g.objs.felled = true; g.objs.limbed = true; g.objs.stacked = true
+	g.payday()
+	var n := 0
+	while g.dlg != null and n < 40: g.advance_dialog(); g.advance_dialog(); n += 1; await wait(0.05)
+	await wait(1.0)
+	var rows := []
+	for r in g.hud.sum_rows.get_children():
+		var t := []
+		for l in r.get_children(): if l is Label: t.append((l as Label).text)
+		rows.append(" ".join(t))
+	note("pay_" + tag, rows)
+	note("bank_" + tag, g.money)
+	await shot("hale-pay-" + tag)
+
+func _hale_drive_pay() -> void:
+	await _hale_drive()
+	await _hale_payday("clean")
+
+func _hale_back_pay() -> void:
+	await _hale_back()
+	await _hale_payday("garage")

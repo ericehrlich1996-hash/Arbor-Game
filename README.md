@@ -4,6 +4,14 @@ A physics arborist game, built with **Godot 4.7**. You start with a chainsaw, a 
 
 **Level 1 · Earl's dead ash.** Drive up a randomly generated property, finish your energy drink, and meet Earl. Drop his dead ash without hitting the house, limb it, chip the brush, buck the stem into rounds he can lift, and pile them behind his shed. Then get paid (mostly in twenties).
 
+**Home.** A beat-down log cabin in the woods is the main menu. Pick jobs and buy upgrades on the old computer in the corner.
+
+**Level 2 · Widow Hale's leaning maple.** Unlocks after your first job. Walter's dead sugar maple leans hard at Mrs. Hale's garage, and it has to go the other way, out across the lawn. A heavy leaner sits back on its hinge, so you have to tip it toward your notch:
+- **Felling wedges + sledge** ($60): tap wedges into the back cut behind the bar. Each tight wedge lifts the tree a little.
+- **Bull rope** ($120): tie it high on the trunk, hook it on the truck's hitch, and ease the truck away until it's bar-tight. Pull too hard and it snaps.
+
+Drop it on the garage and the roof caves in, and the damage comes out of your pay.
+
 ## Play it
 
 - **In the browser:** the web build lives at the root of this repo (`index.html`, `index.wasm`, …), so the Netlify site serves it as-is. There is no build step, and the publish directory is the repo root.
@@ -20,6 +28,7 @@ A physics arborist game, built with **Godot 4.7**. You start with a chainsaw, a 
 | Mouse | look (click the game to capture the mouse, Esc to release it) |
 | E | talk, pick up (several pieces at once), use, drive, hitch/unhitch, hop in the truck bed |
 | 1 / 2 / 3 | hands / chainsaw / ear muffs |
+| 4 / 5 | felling wedges / pull rope (once bought); left click to set or drive a wedge, tie or hook the rope |
 | R | pull-start or stop the saw |
 | Right mouse | rev and cut |
 | Mouse wheel | roll the saw (turns the cut plane) |

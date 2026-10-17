@@ -31,6 +31,11 @@ var _nC := FastNoiseLite.new()
 var _grid := PackedFloat32Array()
 var _base := 0.0
 var mown := true                # the yard's mown in stripes (not round an old cabin in the woods)
+var job := "earl"               # which job's property this is
+var garage := {}                # Mrs. Hale's detached garage (empty on other jobs)
+var garage_roof: Node3D
+var garage_roof_body: Node3D    # the roof's collision, dropped when it caves in
+var garage_crushed := false
 
 func _pick(a: Array):
 	return a[rng.randi_range(0, a.size() - 1)]
@@ -41,8 +46,9 @@ func _range(a: float, b: float) -> float:
 func _noise(n: FastNoiseLite, x: float, z: float) -> float:
 	return n.get_noise_2d(x, z) * 0.5 + 0.5
 
-func setup(sd: int) -> void:
+func setup(sd: int, job_id := "earl") -> void:
 	seed = sd
+	job = job_id
 	rng.seed = sd
 	s = -1.0 if rng.randf() < 0.5 else 1.0
 	for n in [_nA, _nB, _nC]:
@@ -70,6 +76,7 @@ func setup(sd: int) -> void:
 		break
 	if tree.is_empty():
 		tree = {x = s * 24, z = 30.0, h = 16.0, dbh = 0.5, lean = 0.04, lean_dir = 1.0, seed = 5}
+	if job == "hale": _hale_layout()
 	old_man = Vector2(park.x - s * 3.2, park.z + 4.5)
 	mailbox = Vector2(drive[0].x + s * 2.4, road_z + 3.2)
 	# background woods
@@ -83,6 +90,7 @@ func setup(sd: int) -> void:
 		var d_drive := 1e9
 		for p in drive: d_drive = minf(d_drive, Vector2(x, z).distance_to(p))
 		if Vector2(x, z).distance_to(Vector2(tree.x, tree.z)) < tree.h + 8 or _box_dist(x, z, house) < 5 or _box_dist(x, z, shed) < 5: continue
+		if not garage.is_empty() and _box_dist(x, z, garage) < 5: continue
 		if Vector2(x, z).distance_to(Vector2(park.x, park.z)) < 12 or d_drive < 6 or z - road_z < 8: continue
 		yard_trees.push_back({x = x, z = z, h = _range(6, 10), pine = rng.randf() < 0.5, r = _range(1.6, 2.6), c = rng.randf()})
 	# the ground is exactly the triangles that get drawn (and collided with)
@@ -92,6 +100,17 @@ func setup(sd: int) -> void:
 		for i in range(N + 1):
 			_grid[j * (N + 1) + i] = _smooth_h(-S / 2 + i * st, -S / 2 + j * st)
 	drive_path = _spline(drive, 6)
+
+## Mrs. Hale's place: a tidy pale-yellow house, a detached garage at the end of the drive, and Walter's
+## dead sugar maple on the lawn beside it, leaning hard at the garage. The lawn's wide open the other way.
+func _hale_layout() -> void:
+	house.siding = Color.html("#f0e2b0"); house.roof = Color.html("#3a3d4a"); house.door = Color.html("#3a4a6a")
+	garage = {x = s * 5.2, z = 13.0, w = 6.4, d = 7.0, wall = 2.6}
+	flat.append({x = garage.x, z = garage.z, r = 7.5})
+	var tx := s * 15.6; var tz := 15.5
+	var to := Vector2(garage.x - tx, garage.z - tz)
+	tree = {x = tx, z = tz, h = _range(17.5, 18.5), dbh = 0.56, lean = _range(0.115, 0.13),
+		lean_dir = atan2(to.y, to.x) + _range(-0.12, 0.12), seed = rng.randi_range(1, 1000000), sits_back = true, species = "maple"}
 
 var _edge := FastNoiseLite.new()
 ## 0 on the mown lawn, 1 deep in the woods; the edge of the woods wanders
@@ -173,8 +192,82 @@ func build(root: Node3D) -> void:
 	_build_roads(root)
 	_build_creek(root)
 	_build_house(root)
+	if not garage.is_empty(): _build_garage(root)
 	var forest := Forest.new(); forest.build(self, root)
 	_build_grass(root)
+
+## the detached garage: lap siding, a white roll-up door facing the drive, a side door and window,
+## and a shingled gable roof (its own node, so a tree dropped on it can cave it in)
+func _build_garage(root: Node3D) -> void:
+	var g := garage
+	var y0 := H(g.x, g.z)
+	var r := RandomNumberGenerator.new(); r.seed = seed + 33
+	var trim := Color.html("#f2f0ea"); var sid: Color = house.siding; var roof: Color = house.roof
+	var W: float = g.w; var D: float = g.d; var top: float = 0.15 + g.wall
+	var mb := MeshBuilder.new()
+	mb.push(Transform3D(Basis(), Vector3(g.x, y0, g.z)))
+	mb.box(0, -0.3, 0, W + 0.1, 0.9, D + 0.1, Color.html("#9a958c"))                      # slab
+	var boards := 15; var bh: float = g.wall / boards
+	for b in range(boards):
+		var yy: float = 0.15 + b * bh
+		mb.box(0, yy + bh / 2, 0, W, bh, D, MeshBuilder.shade(sid, r.randf_range(0.97, 1.03)))
+		mb.box(0, yy + 0.01, 0, W + 0.024, 0.02, D + 0.024, MeshBuilder.shade(sid, 0.72))
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]: mb.box(sx * W / 2, 0.15 + g.wall / 2, sz * D / 2, 0.16, g.wall, 0.16, trim)
+	# the roll-up door: white panels with grooves, a row of little windows across the top
+	var fz: float = -D / 2 - 0.03
+	mb.box(0, 1.25, fz + 0.01, 5.0, 2.45, 0.08, trim)
+	mb.box(0, 1.2, fz - 0.03, 4.7, 2.2, 0.04, Color.html("#ecebe4"))
+	for k in range(1, 4): mb.box(0, 0.1 + k * 0.55, fz - 0.055, 4.7, 0.025, 0.01, Color.html("#bdbbb2"))
+	for k in range(4): mb.box(-1.65 + k * 1.1, 1.95, fz - 0.055, 0.7, 0.22, 0.01, Color.html("#34495a"))
+	# a side door and a window on the lawn side
+	var sxs: float = signf(tree.x - g.x) if not tree.is_empty() else 1.0
+	mb.box(sxs * (W / 2 + 0.03), 1.1, D * 0.22, 0.06, 2.05, 0.95, trim)
+	mb.box(sxs * (W / 2 + 0.05), 1.07, D * 0.22, 0.04, 1.9, 0.8, Color.html("#3a4a6a"))
+	_window(mb, -D * 0.18, 1.6, sxs * (W / 2 + 0.02), sxs, trim, Color.html("#34495a"), Color.html("#3a4a6a"), true, 0.9, 0.8)
+	mb.pop()
+	var mi := mb.instance(); mi.name = "Garage"
+	root.add_child(mi)
+	# the roof: gables front and back, ridge running back from the door
+	var rb := MeshBuilder.new()
+	var ov := 0.4; var hw: float = W / 2 + ov; var hd: float = D / 2 + ov
+	var rise := 1.5; var slope: float = rise / (W / 2)
+	var eave: float = -slope * ov
+	for sx: float in [-1.0, 1.0]:
+		WorldGen._face_out(rb, [Vector3(sx * hw, eave, -hd), Vector3(sx * hw, eave, hd), Vector3(0, rise, hd), Vector3(0, rise, -hd)], Vector3(sx, 1, 0), roof)
+		WorldGen._face_out(rb, [Vector3(sx * hw, eave, -hd), Vector3(sx * hw, eave, hd), Vector3(0, rise, hd), Vector3(0, rise, -hd)], Vector3(-sx, -1, 0), MeshBuilder.shade(roof, 0.5))
+		# shingle courses
+		for k in range(1, 9):
+			var t := k / 9.0
+			var a := Vector3(sx * hw * (1 - t), eave + (rise - eave) * t + 0.012, -hd)
+			rb.tube(a, a + Vector3(0, 0, 2 * hd), 0.012, 0.012, MeshBuilder.shade(roof, 0.75), 3)
+		rb.box(sx * (hw - 0.03), eave - 0.08, 0, 0.06, 0.2, 2 * hd, trim)                    # fascia
+	rb.tube(Vector3(0, rise + 0.03, -hd), Vector3(0, rise + 0.03, hd), 0.07, 0.07, MeshBuilder.shade(roof, 0.8), 4)
+	for sz: float in [-1.0, 1.0]:
+		var gz: float = sz * D / 2
+		WorldGen._face_out(rb, [Vector3(-W / 2, 0, gz), Vector3(W / 2, 0, gz), Vector3(0, rise - 0.02, gz)], Vector3(0, 0, sz), sid)
+		for k in range(1, 6):
+			var gy := k * rise / 6.0
+			var half := (rise - gy) / slope
+			rb.box(0, gy, gz + sz * 0.005, half * 2, 0.02, 0.012, MeshBuilder.shade(sid, 0.75))
+		for sx: float in [-1.0, 1.0]: rb.tube(Vector3(sx * hw, eave - 0.05, sz * hd), Vector3(0, rise - 0.03, sz * hd), 0.06, 0.06, trim, 4)
+	garage_roof = Node3D.new(); garage_roof.name = "GarageRoof"
+	root.add_child(garage_roof)
+	garage_roof.position = Vector3(g.x, y0 + top, g.z)
+	garage_roof.add_child(rb.instance())
+	_static_box(root, Vector3(g.x, y0 + top / 2, g.z), Vector3(W, top, D))
+	_static_box(root, Vector3(g.x, y0 + top + rise * 0.45, g.z), Vector3(W * 0.75, rise * 0.9, D + 0.4))
+	garage_roof_body = root.get_child(root.get_child_count() - 1)
+
+## a tree came down on the garage: the roof caves in at the ridge, sagging down into the bay
+func crush_garage() -> void:
+	if garage_crushed or garage_roof == null: return
+	garage_crushed = true
+	var tw := garage_roof.create_tween()
+	var b := Basis(Vector3.BACK, 0.09 * s) * Basis.from_scale(Vector3(1.0, 0.25, 1.0))
+	tw.tween_property(garage_roof, "transform", Transform3D(b, garage_roof.position - Vector3(0, 0.55, 0)), 0.35).set_ease(Tween.EASE_IN)
+	# the tree settles down into the caved-in roof instead of resting on the old ridge
+	if is_instance_valid(garage_roof_body): garage_roof_body.position.y -= 1.35
 
 func _static_box(root: Node3D, center: Vector3, size: Vector3, yaw := 0.0) -> void:
 	var sb := StaticBody3D.new()

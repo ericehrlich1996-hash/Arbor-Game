@@ -13,6 +13,7 @@ var root: Control
 var crosshair: ColorRect
 var obj_panel: PanelContainer
 var obj_title: Label
+var sum_title: Label
 var obj_list: RichTextLabel
 var money: Label
 var tool_state: Label
@@ -144,12 +145,14 @@ func _ready() -> void:
 	# hotbar
 	hotbar = HBoxContainer.new(); hotbar.set_anchors_preset(Control.PRESET_CENTER_BOTTOM); hotbar.position = Vector2(-190, -62)
 	hotbar.add_theme_constant_override("separation", 10)
-	for k in [["hands", "1  Hands"], ["saw", "2  Chainsaw"], ["muffs", "3  Ear muffs"]]:
+	for k in [["hands", "1  Hands"], ["saw", "2  Chainsaw"], ["muffs", "3  Ear muffs"], ["wedge", "4  Wedges"], ["rope", "5  Pull rope"]]:
 		var p := PanelContainer.new(); var sb := _panel(0.8); sb.content_margin_top = 8; sb.content_margin_bottom = 8
 		p.add_theme_stylebox_override("panel", sb)
 		var l := _label(k[1], 15); p.add_child(l)
 		hotbar.add_child(p); slots[k[0]] = p
 	root.add_child(hotbar)
+	slots.wedge.visible = false; slots.rope.visible = false
+	_center_hotbar.call_deferred()
 	# bar tilt readout (bottom right)
 	tilt = _label("", 16, DIM); tilt.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	tilt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -209,7 +212,7 @@ func _ready() -> void:
 	help.set_anchors_preset(Control.PRESET_TOP_RIGHT); help.position = Vector2(-410, 90); help.custom_minimum_size = Vector2(390, 0)
 	var hl := RichTextLabel.new(); hl.bbcode_enabled = true; hl.fit_content = true; hl.scroll_active = false; hl.custom_minimum_size = Vector2(360, 0)
 	hl.add_theme_font_size_override("normal_font_size", 14); hl.add_theme_font_size_override("bold_font_size", 14)
-	hl.text = "[b]WASD[/b] walk · [b]Shift[/b] run · [b]Space[/b] jump · [b]C[/b] crouch\n[b]Mouse[/b] look (click to capture)\n[b]E[/b] talk / pick up / use / drive / hitch\n[b]1 2 3[/b] hands · chainsaw · ear muffs\n[b]R[/b] pull-start the saw · [b]Right mouse[/b] rev and cut\n[b]Wheel[/b] angle the cut (aim at a trunk or log: the line shows where it goes)\n[b]Left click[/b] grab · [b]Right click[/b] set down / throw in the truck · [b]T[/b] drag · [b]F[/b] kick\n[b]F3[/b] graphics detail (high / low) · [b]H[/b] this help"
+	hl.text = "[b]WASD[/b] walk · [b]Shift[/b] run · [b]Space[/b] jump · [b]C[/b] crouch\n[b]Mouse[/b] look (click to capture)\n[b]E[/b] talk / pick up / use / drive / hitch\n[b]1 2 3[/b] hands · chainsaw · ear muffs · [b]4 5[/b] wedges · pull rope (once you've bought them)\n[b]R[/b] pull-start the saw · [b]Right mouse[/b] rev and cut\n[b]Wheel[/b] angle the cut (aim at a trunk or log: the line shows where it goes)\n[b]Left click[/b] grab · [b]Right click[/b] set down / throw in the truck · [b]T[/b] drag · [b]F[/b] kick\n[b]F3[/b] graphics detail (high / low) · [b]H[/b] this help"
 	help.add_child(hl); help.visible = false
 	root.add_child(help)
 	# fade + intro card
@@ -342,7 +345,7 @@ func _render_pc() -> void:
 		var ups: Array = pc_data.upgrades
 		for u: Dictionary in ups:
 			var can: bool = not u.owned and int(pc_data.bank) >= int(u.cost)
-			var label: String = ("  %s   DONE" % u.title) if u.owned else ("  %s   $%d" % [u.title, u.cost])
+			var label: String = ("  %s   %s" % [u.title, u.get("done", "OWNED")]) if u.owned else ("  %s   $%d" % [u.title, u.cost])
 			if not u.owned and not can: label += "   (NEED $%d MORE)" % (int(u.cost) - int(pc_data.bank))
 			var b := _crt_button(label)
 			b.disabled = not can
@@ -377,7 +380,7 @@ func _build_summary() -> void:
 	tl_panel.visible = false
 	var p := PanelContainer.new(); p.add_theme_stylebox_override("panel", _panel(0.95)); p.custom_minimum_size = Vector2(460, 0); row.add_child(p)
 	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 8); p.add_child(v)
-	v.add_child(_label("Job done · Earl's dead ash", 26, Color("#ffe1b8")))
+	sum_title = _label("Job done · Earl's dead ash", 26, Color("#ffe1b8")); v.add_child(sum_title)
 	sum_rows = VBoxContainer.new(); v.add_child(sum_rows)
 	sum_notes = _label("", 15, DIM); sum_notes.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; sum_notes.custom_minimum_size = Vector2(420, 0); v.add_child(sum_notes)
 	var b := Button.new(); b.text = "Head home"; b.add_theme_font_size_override("font_size", 20)
@@ -386,7 +389,8 @@ func _build_summary() -> void:
 	summary.visible = false
 	root.add_child(summary)
 
-func show_summary(rows: Array, total: int, notes: Array, bank: int) -> void:
+func show_summary(rows: Array, total: int, notes: Array, bank: int, title := "") -> void:
+	if title != "": sum_title.text = title
 	for c in sum_rows.get_children(): c.queue_free()
 	for r in rows:
 		var h := HBoxContainer.new()
@@ -432,6 +436,19 @@ func set_objectives(lines: Array) -> void:
 		if l[0]: s += "[color=#7bc96f]■[/color] [color=#8a8476][s]%s[/s][/color]\n" % l[1]
 		else: s += "[color=#a89f8c]□[/color] %s\n" % l[1]
 	obj_list.text = s.strip_edges()
+
+## the wedges and rope only show on the hotbar once you've bought them
+func set_owned(wedges: bool, rope: bool) -> void:
+	if slots.has("wedge"): slots.wedge.visible = wedges
+	if slots.has("rope"): slots.rope.visible = rope
+	_center_hotbar.call_deferred()
+
+## keep the hotbar centred along the bottom, however many slots are showing
+func _center_hotbar() -> void:
+	hotbar.reset_size()
+	var w := hotbar.get_combined_minimum_size().x
+	hotbar.offset_left = -w / 2; hotbar.offset_right = w / 2
+	hotbar.offset_top = -62; hotbar.offset_bottom = -62 + hotbar.get_combined_minimum_size().y
 
 func set_tool(t: String, muffs: bool) -> void:
 	for k in slots:

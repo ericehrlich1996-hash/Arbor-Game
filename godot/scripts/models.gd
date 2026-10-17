@@ -436,6 +436,81 @@ static func old_man() -> Dictionary:
 	P.cane = mb
 	return P
 
+## Mrs. Hale: cardigan over a blouse, pleated skirt, pearls, glasses, grey hair up in a bun, sensible shoes,
+## and a mug of lemonade where Earl has his cane. Same parts and joints as Earl so she poses the same way.
+static func old_lady() -> Dictionary:
+	var P := {}
+	var r := RandomNumberGenerator.new(); r.seed = 5151
+	var skin := h("#eebfa2"); var cardi := h("#5d7f8a"); var blouse := h("#f1ece0"); var skirt := h("#6a4a5e")
+	var hair := h("#c9c6c2"); var dkC := h("#262626"); var white := h("#f4f2ec"); var pearl := h("#efe9dc"); var shoe := h("#2a2420")
+	var hose := h("#d8b49a"); var gold := h("#c9a640")
+	var mb := MeshBuilder.new()
+	# cardigan, open down the front over the blouse
+	plaid(mb, [[0.1, 0.18, 0.14], [0.22, 0.2, 0.155], [0.36, 0.205, 0.15], [0.48, 0.2, 0.135], [0.55, 0.16, 0.11], [0.59, 0.065, 0.065]], cardi, MeshBuilder.shade(cardi, 0.9), 20, 2)
+	mb.box(0, 0.36, 0.147, 0.075, 0.36, 0.012, blouse)
+	for k in range(4): mb.sphere(0.052, 0.22 + k * 0.08, 0.152, 0.011, 0.011, 0.006, MeshBuilder.shade(cardi, 1.25), 6, 3)
+	for sx: float in [-1.0, 1.0]:
+		mb.sphere(sx * 0.18, 0.5, 0, 0.08, 0.075, 0.095, cardi, 10, 6)
+		mb.box(sx * 0.1, 0.22, 0.142, 0.07, 0.07, 0.01, MeshBuilder.shade(cardi, 0.85))          # pockets
+	mb.cyl(0, 0.54, 0, 0.07, 0.066, 0.05, blouse, 12, false)                                    # blouse collar
+	for k in range(11):                                                                          # pearls
+		var a := -1.3 + k * 0.26
+		mb.sphere(sin(a) * 0.078, 0.535 - cos(a * 0.9) * 0.02 + 0.02, cos(a) * 0.078, 0.012, 0.012, 0.012, pearl, 6, 3)
+	# a pleated skirt, below the knee
+	plaid(mb, [[-0.46, 0.24, 0.21], [-0.12, 0.205, 0.175], [0.12, 0.185, 0.145]], skirt, MeshBuilder.shade(skirt, 0.86), 24, 1)
+	P.torso = mb
+	# head: hair up in a bun, round glasses, earrings
+	mb = MeshBuilder.new()
+	mb.cyl(0, -0.02, 0, 0.055, 0.053, 0.1, skin, 10, false)
+	mb.sphere(0, 0.165, 0, 0.1, 0.122, 0.11, skin, 16, 10)
+	for sx: float in [-1.0, 1.0]:
+		mb.sphere(sx * 0.1, 0.16, -0.005, 0.018, 0.032, 0.022, MeshBuilder.shade(skin, 0.95), 8, 5)
+		mb.sphere(sx * 0.102, 0.125, 0.0, 0.01, 0.01, 0.01, gold, 6, 3)                        # earrings
+		mb.sphere(sx * 0.055, 0.13, 0.085, 0.026, 0.02, 0.018, h("#e9a497"), 8, 5)
+		mb.sphere(sx * 0.038, 0.178, 0.098, 0.012, 0.012, 0.009, dkC, 8, 5)
+		# glasses: a round rim each side, a bridge, arms back to the ears
+		var c := Vector3(sx * 0.04, 0.178, 0.108)
+		for k in range(10):
+			var a0 := TAU * k / 10.0; var a1 := TAU * (k + 1) / 10.0
+			mb.tube(c + Vector3(cos(a0) * 0.026, sin(a0) * 0.022, 0), c + Vector3(cos(a1) * 0.026, sin(a1) * 0.022, 0), 0.003, 0.003, h("#8a6a3a"), 4)
+		mb.tube(Vector3(sx * 0.066, 0.182, 0.104), Vector3(sx * 0.1, 0.178, 0.02), 0.003, 0.003, h("#8a6a3a"), 4)
+	mb.tube(Vector3(-0.014, 0.182, 0.11), Vector3(0.014, 0.182, 0.11), 0.003, 0.003, h("#8a6a3a"), 4)
+	mb.sphere(0, 0.148, 0.112, 0.018, 0.022, 0.02, h("#e3a98e"), 10, 6)
+	mb.tube(Vector3(-0.025, 0.112, 0.1), Vector3(0.025, 0.112, 0.1), 0.006, 0.006, h("#b8706a"), 5)  # a small smile
+	# grey hair: swept back over the crown and the sides, and a bun on top at the back
+	mb.push(Transform3D(Basis.from_scale(Vector3(1.0, 0.85, 1.05)), Vector3(0, 0.21, -0.012)))
+	mb.blob(0, 0, 0, 0.112, hair, r, 0.6)
+	mb.pop()
+	mb.blob(0, 0.27, -0.075, 0.055, MeshBuilder.shade(hair, 0.95), r, 0.7)
+	for sx: float in [-1.0, 1.0]: mb.sphere(sx * 0.085, 0.2, -0.02, 0.035, 0.06, 0.06, hair, 8, 5)
+	P.head = mb
+	# arms: cardigan sleeves, blouse cuff, hands
+	mb = MeshBuilder.new()
+	plaid(mb, [[0.04, 0.06, 0.065], [-0.12, 0.058, 0.06], [-0.3, 0.05, 0.052]], cardi, MeshBuilder.shade(cardi, 0.9), 12, 2)
+	mb.sphere(0, -0.3, 0, 0.05, 0.028, 0.052, cardi, 10, 5)
+	P.upper = mb
+	mb = MeshBuilder.new()
+	plaid(mb, [[0.0, 0.05, 0.052], [-0.2, 0.046, 0.046]], cardi, MeshBuilder.shade(cardi, 0.9), 12, 2)
+	mb.cyl(0, -0.23, 0, 0.044, 0.044, 0.03, blouse, 12, false)
+	mb.cyl(0, -0.265, 0, 0.03, 0.033, 0.04, skin, 10, false)
+	mb.sphere(0, -0.3, 0.005, 0.04, 0.05, 0.032, skin, 10, 6)
+	mb.tube(Vector3(0.028, -0.285, 0.02), Vector3(0.04, -0.32, 0.038), 0.012, 0.01, skin, 6)
+	P.fore = mb
+	# legs: stockings under the skirt and black lace-ups
+	mb = MeshBuilder.new()
+	plaid(mb, [[0.04, 0.07, 0.07], [-0.4, 0.06, 0.062], [-0.72, 0.048, 0.05]], hose, MeshBuilder.shade(hose, 0.96), 12, 2)
+	mb.bevel_box(0, -0.8, 0.005, 0.1, 0.09, 0.15, shoe, 0.03)
+	mb.sphere(0, -0.82, 0.07, 0.052, 0.042, 0.07, shoe, 10, 6)
+	mb.box(0, -0.88, 0.03, 0.11, 0.025, 0.26, h("#1a1614"))
+	P.leg = mb
+	# a mug of lemonade
+	mb = MeshBuilder.new()
+	mb.cyl(0, -0.1, 0.05, 0.04, 0.04, 0.1, white, 12, true, h("#f2d870"))
+	var hp := [Vector3(0.038, -0.03, 0.05), Vector3(0.066, -0.04, 0.05), Vector3(0.066, -0.075, 0.05), Vector3(0.038, -0.085, 0.05)]
+	for k in range(3): mb.tube(hp[k], hp[k + 1], 0.007, 0.007, white, 5)       # the handle
+	P.cane = mb
+	return P
+
 ## chainsaw in saw space: −Z forward along the bar, origin at the rear handle; bar tip near (0,0,−0.83)
 static func chainsaw() -> MeshBuilder:
 	var mb := MeshBuilder.new()

@@ -1,12 +1,15 @@
-## Level 1, "Earl's dead ash": the intro drive, the client, felling, limbing, bucking, chipping,
-## piling rounds behind the shed, and payday. Owns input, interaction, dialogue, objectives and the HUD.
+## A job (Earl's dead ash, Widow Hale's leaning maple): the intro drive, the client, felling, limbing,
+## bucking, chipping, piling rounds behind the shed, and payday. Owns input, interaction, dialogue, objectives and the HUD.
 extends Node3D
 
 var world: WorldGen
 var truck: Truck
 var chipper: Chipper
-var earl: Earl
+var earl: Earl                  # the client (Earl, or Mrs. Hale)
 var tree: AshTree
+var job: Dictionary = Jobs.EARL
+var rig: Rigging                # felling wedges and the pull rope
+var damage := {}                # "house" / "garage" -> true once a tree's come down on it
 var saw: Saw
 var haul: Haul
 var player: Player
@@ -57,7 +60,9 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--test="): test_name = a.substr(7)
 	if test_name == "" or test_name.begins_with("hub"): enter_hub()
-	else: new_level(randi() % 1000000 + 1)
+	else:
+		if test_name.begins_with("hale"): job = Jobs.HALE
+		new_level(randi() % 1000000 + 1)
 	Sfx.start_ambience()
 	_prewarm_shaders()
 	if OS.get_environment("ARBOR_LOW") != "": set_detail(0)
@@ -107,38 +112,51 @@ func hub_begin() -> void:
 	create_tween().tween_property(hud.fade, "color:a", 0.0, 1.0)
 	if not hud.toast_lbl.visible or hud.toast_lbl.text == "": hud.toast("Home sweet home. The old computer in the corner is where the work comes in.", 5.0)
 
-const JOBS := [
-	{title = "Earl's dead ash", pay = 400, open = true,
-		text = "Old fella out on Birch Rd. Dead ash in the yard, leaning. Drop it, limb it, chip the brush, stack the rounds behind his shed."},
-	{title = "-- nothing else yet --", pay = 0, open = false, text = "Word gets around. Check back after a job or two."},
-]
-
 func open_computer() -> void:
 	hub.busy = true
 	hud.set_prompt("")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	Sfx.play("blip")
-	hud.show_computer(JOBS, money, Career.load().jobs, _upgrades())
+	hud.show_computer(Jobs.board(Career.load().jobs), money, Career.load().jobs, _upgrades())
 
 func _upgrades() -> Array:
 	var c := Career.load()
-	return [{id = "truck", title = "Fix up the truck", cost = 400, owned = float(c.truck_rust) <= 0.0,
-		text = "Rust cut out and patched, fresh paint, new chrome, clean glass. She'll look like she just rolled off the lot."}]
+	return [{id = "truck", title = "Fix up the truck", cost = 400, owned = float(c.truck_rust) <= 0.0, done = "DONE",
+		text = "Rust cut out and patched, fresh paint, new chrome, clean glass. She'll look like she just rolled off the lot."},
+		{id = "wedges", title = "Felling wedges + sledge", cost = 60, owned = bool(c.get("wedges", false)),
+		text = "Three orange plastic wedges and a short sledge. Tap them into the back cut to tip a tree toward your notch. Key 4."},
+		{id = "rope", title = "Bull rope (150 ft)", cost = 120, owned = bool(c.get("rope", false)),
+		text = "Tie it high on the trunk, hook it to the truck's hitch, and pull the tree where it needs to go. Key 5."}]
+
+const UPGRADE_COST := {wedges = 60, rope = 120}
+const UPGRADE_MSG := {wedges = "WEDGES AND SLEDGE IN THE TRUCK. PRESS 4 ON THE JOB.", rope = "BULL ROPE IN THE TRUCK. PRESS 5 ON THE JOB."}
 
 func buy_upgrade(id: String) -> void:
 	var c := Career.load()
+	if UPGRADE_COST.has(id):
+		if bool(c.get(id, false)): return
+		if int(c.money) < int(UPGRADE_COST[id]):
+			hud.show_computer(Jobs.board(c.jobs), money, c.jobs, _upgrades(), "NOT ENOUGH IN THE BANK.")
+			return
+		c.money -= UPGRADE_COST[id]; c[id] = true
+		Career.save(c); money = c.money
+		Sfx.play("cash")
+		hud.show_computer(Jobs.board(c.jobs), money, c.jobs, _upgrades(), UPGRADE_MSG[id])
+		return
 	if id == "truck" and float(c.truck_rust) > 0.0 and int(c.money) >= 400:
 		c.money -= 400; c.truck_rust = 0.0
 		Career.save(c); money = c.money
 		Mats.set_truck_rust(0.0)
 		Sfx.play("cash")
-		hud.show_computer(JOBS, money, c.jobs, _upgrades(), "TRUCK FIXED UP. GO TAKE A LOOK!")
+		hud.show_computer(Jobs.board(c.jobs), money, c.jobs, _upgrades(), "TRUCK FIXED UP. GO TAKE A LOOK!")
 
 func _close_computer() -> void:
 	hub.busy = false
 	if tests == null: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
-func start_job(_idx: int) -> void:
+func start_job(idx: int) -> void:
+	if idx < 0 or idx >= Jobs.LIST.size(): return
+	job = Jobs.LIST[idx]
 	Sfx.play("ding")
 	var tw := create_tween()
 	tw.tween_property(hud.fade, "color:a", 1.0, 0.7)
@@ -166,7 +184,7 @@ func _setup_input() -> void:
 	var keys := {
 		move_fwd = [KEY_W, KEY_UP], move_back = [KEY_S, KEY_DOWN], move_left = [KEY_A, KEY_LEFT], move_right = [KEY_D, KEY_RIGHT],
 		jump = [KEY_SPACE], run = [KEY_SHIFT], crouch = [KEY_C, KEY_CTRL], interact = [KEY_E], drop = [KEY_Q], kick = [KEY_F],
-		throw = [KEY_G], drag = [KEY_T], tool1 = [KEY_1], tool2 = [KEY_2], tool3 = [KEY_3], saw_start = [KEY_R], help = [KEY_H], camera = [KEY_V],
+		throw = [KEY_G], drag = [KEY_T], tool1 = [KEY_1], tool2 = [KEY_2], tool3 = [KEY_3], tool4 = [KEY_4], tool5 = [KEY_5], saw_start = [KEY_R], help = [KEY_H], camera = [KEY_V],
 	}
 	for act in keys:
 		if not InputMap.has_action(act): InputMap.add_action(act)
@@ -299,7 +317,8 @@ func new_level(sd: int) -> void:
 	in_hub = false
 	if level_root: level_root.queue_free()
 	level_root = Node3D.new(); level_root.name = "Level"; add_child(level_root)
-	world = WorldGen.new(); world.setup(sd); world.build(level_root)
+	world = WorldGen.new(); world.setup(sd, job.id); world.build(level_root)
+	Mats.bark.albedo_color = job.bark_tint
 	ambient = Ambient.new(); ambient.name = "Ambient"; level_root.add_child(ambient)
 	weather = Weather.new(); weather.name = "Weather"; level_root.add_child(weather)
 	weather.setup(self, sd)
@@ -318,11 +337,12 @@ func new_level(sd: int) -> void:
 	rack_saw = Models.chainsaw().instance(); chipper.add_child(rack_saw)
 	rack_saw.transform = Transform3D(Basis(Vector3.BACK, -0.08) * Basis(Vector3.UP, PI), Vector3(-0.74, 0.36, -1.78))
 	rack_saw.visible = false
-	tree = AshTree.new(); tree.name = "Ash"; level_root.add_child(tree)
+	tree = AshTree.new(); tree.name = "Maple" if job.id == "hale" else "Ash"; level_root.add_child(tree)
 	tree.setup(self, world)
 	tree.fell.connect(_on_fell)
-	earl = Earl.new(); earl.name = "Earl"; level_root.add_child(earl)
-	earl.setup(world, world.old_man)
+	earl = Earl.new(); earl.name = "Client"; level_root.add_child(earl)
+	earl.setup(world, world.old_man, job.look)
+	earl.display = job.who; earl.idle_lines = job.idle
 	player = Player.new(); player.name = "Player"; level_root.add_child(player)
 	var out := truck.global_transform * Vector3(1.75, 0, 0.15)
 	player.teleport(Vector3(out.x, world.H(out.x, out.z) + 0.05, out.z), truck.rotation.y + PI)
@@ -330,6 +350,11 @@ func new_level(sd: int) -> void:
 	saw.setup(self, player)
 	haul = Haul.new(); haul.name = "Haul"; add_child(haul)
 	haul.setup(self)
+	rig = Rigging.new(); rig.name = "Rigging"; level_root.add_child(rig)
+	rig.setup(self)
+	damage = {}
+	hud.obj_title.text = "Job %d · %s" % [job.n, job.title]
+	hud.set_owned(Rigging.owned("wedges"), Rigging.owned("rope"))
 	title_cam = Camera3D.new(); title_cam.fov = 60; level_root.add_child(title_cam); title_cam.make_current()
 	timelapse = Timelapse.new(); timelapse.name = "Timelapse"; level_root.add_child(timelapse)
 	timelapse.setup(self)
@@ -381,7 +406,7 @@ func start_intro() -> void:
 	var hand := Models.fist(1).instance(); hand.position = Vector3(0.0, 0.07, 0.0); hand.rotation = Vector3(0, 0, PI / 2); can_node.add_child(hand)
 	for c in [can_mi, hand]: c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	can_node.visible = false
-	hud.intro_card.text = "Job 1 · Earl's dead ash"
+	hud.intro_card.text = "Job %d · %s" % [job.n, job.title]
 	hud.fade.color.a = 1.0
 	create_tween().tween_property(hud.fade, "color:a", 0.0, 1.5)
 
@@ -473,7 +498,7 @@ func _start() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	earl.state = "wave"
 	get_tree().create_timer(4.0).timeout.connect(func(): if earl.state == "wave": earl.state = "idle")
-	hud.toast("Click to look around. Walk with WASD. Talk to Earl with E.", 5)
+	hud.toast("Click to look around. Walk with WASD. Talk to %s with E." % job.who, 5)
 	hud.set_tool(player.tool, muffs)
 	if weather: get_tree().create_timer(5.5).timeout.connect(weather.announce)
 
@@ -523,6 +548,10 @@ func _unhandled_input(ev: InputEvent) -> void:
 		if ev.is_action_pressed("interact"): exit_truck()
 		elif ev.is_action_pressed("camera"): truck.toggle_cam()
 		return
+	if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT and (player.tool == "wedge" or player.tool == "rope") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		if rig.use(): return
+	if ev.is_action_pressed("interact") and (player.tool == "wedge" or player.tool == "rope") and rig.prompt().begins_with("[b]"):
+		rig.use(); return
 	if ev is InputEventMouseButton and ev.pressed and player.tool == "hands" and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		if ev.button_index == MOUSE_BUTTON_LEFT and _grab_aimed(): return
 		if ev.button_index == MOUSE_BUTTON_RIGHT and haul.carrying():
@@ -538,6 +567,8 @@ func _unhandled_input(ev: InputEvent) -> void:
 	elif ev.is_action_pressed("tool1"): equip("hands")
 	elif ev.is_action_pressed("tool2"): equip("saw")
 	elif ev.is_action_pressed("tool3"): toggle_muffs()
+	elif ev.is_action_pressed("tool4"): _equip_owned("wedge", "wedges", "felling wedges")
+	elif ev.is_action_pressed("tool5"): _equip_owned("rope", "rope", "a pull rope")
 	elif ev.is_action_pressed("crouch"): player.crouch = not player.crouch
 	elif ev.is_action_pressed("saw_start") and player.tool == "saw": saw.pull_start()
 
@@ -548,6 +579,13 @@ func equip(t: String) -> void:
 	player.tool = t
 	hud.set_tool(t, muffs)
 	if t == "saw" and not saw.on: hud.toast("Press R to pull-start the saw.", 2.2)
+	if t == "wedge": hud.toast("Wedges: make your notch, start the back cut, then tap a wedge into the kerf behind the bar.", 3.5)
+	if t == "rope": hud.toast("Pull rope: tie it on the trunk, hook it on the truck's hitch, then ease the truck away.", 3.5)
+
+func _equip_owned(t: String, id: String, what: String) -> void:
+	if not Rigging.owned(id):
+		hud.toast("You don't have %s yet. They're on the computer at home, under Upgrades." % what, 3.0); return
+	equip(t)
 
 func toggle_muffs() -> void:
 	muffs = not muffs
@@ -808,40 +846,50 @@ func _step_dialog(dt: float) -> void:
 	if dlg.shown < L.text.length():
 		var before := int(dlg.shown)
 		dlg.shown = minf(L.text.length(), dlg.shown + dt * 48)
-		if L.who == Earl.NAME and int(dlg.shown) != before and clock - dlg.last_blip > 0.07:
+		if L.who == job.who and int(dlg.shown) != before and clock - dlg.last_blip > 0.07:
 			var ch: String = L.text[mini(int(dlg.shown), L.text.length() - 1)]
 			if ch.to_lower() != ch.to_upper():
 				dlg.last_blip = clock; Sfx.play("blip", 1.0, randf_range(0.85, 1.25))
 		_render_dialog()
 
 func talk_to_earl() -> void:
-	var E := Earl.NAME
+	var E: String = job.who
 	if not objs.talk:
-		start_dialog([
-			{who = E, text = "Well it's about dang time! You the tree fella? You look like a tree fella."},
-			{who = E, text = "That ash out back's deader'n disco. Them little green beetles got it. Emerald ash borers, the TV called 'em."},
-			{who = E, text = "It creaks at me every night. Every. Night. Like it's plottin' somethin'."},
-			{who = E, text = "Here's the deal: drop it, chip the branches, and cut the trunk into rounds I can lift. Pile 'em up out behind my shed."},
-			{who = E, text = "Four hundred bucks, cash. From my mattress. Don't ask about the mattress."},
-			{who = E, text = "Go on, git! And don't drop it on my house."}],
-			func(): objs.talk = true; earl.state = "idle"; update_objectives())
+		var lines := []
+		for l in job.talk: lines.append({who = E, text = l})
+		if job.id == "hale" and not (Rigging.owned("wedges") or Rigging.owned("rope")):
+			lines.append({who = E, text = "You didn't bring wedges? Or a rope? Oh dear. Well, you know your business. I hope."})
+		start_dialog(lines, func(): objs.talk = true; earl.state = "idle"; update_objectives())
 		return
 	if objs.felled and objs.limbed and objs.stacked and not objs.paid:
 		payday(); return
-	start_dialog([{who = E, text = Earl.IDLE[randi() % Earl.IDLE.size()]}])
+	start_dialog([{who = E, text = earl.idle_lines[randi() % earl.idle_lines.size()]}])
+
+## the heavy leaner sat back on its hinge: the client has an opinion
+func customer_sits_back() -> void:
+	if job.id == "hale": earl.bark("Is it... stuck? Walter always said it'd be stubborn.", 4.0)
 
 func payday() -> void:
 	var g := tree.grade
-	var total := 400
-	var rows := [["Job: drop, limb, chip and pile", 400]]
+	var total: int = job.pay
+	var rows := [["Job: drop, limb, chip and pile", job.pay]]
 	var clean: bool = g.get("open", false) and not g.get("barber", false) and g.notch_pct >= 0.18 and g.notch_pct <= 0.45 and g.notch_angle >= 40 and g.hinge_pct >= 0.05 and g.hinge_pct <= 0.18 and g.dir_err < 15
 	if clean: rows.append(["Textbook felling (notch, hinge, aim)", 50]); total += 50
-	if g.get("barber", false): rows.append(["Barber chair (Earl is shaken)", -100]); total -= 100
+	if g.get("barber", false): rows.append(["Barber chair (%s is shaken)" % job.who, -100]); total -= 100
+	if damage.get("garage", false): rows.append(["Dropped it on the garage", -500]); total -= 500
+	if damage.get("house", false): rows.append(["Dropped it on the house", -500]); total -= 500
+	if job.id == "hale" and not damage.get("garage", false) and not damage.get("house", false): rows.append(["Garage untouched (and polite)", 20]); total += 20
+	total = maxi(total, 0)
 	var mins := (clock - start_time) / 60.0
 	if mins < 15: rows.append(["Quick work (under 15 min)", 25]); total += 25
-	var E := Earl.NAME
-	start_dialog([{who = E, text = "Well I'll be. Look at that. Neat as a pin!"}, {who = E, text = "Here's your money. Mostly twenties. One's Canadian, don't ask."},
-		{who = E, text = "I got a buddy with a whole yard of sick maples. I'll put in a good word. Maybe."}],
+	var E: String = job.who
+	var plines := []
+	if damage.get("garage", false) or damage.get("house", false):
+		plines.append({who = E, text = "Well. It's down. Most of it's down where it should be. Most of it."})
+		plines.append({who = E, text = "I'm taking the damage out of what I owe you. That's only fair."})
+	else:
+		for l in job.paid: plines.append({who = E, text = l})
+	start_dialog(plines,
 		func():
 			objs.paid = true; update_objectives(); Sfx.play("cash")
 			var c := Career.load(); c.money += total; c.jobs += 1; Career.save(c); money = c.money
@@ -855,16 +903,47 @@ func payday() -> void:
 			notes.append("Time: %d min." % roundi(mins))
 			phase = "done"
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-			hud.show_summary(rows, total, notes, money)
+			hud.show_summary(rows, total, notes, money, "Job done · %s" % job.title)
 			hud.play_timelapse(timelapse.frames, timelapse.stamps))
 
 func _on_fell(kind: String) -> void:
 	hud.shout("BARBER CHAIR!" if kind == "barber" else "TIMBER!")
 	saw.cut = null
+	rig.on_fell()
 	if kind == "barber":
-		earl.bark("Holy smokes! It split right up the middle!", 3.5)
+		earl.bark(job.barber, 3.5)
 	else:
-		get_tree().create_timer(2.6).timeout.connect(func(): earl.bark(["WHOOO-EE! Did ya feel that in your boots?!", "Timber! I always wanted to yell that.", "Lord, that was louder than my ex-wife."][randi() % 3], 3.5))
+		get_tree().create_timer(2.6).timeout.connect(func(): if damage.is_empty(): earl.bark(job.fell[randi() % job.fell.size()], 3.5))
+
+## while it's coming down: did it land on the garage or the house?
+func _check_damage() -> void:
+	if tree.state != "hinge" and tree.state != "down": return
+	if tree.t - tree.down_t > 6.0 and tree.state == "down": return
+	if not is_instance_valid(tree.stem): return
+	var T: Dictionary = tree.T
+	var pts := []
+	var y := tree.stump_top + 1.2
+	while y < T.H: pts.append(Vector3(0, y, 0)); y += 0.6
+	for L in T.limbs:
+		if tree.stem.limbs.has(L.id):
+			for k: float in [0.35, 0.65, 0.95]: pts.append(Wood.limb_pt(L, k))
+	# how high each building reaches: walls plus roof, and a little for the trunk's own thickness
+	var gar_top: float = 0.15 + float(world.garage.get("wall", 2.6)) + 1.5 + 0.9
+	var house_top: float = float(world.house.get("wall", 2.7)) + 3.6
+	for b in [["garage", world.garage, gar_top], ["house", world.house, house_top]]:
+		var box: Dictionary = b[1]
+		if box.is_empty() or damage.get(b[0], false): continue
+		var gy := world.H(box.x, box.z)
+		for p in pts:
+			var w := tree.stem.to_world(p)
+			if absf(w.x - box.x) < box.w / 2 + 0.45 and absf(w.z - box.z) < box.d / 2 + 0.45 and w.y < gy + b[2]:
+				damage[b[0]] = true
+				Sfx.play("crunch", 1.0, 0.6); Sfx.play("crack", 0.9, 0.7); Sfx.play("thud", 1.0, 0.8)
+				hud.shout("CRUNCH!")
+				if b[0] == "garage": world.crush_garage()
+				var line: String = job.hit_garage if b[0] == "garage" else job.hit_house
+				if line != "": earl.bark(line, 5.0)
+				break
 
 # ================================================================ objectives
 func pieces() -> Array:
@@ -909,16 +988,16 @@ func update_objectives() -> void:
 		buck_txt += " · %d/%d · %d%%" % [piled, rounds, int(floor(done_frac * 100.0))]
 		if heavy > 0: buck_txt += " · %d too heavy" % heavy
 	hud.set_objectives([
-		[objs.talk, "Talk to Earl"],
-		[objs.felled, "Drop the dead ash"],
+		[objs.talk, "Talk to %s" % job.who],
+		[objs.felled, ("Drop the %s, away from the garage" % job.tree_word) if job.id == "hale" else ("Drop the %s" % job.tree_word)],
 		[objs.limbed, "Limb it and chip the brush" + (" · %d left" % brush if objs.felled and not objs.limbed else "")],
 		[objs.stacked, buck_txt],
 		[objs.paid, "Get paid"]])
 	if objs.limbed and objs.stacked and not objs.paid and not called_pay:
 		called_pay = true
 		Sfx.play("ding")
-		earl.bark("Hey! Looks done to me! Come get your money!", 6.0)
-		hud.toast("Job done. Talk to Earl to get paid.")
+		earl.bark(job.done, 6.0)
+		hud.toast("Job done. Talk to %s to get paid." % job.who)
 
 # ================================================================ HUD
 func _update_hud() -> void:
@@ -930,6 +1009,8 @@ func _update_hud() -> void:
 	else:
 		hud.set_carry(0, "", 0.0, 1.0, lb)
 	hud.tool_state.text = ("Saw: running" if saw.on else "Saw: off · R to start") if player.tool == "saw" else ""
+	if player.tool == "wedge": hud.tool_state.text = "Wedges: %d in the tree" % rig.wedges.size()
+	elif player.tool == "rope": hud.tool_state.text = "Pull rope" + ("" if rig.rope == "" else (" · on the tree" if rig.rope == "tree" else " · rigged to the truck"))
 	hud.tilt.visible = player.tool == "saw" and not player.in_truck and phase == "play"
 	hud.set_dial(not saw.guide.is_empty() and not saw.guide.has("ring_c") and player.tool == "saw" and not player.in_truck and phase == "play",
 		saw.guide.get("existing") != null and saw.guide.existing.has("f"), _guide_tilt(), saw.guide.get("too_far", false))
@@ -945,6 +1026,10 @@ func _update_hud() -> void:
 		hud.tilt.text = "Bar roll %d°" % int(rad_to_deg(saw.roll))
 	if player.in_truck:
 		hud.drive_lbl.text = "[b]W/S[/b] drive · [b]A/D[/b] steer · [b]Space[/b] brake · [b]V[/b] camera · [b]E[/b] get out      [b]%d mph[/b]" % int(truck.speed_mph())
+		if rig.rope == "rigged":
+			var tx := rig._tension_txt().substr(3)
+			var col := "#ff6a4a" if rig.rope_stretch > Rigging.ROPE_SNAP * 0.7 else ("#9be36b" if rig.rope_stretch >= Rigging.ROPE_TIGHT else "#ffd27a")
+			hud.drive_lbl.text = "[b]W/S[/b] drive · [b]Space[/b] brake · [b]E[/b] get out    [b]%d mph[/b]    Rope: [color=%s][b]%s[/b][/color]" % [int(truck.speed_mph()), col, tx]
 		hud.obj_panel.visible = truck.chase     # out of the way of the rear-view mirror
 		hud.set_prompt("")
 		return
@@ -967,9 +1052,11 @@ func _update_hud() -> void:
 			t = "[b]Left click[/b] Feed the chipper" + (" (%d)" % n if n > 1 else "")
 		else:
 			t = "[b]Right click[/b] %s · [b]E[/b] drop all" % ("Throw one in the truck" if haul.throw_target() != null else "Set one down")
+	elif (player.tool == "wedge" or player.tool == "rope") and rig.prompt() != "":
+		t = rig.prompt()
 	elif not a.is_empty():
 		match a.kind:
-			"earl": t = "[b]E[/b] Talk to Earl" + (" · get paid" if objs.limbed and objs.stacked and not objs.paid else "")
+			"earl": t = "[b]E[/b] Talk to %s" % job.who + (" · get paid" if objs.limbed and objs.stacked and not objs.paid else "")
 			"truck": t = "[b]E[/b] Get in the truck"
 			"tailgate": t = "[b]E[/b] Hop down" if on_bed else "[b]E[/b] Hop in the back"
 			"hitch": t = "[b]E[/b] Unhitch the chipper" if chipper.mode == "truck" else "[b]E[/b] Grab the tongue"
@@ -987,6 +1074,7 @@ func _update_hud() -> void:
 func _physics_process(dt: float) -> void:
 	if chipper and chipper.mode == "hand":
 		chipper.move_hand(_hand_point(), dt)
+	if rig and phase == "play": rig.physics_step(dt)
 	if haul: haul.step_drag(dt)
 
 func _process(dt: float) -> void:
@@ -1036,6 +1124,7 @@ func _process(dt: float) -> void:
 		for m in [saw.fist_r, saw.fist_l, saw.arm_r, saw.arm_l]: m.visible = show_hands
 		saw.pose_hands(haul.carrying())
 		saw.step(dt, false, true)
+	rig.step(dt)
 	if tree.state == "down":
 		_break_under_limbs()
 		if not objs.felled and (tree.t - tree.down_t > 5.0 or (is_instance_valid(tree.stem) and tree.stem.sleeping)):
@@ -1045,10 +1134,11 @@ func _process(dt: float) -> void:
 		earl.set_meta("to_porch", true)
 		var h: Dictionary = world.house
 		earl.go_to(Vector2(h.x + h.w * 0.18, h.z - h.d / 2 - 1.4))
-		earl.bark("I'll be on the porch! If that thing lands on my house I'm keepin' your truck!", 4.0)
+		earl.bark(job.porch, 4.0)
 	if objs.felled and not objs.paid and dlg == null and clock - earl.last_bark > 38.0:
 		earl.last_bark = clock
-		earl.bark(Earl.IDLE[randi() % Earl.IDLE.size()], 5.0)
+		earl.bark(earl.idle_lines[randi() % earl.idle_lines.size()], 5.0)
+	_check_damage()
 	# engines
 	var eng = chipper.engine_snd
 	if eng:
