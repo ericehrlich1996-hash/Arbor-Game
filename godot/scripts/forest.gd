@@ -102,6 +102,7 @@ func forestness(x: float, z: float) -> float:
 
 func _clear(x: float, z: float, pad: float) -> bool:
 	if w.creek_d(x, z) < 3.6 + maxf(pad, 0.0): return false
+	if w.lake_d(x, z) < 1.5 + maxf(pad, 0.0): return false
 	if absf(z - w.road_z) < 6.5 + pad: return false
 	for i in range(0, w.drive_path.size(), 2):
 		if Vector2(x, z).distance_to(w.drive_path[i]) < 3.0 + pad: return false
@@ -148,6 +149,7 @@ func _place_trees() -> void:
 			if f <= 0.05 or rng.randf() > f * 0.95: continue
 			if not _clear(px, pz, 1.0): continue
 			var kind := rng.randf()
+			if w.job == "hale": kind = 0.58 * kind / 0.3 if kind < 0.3 else (0.58 + (kind - 0.3) / 0.55 * 0.28 if kind < 0.85 else 0.86 + (kind - 0.85) / 0.15 * 0.1)    # hardwoods: maples and birches round the lake
 			var yaw := rng.randf() * TAU
 			var s := rng.randf_range(0.85, 1.2)
 			var near := Vector2(px, pz).length() < 95
@@ -242,6 +244,17 @@ func _place_underbrush() -> void:
 		if rng.randf() < 0.25: _add("rock%d" % (rng.randi() % 3), cx + 0.5, w.creek_z(cx) + rng.randf_range(-1.5, 1.5), rng.randf() * TAU, rng.randf_range(0.4, 0.8), Color.WHITE, 0.05)
 		var fz := w.creek_z(cx) + side * rng.randf_range(4.2, 7.5)
 		if rng.randf() < 0.8: _add("fern%d" % (rng.randi() % 3), cx, fz, rng.randf() * TAU, rng.randf_range(1.0, 1.6))
+	# autumn at the lake house: maple leaves drifted all over the lawn
+	if w.job == "hale":
+		for k in range(1400):
+			var lx := rng.randf_range(-46, 46); var lz := rng.randf_range(-44, 66)
+			if forestness(lx, lz) > 0.2 or w.lake_d(lx, lz) < 2.0 or absf(lz - w.road_z) < 6.0: continue
+			if w._box_dist(lx, lz, w.house) < 1.5 or w._box_dist(lx, lz, w.garage) < 1.0: continue
+			var on_drive := false
+			for i in range(0, w.drive_path.size(), 2):
+				if Vector2(lx, lz).distance_to(w.drive_path[i]) < 2.2: on_drive = true; break
+			if on_drive: continue
+			_add("litter%d" % (rng.randi() % 3), lx, lz, rng.randf() * TAU, rng.randf_range(0.45, 0.8))
 	# long grass and wildflowers in the meadow strip along the road
 	for k in range(2500):
 		var px := rng.randf_range(-150, 150); var pz := w.road_z + rng.randf_range(-14, 14) * (1 if rng.randf() < 0.5 else -1)

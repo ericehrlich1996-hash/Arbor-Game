@@ -318,6 +318,7 @@ func new_level(sd: int) -> void:
 	if level_root: level_root.queue_free()
 	level_root = Node3D.new(); level_root.name = "Level"; add_child(level_root)
 	world = WorldGen.new(); world.setup(sd, job.id); world.build(level_root)
+	_job_light()
 	Mats.bark.albedo_color = job.bark_tint
 	ambient = Ambient.new(); ambient.name = "Ambient"; level_root.add_child(ambient)
 	weather = Weather.new(); weather.name = "Weather"; level_root.add_child(weather)
@@ -656,6 +657,29 @@ func _grab_aimed() -> bool:
 		var brush: bool = haul.carry.any(func(b): return b.chippable())
 		if brush and haul.near_hopper() and chipper.running: haul.feed(); return true
 	return false
+
+## each property has its own time of day: Earl's is a bright early afternoon, the lake house is
+## golden hour, the sun low over the water and long shadows across the lawn
+func _job_light() -> void:
+	if job.id == "hale":
+		sun.rotation = Vector3(deg_to_rad(-21), deg_to_rad(205), 0)
+		sun.light_color = Color("#ffc27a")
+		if sky_mat:
+			sky_mat.set_shader_parameter("horizon_color", Color(0.95, 0.78, 0.6))
+			sky_mat.set_shader_parameter("top_color", Color(0.32, 0.48, 0.72))
+		var env := _env()
+		if env: env.fog_light_color = Color("#e8c8a0")
+	else:
+		sun.rotation = Vector3(deg_to_rad(-40), deg_to_rad(145), 0)
+		sun.light_color = Color("#ffe2b8")
+		if sky_mat:
+			sky_mat.set_shader_parameter("horizon_color", Color(0.78, 0.85, 0.9))
+			sky_mat.set_shader_parameter("top_color", Color(0.29, 0.5, 0.76))
+
+func _env() -> Environment:
+	for c in get_children():
+		if c is WorldEnvironment: return c.environment
+	return null
 
 ## Compile every shader the level uses up front, behind the title screen, instead of hitching the first time
 ## each tree, plant or material comes into view: one copy of every mesh, tiny, right in front of the camera

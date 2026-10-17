@@ -1808,3 +1808,20 @@ func _hale_drive_pay() -> void:
 func _hale_back_pay() -> void:
 	await _hale_back()
 	await _hale_payday("garage")
+
+func _halelook() -> void:
+	await wait(1.0)
+	await shot("hl-title")
+	g._start()
+	var h: Dictionary = g.world.house
+	var L: Dictionary = g.world.lake
+	var front: float = h.z - h.d / 2
+	await _view("hl-front", Vector3(h.x + 6, 0, front - 14), Vector3(h.x, g.world.H(h.x, h.z) + 2.5, h.z))
+	await _view("hl-porch", Vector3(h.x + h.w * 0.18 - 2.5, 0, front - 6), Vector3(h.x + h.w * 0.18, g.world.H(h.x, h.z) + 0.8, front - 2.5))
+	var dx: float = g.world._dock_x()
+	var sz: float = g.world._shore_z(dx)
+	await _view("hl-lawn", Vector3(h.x, 0, h.z + 10), Vector3(dx, float(L.y) + 1.0, sz + 15))
+	await _view("hl-dock", Vector3(dx + 4, 0, sz - 7), Vector3(dx, float(L.y) + 0.5, sz + 6))
+	await _view("hl-back", Vector3(dx - 6, 0, sz - 3), Vector3(h.x, g.world.H(h.x, h.z) + 2.0, h.z))
+	var t: Vector3 = g.tree.global_position
+	await _view("hl-tree", t + Vector3(g.world.s * 14, 0, -6), t + Vector3(0, 6, 0))

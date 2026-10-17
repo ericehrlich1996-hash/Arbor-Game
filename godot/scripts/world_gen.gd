@@ -36,6 +36,7 @@ var garage := {}                # Mrs. Hale's detached garage (empty on other jo
 var garage_roof: Node3D
 var garage_roof_body: Node3D    # the roof's collision, dropped when it caves in
 var garage_crushed := false
+var lake := {}                  # Mrs. Hale's lake out back: {cx, cz, rx, rz, y} (empty on other jobs)
 
 func _pick(a: Array):
 	return a[rng.randi_range(0, a.size() - 1)]
@@ -101,6 +102,266 @@ func setup(sd: int, job_id := "earl") -> void:
 			_grid[j * (N + 1) + i] = _smooth_h(-S / 2 + i * st, -S / 2 + j * st)
 	drive_path = _spline(drive, 6)
 
+# ================================================================ Mrs. Hale's lake and yard
+const LAKE_SHADER := """
+shader_type spatial;
+render_mode blend_mix, depth_draw_always, cull_disabled, specular_schlick_ggx;
+uniform vec3 deep : source_color = vec3(0.06, 0.14, 0.17);
+uniform vec3 shallow : source_color = vec3(0.2, 0.3, 0.27);
+uniform vec3 sky : source_color = vec3(0.62, 0.72, 0.8);
+varying vec3 wp;
+float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float n(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+void vertex() { wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
+void fragment() {
+	float t = TIME;
+	vec2 p = wp.xz;
+	float a = n(p * 0.45 + vec2(t * 0.12, t * 0.05)) + 0.5 * n(p * 1.3 - vec2(t * 0.2, -t * 0.1)) + 0.25 * n(p * 3.1 + vec2(-t * 0.35, t * 0.28));
+	float b = n(p * 0.45 + vec2(5.2 - t * 0.07, 1.3 + t * 0.11)) + 0.5 * n(p * 1.4 + vec2(t * 0.18, 2.0)) + 0.25 * n(p * 2.9 - vec2(t * 0.3, t * 0.2));
+	NORMAL_MAP = normalize(vec3((a - 0.875) * 0.35, (b - 0.875) * 0.35, 1.0)) * 0.5 + 0.5;
+	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
+	vec3 water = mix(shallow, deep, clamp(COLOR.r, 0.0, 1.0));
+	ALBEDO = mix(water, sky, fres * 0.75);
+	ROUGHNESS = 0.06; SPECULAR = 0.6; METALLIC = 0.0;
+	ALPHA = mix(0.78, 0.95, clamp(COLOR.r + fres, 0.0, 1.0));
+}
+"""
+
+## the lake: a sheet of moving water over the carved basin, lily pads, cattails, and the sound of it lapping
+func _build_lake(root: Node3D) -> void:
+	var L := lake
+	var mb := MeshBuilder.new()
+	var nx := 48; var nz := 30
+	var x0: float = L.cx - L.rx - 8.0; var x1: float = L.cx + L.rx + 8.0
+	var z0: float = L.cz - L.rz - 8.0; var z1: float = L.cz + L.rz + 8.0
+	var ids := []
+	for j in range(nz + 1):
+		var row := []
+		for i in range(nx + 1):
+			var x := lerpf(x0, x1, float(i) / nx); var z := lerpf(z0, z1, float(j) / nz)
+			var depth := clampf(-lake_d(x, z) / 14.0, 0.0, 1.0)
+			row.append(mb.v(Vector3(x, L.y, z), Vector3.UP, Color(depth, 0, 0)))
+		ids.append(row)
+	for j in range(nz):
+		for i in range(nx):
+			mb.quad(ids[j][i], ids[j][i + 1], ids[j + 1][i + 1], ids[j + 1][i])
+	var mat := ShaderMaterial.new(); var sh := Shader.new(); sh.code = LAKE_SHADER; mat.shader = sh
+	var mi := mb.instance(mat); mi.name = "Lake"; mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(mi)
+	var r := RandomNumberGenerator.new(); r.seed = seed + 71
+	# lily pads in the shallows and cattails along the shore, each one MultiMesh
+	var pad := MeshBuilder.new()
+	var pc := Color("#4f7a34")
+	var ci := pad.v(Vector3(0, 0, 0), Vector3.UP, pc)
+	var ring := []
+	for k in range(13):
+		var a := 0.35 + (TAU - 0.7) * k / 12.0
+		ring.append(pad.v(Vector3(cos(a), 0, sin(a)) * 0.32, Vector3.UP, MeshBuilder.shade(pc, 1.08)))
+	for k in range(12): pad.tri(ci, ring[k + 1], ring[k])
+	var reed := MeshBuilder.new()
+	for k in range(7):
+		var a := TAU * k / 7.0; var rr := 0.08 + 0.05 * (k % 3)
+		var base := Vector3(cos(a) * rr, -0.3, sin(a) * rr)
+		var top := base + Vector3(cos(a) * 0.12, 1.5 + 0.25 * (k % 2), sin(a) * 0.12)
+		reed.tube(base, top, 0.012, 0.006, Color("#6a7a3a").lerp(Color("#8a8a4a"), (k % 3) / 2.0), 3)
+		if k % 2 == 0: reed.cyl(top.x, top.y - 0.38, top.z, 0.028, 0.028, 0.22, Color("#5a3a22"), 6, true)
+		# a couple of long flat leaves
+		var lt := base + Vector3(cos(a + 1.0) * 0.4, 1.2, sin(a + 1.0) * 0.4)
+		reed.tube(base, lt, 0.02, 0.004, Color("#7a8a44"), 3)
+	var pads := []; var reeds := []
+	for k in range(2600):
+		var x := r.randf_range(x0, x1); var z := r.randf_range(z0, z1)
+		var ld := lake_d(x, z)
+		if ld < -1.5 and ld > -9.0 and r.randf() < 0.18: pads.append(Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3.ONE * r.randf_range(0.7, 1.4)), Vector3(x, L.y + 0.015, z)))
+		elif ld > -1.8 and ld < 1.2 and r.randf() < 0.55:
+			if absf(x - _dock_x()) < 4.0 and z < float(L.cz): continue      # keep the dock's end clear
+			reeds.append(Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3.ONE * r.randf_range(0.8, 1.3)), Vector3(x, H(x, z), z)))
+	for set in [[pad, pads, "LilyPads"], [reed, reeds, "Cattails"]]:
+		var mm := MultiMesh.new(); mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = (set[0] as MeshBuilder).commit(); mm.instance_count = (set[1] as Array).size()
+		for k in range(mm.instance_count): mm.set_instance_transform(k, set[1][k])
+		var mmi := MultiMeshInstance3D.new(); mmi.multimesh = mm; mmi.material_override = Mats.vcol; mmi.name = set[2]
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.visibility_range_end = 120.0
+		root.add_child(mmi)
+	# water lapping at the shore, near where you'd stand on the lawn
+	for k in range(3):
+		var ap := AudioStreamPlayer3D.new(); ap.stream = Sfx.sounds.get("creek")
+		var x := _dock_x() + (k - 1) * 22.0
+		ap.position = Vector3(x, L.y + 0.3, _shore_z(x)); ap.unit_size = 5.0; ap.max_distance = 40.0; ap.volume_db = -10.0; ap.pitch_scale = 0.7
+		ap.autoplay = ap.stream != null
+		root.add_child(ap)
+
+func _dock_x() -> float:
+	return float(lake.cx) * 0.2 + s * -2.0
+
+## where the shore is, straight up the lawn from the house at this x
+func _shore_z(x: float) -> float:
+	var z := 40.0
+	while z < 200.0 and lake_d(x, z) > 0.0: z += 0.25
+	return z
+
+static func _adirondack(mb: MeshBuilder, at: Vector3, yaw: float, col: Color) -> void:
+	mb.push(Transform3D(Basis(Vector3.UP, yaw), at))
+	var dk := MeshBuilder.shade(col, 0.8)
+	for k in range(5):                                           # the slatted seat, sloping back
+		mb.push(Transform3D(Basis(Vector3.RIGHT, -0.12), Vector3(0, 0.38 - k * 0.012, -0.22 + k * 0.1)))
+		mb.box(0, 0, 0, 0.6, 0.03, 0.085, col); mb.pop()
+	mb.push(Transform3D(Basis(Vector3.RIGHT, -0.45), Vector3(0, 0.62, 0.32)))
+	for k in range(5): mb.box(-0.24 + k * 0.12, 0, 0, 0.1, 0.8, 0.03, col)
+	mb.box(0, 0.3, -0.03, 0.62, 0.06, 0.03, dk)
+	mb.pop()
+	for sx: float in [-1.0, 1.0]:
+		mb.box(sx * 0.36, 0.58, -0.05, 0.14, 0.03, 0.75, col)           # wide arms
+		mb.box(sx * 0.36, 0.29, -0.35, 0.05, 0.58, 0.05, dk); mb.box(sx * 0.33, 0.2, 0.25, 0.05, 0.4, 0.05, dk)
+		mb.push(Transform3D(Basis(Vector3.RIGHT, -0.3), Vector3(sx * 0.31, 0.22, 0.0)))
+		mb.box(0, 0, 0, 0.04, 0.08, 0.8, dk); mb.pop()
+	mb.pop()
+
+## the lake house dressing: a dock with a rowboat, a fire pit with chairs, a picket fence, mums and
+## pumpkins, a stone path, Gerald the gnome, and her autumn leaves raked into piles
+func _build_hale_yard(root: Node3D) -> void:
+	var mb := MeshBuilder.new()
+	var r := RandomNumberGenerator.new(); r.seed = seed + 83
+	var L := lake
+	var white := Color("#f2f0ea"); var cedar := Color("#8a6a4a"); var stone := Color("#8a8680")
+	# --- the dock: weathered boards on posts, out into the lake, a ladder and a bench at the end
+	var dx := _dock_x()
+	var zs := _shore_z(dx) - 3.0; var ze := zs + 13.0
+	var deck: float = float(L.y) + 0.55
+	var z := zs
+	while z < ze:
+		var gy := maxf(H(dx, z) + 0.12, deck)
+		mb.box(dx, minf(gy, deck + 0.05), z + 0.1, 1.8, 0.06, 0.19, Color("#9a8a72").lerp(Color("#7a6a56"), r.randf()))
+		z += 0.21
+	for pz in range(0, 7):
+		var zz := zs + 1.0 + pz * 2.0
+		for sx: float in [-0.85, 0.85]:
+			var bot := H(dx + sx, zz) - 0.3
+			mb.cyl(dx + sx, bot, zz, 0.1, 0.1, deck - bot, Color("#6a5a46"), 8, true)
+	for sx: float in [-0.92, 0.92]: mb.box(dx + sx, deck - 0.08, (zs + ze) / 2, 0.08, 0.14, ze - zs, Color("#6a5a46"))
+	for k in range(4):                                             # a swim ladder
+		mb.box(dx + 0.5, deck - 0.2 - k * 0.3, ze + 0.06, 0.4, 0.03, 0.06, Color("#a8acb0"))
+	for sx: float in [0.3, 0.7]: mb.box(dx + sx, deck - 0.55, ze + 0.06, 0.03, 1.2, 0.03, Color("#a8acb0"))
+	_adirondack(mb, Vector3(dx - 0.45, deck + 0.03, ze - 1.2), PI + 0.25, Color("#c24a2a"))
+	_adirondack(mb, Vector3(dx + 0.45, deck + 0.03, ze - 1.4), PI - 0.2, Color("#3a7a8a"))
+	# a rowboat tied alongside, a rope to the post
+	var bx := dx - 1.9; var bz := ze - 3.5; var by: float = float(L.y) + 0.02
+	mb.push(Transform3D(Basis(Vector3.UP, 0.08), Vector3(bx, by, bz)))
+	var secs := []
+	for k in range(9):
+		var t := -1.0 + 2.0 * k / 8.0
+		var half := 0.62 * (1.0 - pow(absf(t), 2.4)) + 0.03
+		var keel := -0.32 * (1.0 - t * t * 0.5)
+		var rim := 0.22 + 0.12 * t * t
+		secs.append([t * 1.9, half, keel, rim])
+	var hull := Color("#2f5a3a"); var inside := Color("#8a7458")
+	for k in range(8):
+		var a: Array = secs[k]; var b: Array = secs[k + 1]
+		for sx: float in [-1.0, 1.0]:
+			var p0 := Vector3(sx * a[1], a[3], a[0]); var p1 := Vector3(sx * b[1], b[3], b[0])
+			var q0 := Vector3(0, a[2], a[0]); var q1 := Vector3(0, b[2], b[0])
+			WorldGen._face_out(mb, [p0, p1, q1, q0], Vector3(sx, -0.4, 0), hull)
+			WorldGen._face_out(mb, [p0 + Vector3(-sx * 0.04, 0, 0), p1 + Vector3(-sx * 0.04, 0, 0), q1 + Vector3(0, 0.06, 0), q0 + Vector3(0, 0.06, 0)], Vector3(-sx, 0.6, 0), inside)
+			mb.tube(p0, p1, 0.03, 0.03, white, 4)
+	for t: float in [-0.7, 0.0, 0.6]: mb.box(0, 0.12, t * 1.9 * 0.9, 1.0 - absf(t) * 0.4, 0.04, 0.24, inside)
+	mb.tube(Vector3(0.3, 0.15, 0.2), Vector3(1.3, 0.25, -1.2), 0.025, 0.02, Color("#9a8a6a"), 4)        # oars
+	mb.tube(Vector3(-0.3, 0.15, 0.2), Vector3(-0.2, 0.2, -1.4), 0.025, 0.02, Color("#9a8a6a"), 4)
+	mb.pop()
+	mb.tube(Vector3(bx, by + 0.3, bz + 1.8), Vector3(dx - 0.85, deck, bz + 2.6), 0.012, 0.012, Color("#d8c8a0"), 3)
+	# --- the fire pit on the lawn, with stacked rounds and chairs round it
+	var fp := Vector3(house.x + s * 2.0, 0, house.z + 16.0); fp.y = H(fp.x, fp.z)
+	for k in range(14):
+		var a := TAU * k / 14.0
+		mb.bevel_box(fp.x + cos(a) * 0.75, fp.y + 0.12, fp.z + sin(a) * 0.75, 0.32, 0.26, 0.24, stone.lerp(Color("#6a6660"), r.randf()), 0.05)
+	mb.cyl(fp.x, fp.y - 0.02, fp.z, 0.62, 0.62, 0.06, Color("#3a342e"), 16, true)
+	for k in range(3):
+		var a := k * 2.1
+		mb.tube(fp + Vector3(cos(a) * 0.4, 0.1, sin(a) * 0.4), fp + Vector3(-cos(a) * 0.35, 0.18, -sin(a) * 0.35), 0.06, 0.05, Color("#2a2420"), 6, true)
+	for k in range(3):
+		var a := 0.6 + k * 1.3
+		var cp := fp + Vector3(cos(a) * 2.1, 0, sin(a) * 2.1); cp.y = H(cp.x, cp.z)
+		_adirondack(mb, cp, atan2(-cos(a), -sin(a)) + PI, [Color("#e8e2c8"), Color("#c24a2a"), Color("#4a6a3a")][k])
+	# --- a white picket fence along the road, open at the drive
+	var fz: float = road_z + 6.5
+	var gap_x: float = drive_path[0].x
+	for i in range(drive_path.size()):
+		if absf(drive_path[i].y - fz) < 2.0: gap_x = drive_path[i].x
+	var x := -46.0
+	while x < 46.0:
+		if absf(x - gap_x) > 2.4:
+			var gy := H(x, fz)
+			mb.box(x, gy + 0.45, fz, 0.07, 0.9, 0.025, white)
+			mb.push(Transform3D(Basis(Vector3.FORWARD, PI / 4), Vector3(x, gy + 0.92, fz)))
+			mb.box(0, 0, 0, 0.05, 0.05, 0.025, white); mb.pop()
+			if fmod(x + 46.0, 2.4) < 0.15:
+				mb.box(x, gy + 0.5, fz + 0.02, 0.1, 1.05, 0.1, white)
+				if x + 2.4 < 46.0 and absf(x + 1.2 - gap_x) > 3.6:
+					var gy2 := H(x + 2.4, fz)
+					for ry: float in [0.25, 0.7]: mb.box(x + 1.2, (gy + gy2) / 2 + ry, fz + 0.04, 2.4, 0.06, 0.03, white)
+		x += 0.16
+	# --- the house front: mums along the beds, pumpkins on the porch steps, hanging baskets
+	var W: float = house.w; var D: float = house.d
+	var hy := H(house.x, house.z)
+	var front: float = house.z - D / 2 - 0.02
+	var pdx: float = house.x + W * 0.18
+	var mum_cols := [Color("#d86a1a"), Color("#e8b02a"), Color("#8a2a3a"), Color("#c84a2a")]
+	for k in range(9):
+		var mx: float = house.x - W / 2 + 0.6 + k * (W - 1.2) / 8.0
+		if absf(mx - pdx) < 2.1: continue
+		mb.blob(mx, hy + 0.32, front - 1.05, 0.26, mum_cols[k % 4], r, 0.6)
+	for k in range(3):
+		var px: float = pdx + (0.9 if k % 2 == 0 else -0.9)
+		var pz: float = front - 2.7 - k * 0.32
+		var py := hy + 0.42 - k * 0.14
+		var sz := r.randf_range(0.17, 0.26)
+		mb.sphere(px, py + sz * 0.7, pz, sz, sz * 0.75, sz, Color("#e07018"), 12, 7)
+		for g in range(6):
+			var a := TAU * g / 6.0
+			mb.box(px + cos(a) * sz * 0.98, py + sz * 0.7, pz + sin(a) * sz * 0.98, 0.012, sz * 1.3, 0.012, Color("#b85410"))
+		mb.cyl(px, py + sz * 1.4, pz, 0.025, 0.02, 0.08, Color("#5a6a2a"), 6, true)
+	for sx: float in [-1.45, 1.45]:
+		var hb := Vector3(pdx + sx, hy + 2.35, front - 2.3)
+		mb.tube(hb + Vector3(0, 0.35, 0), hb, 0.006, 0.006, Color("#3a3a36"), 3)
+		mb.cyl(hb.x, hb.y - 0.12, hb.z, 0.16, 0.12, 0.14, Color("#6a4a30"), 10, true)
+		mb.blob(hb.x, hb.y + 0.02, hb.z, 0.22, Color("#c84a5a"), r, 0.8)
+	# --- a stepping-stone path from the drive to the porch
+	var start := Vector3(park.x - s * 1.5, 0, park.z + 2.0)
+	var to := Vector3(pdx, 0, front - 3.6)
+	for k in range(12):
+		var t := (k + 0.5) / 12.0
+		var p := start.lerp(to, t) + Vector3(sin(t * 6.0) * 0.4, 0, 0)
+		mb.cyl(p.x, H(p.x, p.z) - 0.04, p.z, r.randf_range(0.28, 0.36), 0.3, 0.07, stone.lerp(Color("#9a968e"), r.randf()), 9, true)
+	# --- Gerald the gnome, keeping watch over the flower bed
+	var gx: float = house.x - W / 2 + 1.0; var gz: float = front - 1.6
+	var gyy := H(gx, gz)
+	mb.push(Transform3D(Basis(Vector3.UP, PI + 0.4), Vector3(gx, gyy, gz)))
+	mb.cyl(0, 0, 0, 0.1, 0.09, 0.03, Color("#3a2a20"), 10, true)                # boots
+	mb.cyl(0, 0.03, 0, 0.1, 0.085, 0.16, Color("#3a5a9a"), 10, false)          # blue coat
+	mb.box(0, 0.12, 0, 0.21, 0.025, 0.21, Color("#2a2420"))                    # belt
+	mb.sphere(0, 0.25, 0, 0.065, 0.06, 0.065, Color("#e8b898"), 10, 6)         # face
+	mb.sphere(0, 0.25, -0.06, 0.02, 0.02, 0.02, Color("#d88878"), 6, 4)        # nose
+	mb.cyl(0, 0.13, -0.04, 0.07, 0.01, 0.13, Color("#f2f0ea"), 10, false)      # beard
+	mb.cyl(0, 0.29, 0, 0.075, 0.0, 0.22, Color("#c8281e"), 12, true)          # the red hat
+	mb.pop()
+	# --- her leaves, raked into piles with the rake leaning on one
+	for k in range(4):
+		var lx: float = house.x + s * (4.0 + k * 3.5) + r.randf_range(-1, 1)
+		var lz: float = house.z + 9.0 + r.randf_range(-2, 3)
+		mb.push(Transform3D(Basis.from_scale(Vector3(1.0, 0.45, 1.0)), Vector3(lx, H(lx, lz) + 0.02, lz)))
+		mb.blob(0, 0, 0, r.randf_range(0.6, 0.9), [Color("#c8541e"), Color("#d8902a"), Color("#a83a1e")][k % 3], r, 1.4)
+		mb.pop()
+		if k == 1:
+			mb.tube(Vector3(lx + 0.5, H(lx, lz), lz), Vector3(lx + 0.1, H(lx, lz) + 1.5, lz + 0.6), 0.02, 0.02, Color("#a8844e"), 5)
+			mb.box(lx + 0.55, H(lx, lz) + 0.05, lz - 0.05, 0.5, 0.05, 0.04, Color("#3a8a3a"))
+	var mi := mb.instance(); mi.name = "HaleYard"
+	root.add_child(mi)
+	# solid where you'd walk into it
+	_static_box(root, Vector3(dx, deck - 0.3, (zs + ze) / 2), Vector3(1.9, 0.6, ze - zs))
+	_static_box(root, Vector3(fp.x, fp.y + 0.15, fp.z), Vector3(1.7, 0.3, 1.7))
+	_static_box(root, Vector3(bx, by, bz), Vector3(1.4, 0.5, 3.8), 0.08)
+
 ## Mrs. Hale's place: a tidy pale-yellow house, a detached garage at the end of the drive, and Walter's
 ## dead sugar maple on the lawn beside it, leaning hard at the garage. The lawn's wide open the other way.
 func _hale_layout() -> void:
@@ -111,6 +372,8 @@ func _hale_layout() -> void:
 	var to := Vector2(garage.x - tx, garage.z - tz)
 	tree = {x = tx, z = tz, h = _range(17.5, 18.5), dbh = 0.56, lean = _range(0.115, 0.13),
 		lean_dir = atan2(to.y, to.x) + _range(-0.12, 0.12), seed = rng.randi_range(1, 1000000), sits_back = true, species = "maple"}
+	# Cedar Ln backs onto a little lake: the lawn runs down to the water, woods wrap round the far shore
+	lake = {cx = s * -6.0, cz = 108.0, rx = 78.0, rz = 42.0, y = _base - 0.85}
 
 var _edge := FastNoiseLite.new()
 ## 0 on the mown lawn, 1 deep in the woods; the edge of the woods wanders
@@ -121,7 +384,13 @@ func forestness(x: float, z: float) -> float:
 	var d := Vector2(dx, dz).length()
 	if d == 0.0: d = -minf(minf(x + 46.0, 46.0 - x), minf(z + 48.0, 52.0 - z))     # inside the lawn: how far in
 	d += _edge.get_noise_2d(x, z) * 9.0
-	return clampf((d + 2.0) / 10.0, 0.0, 1.0)
+	var f := clampf((d + 2.0) / 10.0, 0.0, 1.0)
+	if not lake.is_empty():
+		var ld := lake_d(x, z)
+		if ld < 9.0: f *= smoothstep(1.0, 9.0, ld)     # an open shore all the way round
+		# the backyard lawn runs all the way down to the water
+		if absf(x - float(lake.cx) * 0.3) < 40.0 and z > 40.0 and ld > 0.0: f = minf(f, clampf((absf(x) - 30.0) / 12.0, 0.0, 1.0))
+	return f
 
 func _box_dist(x: float, z: float, b: Dictionary) -> float:
 	return Vector2(maxf(absf(x - b.x) - b.w / 2, 0), maxf(absf(z - b.z) - b.d / 2, 0)).length()
@@ -134,10 +403,26 @@ func creek_z(x: float) -> float:
 	return 72.0 + 8.0 * sin(x / 31.0 + float(seed % 7)) + 4.0 * sin(x / 13.0 + 2.0)
 
 func creek_d(x: float, z: float) -> float:
+	if not lake.is_empty(): return 1e6          # no creek at the lake house
 	return absf(z - creek_z(x)) * 0.85
+
+## metres outside the lake's shore (negative out on the water)
+func lake_d(x: float, z: float) -> float:
+	if lake.is_empty(): return 1e6
+	var ex: float = (x - lake.cx) / lake.rx; var ez: float = (z - lake.cz) / lake.rz
+	var e := sqrt(ex * ex + ez * ez)
+	return (e - 1.0) * minf(lake.rx, lake.rz)
 
 func _smooth_h(x: float, z: float) -> float:
 	var h := _raw(x, z)
+	if not lake.is_empty():
+		var ld := lake_d(x, z)
+		var wy: float = lake.y
+		if ld < 14.0:
+			# the lawn slopes gently down to a strip of beach, then the bottom drops away
+			var shore := wy + 0.3 + maxf(ld, 0.0) * 0.06
+			h = lerpf(h, shore, smoothstep(14.0, 2.0, ld))
+			if ld < 0.0: h = maxf(wy + 0.25 + ld * 0.14, wy - 3.0)
 	var cd := creek_d(x, z)
 	if cd < 8.0: h -= 1.35 * (1.0 - smoothstep(1.4, 8.0, cd))
 	for f in flat:
@@ -190,9 +475,11 @@ static func _spline(pts: Array, n: int) -> Array:
 func build(root: Node3D) -> void:
 	_build_terrain(root)
 	_build_roads(root)
-	_build_creek(root)
+	if lake.is_empty(): _build_creek(root)
+	else: _build_lake(root)
 	_build_house(root)
 	if not garage.is_empty(): _build_garage(root)
+	if job == "hale": _build_hale_yard(root)
 	var forest := Forest.new(); forest.build(self, root)
 	_build_grass(root)
 
@@ -296,6 +583,10 @@ func _build_terrain(root: Node3D) -> void:
 			var floor_c := floor_dirt.lerp(floor_moss, smoothstep(0.35, 0.75, _noise(_nB, x / 9, z / 9)))
 			floor_c = floor_c.lerp(floor_leaf, smoothstep(0.55, 0.85, _noise(_nA, x / 5, z / 5)) * 0.7)
 			c = c.lerp(meadow, clampf(fo * 3.0, 0, 1) * 0.5).lerp(floor_c, smoothstep(0.2, 0.7, fo))
+			var ldist := lake_d(x, z)
+			if ldist < 6.0:
+				c = c.lerp(Color.html("#9a8a64"), (1.0 - smoothstep(1.5, 6.0, ldist)) * 0.75)    # a sandy strip at the water
+				c = c.lerp(Color.html("#5e5440"), 1.0 - smoothstep(-2.0, 1.0, ldist))            # wet sand and silt under the water
 			var cdist := creek_d(x, z)
 			if cdist < 9.0:
 				c = c.lerp(Color.html("#4f6a2c"), (1.0 - smoothstep(3.5, 9.0, cdist)) * 0.7)      # moss on the banks
@@ -774,6 +1065,7 @@ func _build_grass(root: Node3D) -> void:
 	var ok := func(x: float, z: float) -> bool:
 		if _box_dist(x, z, house) < 1.2 or _box_dist(x, z, shed) < 0.4: return false
 		if absf(z - road_z) < 4.6: return false
+		if lake_d(x, z) < 3.0: return false
 		if Vector2(x, z).distance_to(Vector2(tree.x, tree.z)) < 0.9: return false
 		for i in range(0, drive_path.size(), 2):
 			if Vector2(x, z).distance_to(drive_path[i]) < 2.3: return false
