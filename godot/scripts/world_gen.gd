@@ -36,6 +36,7 @@ var garage := {}                # Mrs. Hale's detached garage (empty on other jo
 var garage_roof: Node3D
 var garage_roof_body: Node3D    # the roof's collision, dropped when it caves in
 var garage_crushed := false
+var trailer := {}               # Walter's utility trailer (Mrs. Hale's job): {x, z, yaw}
 var lake := {}                  # Mrs. Hale's lake out back: {cx, cz, rx, rz, y} (empty on other jobs)
 
 func _pick(a: Array):
@@ -368,6 +369,10 @@ func _hale_layout() -> void:
 	house.siding = Color.html("#f0e2b0"); house.roof = Color.html("#3a3d4a"); house.door = Color.html("#3a4a6a")
 	garage = {x = s * 5.2, z = 13.0, w = 6.4, d = 7.0, wall = 2.6}
 	flat.append({x = garage.x, z = garage.z, r = 7.5})
+	# Walter's old trailer, parked on the lawn by the drive with its tongue toward the road; the rounds go in it
+	trailer = {x = s * -1.6, z = -2.5, yaw = PI}
+	pile = {x = trailer.x, z = trailer.z + 1.7, w = 2.2, d = 4.6}
+	flat.append({x = trailer.x, z = trailer.z + 1.0, r = 4.0})
 	var tx := s * 15.6; var tz := 15.5
 	var to := Vector2(garage.x - tx, garage.z - tz)
 	tree = {x = tx, z = tz, h = _range(17.5, 18.5), dbh = 0.56, lean = _range(0.115, 0.13),
@@ -1003,7 +1008,7 @@ func _build_house(root: Node3D) -> void:
 	_static_box(root, Vector3(sh.x, sy + 1.2, sh.z), Vector3(sh.w, 2.6, sh.d))
 	# woodpile spot: four stakes with orange flagging
 	var py := H(pile.x, pile.z)
-	for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+	for c in ([] if not trailer.is_empty() else  [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]):
 		var px2: float = pile.x + c.x * pile.w / 2; var pz2: float = pile.z + c.y * pile.d / 2
 		var gy := H(px2, pz2)
 		mb.box(px2, gy + 0.45, pz2, 0.05, 1.0, 0.05, Color.html("#c9a878")); mb.box(px2, gy + 0.82, pz2, 0.07, 0.14, 0.02, Color.html("#ff6a1a"))

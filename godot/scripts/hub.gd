@@ -56,6 +56,14 @@ func build(g) -> void:
 	truck.global_transform = Transform3D(Basis(Vector3.RIGHT, -atan2(hf - hb, 3.2)) * Basis(Vector3.UP, 0.25), Vector3(tp.x, (hf + hb) * 0.5 + 0.02, tp.z))
 	truck.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC; truck.freeze = true
 	spots.truck = [truck.global_transform * Vector3(1.2, 1.1, 0.3), 2.6]
+	# Walter's old trailer, once Mrs. Hale's given it to you: parked beside the truck, tarped over his maple
+	if bool(Career.load().get("trailer", false)):
+		var tr := Trailer.new(); tr.name = "Trailer"; add_child(tr)
+		tr.build()
+		var tx := Vector3(10.6, 0, -8.6); tx.y = world.H(tx.x, tx.z + 1.0)
+		tr.global_transform = Transform3D(Basis(Vector3.UP, 0.25), tx)
+		tr.set_tarped()
+		spots.trailer = [tr.bed_xf() * Vector3(0, 1.2, -1.7), 2.6]
 	# you, out by the truck, looking at home
 	player = Player.new(); player.name = "Player"; add_child(player)
 	var sp := Vector3(3.2, 0, -9.0)
@@ -613,6 +621,7 @@ func step(dt: float) -> void:
 		"truck": txt = "" if Mats.truck_rust <= 0.0 else "Your truck. She's seen better days."
 		"bed": txt = "[b]E[/b] Have a nap"
 		"fire": txt = "Nice and warm."
+		"trailer": txt = "Walter's old trailer, still loaded with his maple. Firewood for the winter."
 	game.hud.set_prompt(txt)
 	# bare hands
 	var s: Saw = game.saw

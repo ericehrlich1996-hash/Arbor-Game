@@ -9,6 +9,7 @@ var earl: Earl                  # the client (Earl, or Mrs. Hale)
 var tree: AshTree
 var job: Dictionary = Jobs.EARL
 var rig: Rigging                # felling wedges and the pull rope
+var trailer: Trailer            # Mrs. Hale's job: Walter's trailer, where the rounds go (null elsewhere)
 var damage := {}                # "house" / "garage" -> true once a tree's come down on it
 var saw: Saw
 var haul: Haul
@@ -32,6 +33,7 @@ var tests = null
 var force_rev := false         # scripted tests hold the throttle without a captured mouse
 var on_bed := false
 var called_pay := false
+var called_tarp := false
 var counts := {}
 var rack_saw: MeshInstance3D
 # intro
@@ -354,13 +356,20 @@ func new_level(sd: int) -> void:
 	rig = Rigging.new(); rig.name = "Rigging"; level_root.add_child(rig)
 	rig.setup(self)
 	damage = {}
+	trailer = null
+	if not world.trailer.is_empty():
+		trailer = Trailer.new(); trailer.name = "Trailer"; level_root.add_child(trailer)
+		trailer.build()
+		var tw: Dictionary = world.trailer
+		var gy := world.H(tw.x, tw.z + 1.0)
+		trailer.global_transform = Transform3D(Basis(Vector3.UP, tw.yaw), Vector3(tw.x, gy, tw.z))
 	hud.obj_title.text = "Job %d · %s" % [job.n, job.title]
 	hud.set_owned(Rigging.owned("wedges"), Rigging.owned("rope"))
 	title_cam = Camera3D.new(); title_cam.fov = 60; level_root.add_child(title_cam); title_cam.make_current()
 	timelapse = Timelapse.new(); timelapse.name = "Timelapse"; level_root.add_child(timelapse)
 	timelapse.setup(self)
-	objs = {talk = false, felled = false, limbed = false, stacked = false, paid = false}
-	called_pay = false
+	objs = {talk = false, felled = false, limbed = false, stacked = false, tarped = trailer == null, paid = false}
+	called_pay = false; called_tarp = false
 	update_objectives()
 
 # ---------------------------------------------------------------- the drive in
@@ -637,6 +646,7 @@ func compute_aim() -> Dictionary:
 		["chipper", chipper.engine_world(), 2.4, 0.82],
 	]
 	if player.tool == "saw" or saw.racked: cand.append(["rack", chipper.rack_world(), 2.0, 0.85])
+	if trailer and objs.stacked and not objs.tarped: cand.append(["trailer", trailer.bed_xf() * Vector3(0, 1.1, -1.7), 3.2, 0.6])
 	for c in cand:
 		var d := _near(c[1], c[2], c[3])
 		if d >= 0 and (best.is_empty() or (best.kind != "piece" and d > best.t) or (best.kind == "piece" and d > 0.97)):
@@ -760,6 +770,7 @@ func interact() -> void:
 		"hitch": hitch_action()
 		"chipper": toggle_chipper()
 		"rack": rack_action()
+		"trailer": tarp_trailer()
 		"piece":
 			var b: WoodPiece = aim.piece
 			if player.tool == "saw":
@@ -885,9 +896,24 @@ func talk_to_earl() -> void:
 			lines.append({who = E, text = "You didn't bring wedges? Or a rope? Oh dear. Well, you know your business. I hope."})
 		start_dialog(lines, func(): objs.talk = true; earl.state = "idle"; update_objectives())
 		return
-	if objs.felled and objs.limbed and objs.stacked and not objs.paid:
+	if objs.felled and objs.limbed and objs.stacked and not objs.tarped:
+		start_dialog([{who = job.who, text = "Tarp it first, dear. Walter lost a whole load of firewood on the Route 9 hill in 1983. I still hear about it. From myself."}]); return
+	if objs.felled and objs.limbed and objs.stacked and objs.tarped and not objs.paid:
 		payday(); return
 	start_dialog([{who = E, text = earl.idle_lines[randi() % earl.idle_lines.size()]}])
+
+## pull the tarp over the load and bungee it down; the rounds under it stay put from then on
+func tarp_trailer() -> void:
+	if trailer == null or trailer.tarped: return
+	Sfx.play("pick"); Sfx.play("crunch", 0.4, 1.6)
+	for b in pieces():
+		if b.mode == "dyn" and trailer.in_bed(b.center_world()):
+			b.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC; b.freeze = true
+	trailer.tarp_it(func():
+		for k in range(4): get_tree().create_timer(0.15 * k).timeout.connect(func(): Sfx.play("clank", 0.35, 1.5 + randf() * 0.4))
+		objs.tarped = true
+		hud.toast("Tarped and strapped down.", 2.0)
+		update_objectives())
 
 ## the heavy leaner sat back on its hinge: the client has an opinion
 func customer_sits_back() -> void:
@@ -896,7 +922,7 @@ func customer_sits_back() -> void:
 func payday() -> void:
 	var g := tree.grade
 	var total: int = job.pay
-	var rows := [["Job: drop, limb, chip and pile", job.pay]]
+	var rows := [["Job: drop, limb, chip and %s" % ("load" if trailer else "pile"), job.pay]]
 	var clean: bool = g.get("open", false) and not g.get("barber", false) and g.notch_pct >= 0.18 and g.notch_pct <= 0.45 and g.notch_angle >= 40 and g.hinge_pct >= 0.05 and g.hinge_pct <= 0.18 and g.dir_err < 15
 	if clean: rows.append(["Textbook felling (notch, hinge, aim)", 50]); total += 50
 	if g.get("barber", false): rows.append(["Barber chair (%s is shaken)" % job.who, -100]); total -= 100
@@ -916,7 +942,9 @@ func payday() -> void:
 	start_dialog(plines,
 		func():
 			objs.paid = true; update_objectives(); Sfx.play("cash")
-			var c := Career.load(); c.money += total; c.jobs += 1; Career.save(c); money = c.money
+			var c := Career.load(); c.money += total; c.jobs += 1
+			if trailer: c.trailer = true; c.firewood = true
+			Career.save(c); money = c.money
 			var notes := []
 			if g.has("notch_pct"):
 				if g.open:
@@ -974,6 +1002,7 @@ func pieces() -> Array:
 	return level_root.get_children().filter(func(c): return c is WoodPiece and is_instance_valid(c) and c.mode != "gone" and not c.is_queued_for_deletion())
 
 func in_pile(b: WoodPiece) -> bool:
+	if trailer: return trailer.in_bed(b.center_world())
 	var p := world.pile
 	var c := b.center_world()
 	return absf(c.x - p.x) < p.w / 2 + 0.6 and absf(c.z - p.z) < p.d / 2 + 0.6
@@ -1007,7 +1036,7 @@ func update_objectives() -> void:
 		var attached := pieces().any(func(b): return b.kind == "trunk" and not b.limbs.is_empty() and b.mass > Wood.LIFT_MAX)
 		objs.limbed = not attached and (brush == 0 or brush_kg <= total * 0.05)
 		objs.stacked = objs.limbed and rounds > 0 and done_frac >= 0.95
-	var buck_txt := "Buck the stem into liftable rounds and pile them behind the shed"
+	var buck_txt := "Buck the stem into liftable rounds and load them in %s's trailer" % job.who if trailer else "Buck the stem into liftable rounds and pile them behind the shed"
 	if objs.felled and rounds > 0:
 		buck_txt += " · %d/%d · %d%%" % [piled, rounds, int(floor(done_frac * 100.0))]
 		if heavy > 0: buck_txt += " · %d too heavy" % heavy
@@ -1015,9 +1044,15 @@ func update_objectives() -> void:
 		[objs.talk, "Talk to %s" % job.who],
 		[objs.felled, ("Drop the %s, away from the garage" % job.tree_word) if job.id == "hale" else ("Drop the %s" % job.tree_word)],
 		[objs.limbed, "Limb it and chip the brush" + (" · %d left" % brush if objs.felled and not objs.limbed else "")],
-		[objs.stacked, buck_txt],
-		[objs.paid, "Get paid"]])
-	if objs.limbed and objs.stacked and not objs.paid and not called_pay:
+		[objs.stacked, buck_txt]]
+		+ ([[objs.tarped, "Tarp the trailer so nothing falls out"]] if trailer else [])
+		+ [[objs.paid, "Get paid"]])
+	if trailer and objs.stacked and not objs.tarped and not called_tarp:
+		called_tarp = true
+		Sfx.play("ding")
+		earl.bark("That's a full load, dear. Throw the tarp over it before something rolls out on the road.", 5.0)
+		hud.toast("Loaded. Walk up to the trailer and press E to tarp it.", 4.0)
+	if objs.limbed and objs.stacked and objs.tarped and not objs.paid and not called_pay:
 		called_pay = true
 		Sfx.play("ding")
 		earl.bark(job.done, 6.0)
@@ -1075,7 +1110,7 @@ func _update_hud() -> void:
 		elif brush and haul.near_hopper() and chipper.running:
 			t = "[b]Left click[/b] Feed the chipper" + (" (%d)" % n if n > 1 else "")
 		else:
-			t = "[b]Right click[/b] %s · [b]E[/b] drop all" % ("Throw one in the truck" if haul.throw_target() != null else "Set one down")
+			t = "[b]Right click[/b] %s · [b]E[/b] drop all" % (("Throw one in the trailer" if trailer and haul.bed().xf == trailer.bed_xf() else "Throw one in the truck") if haul.throw_target() != null else "Set one down")
 	elif (player.tool == "wedge" or player.tool == "rope") and rig.prompt() != "":
 		t = rig.prompt()
 	elif not a.is_empty():
@@ -1085,6 +1120,7 @@ func _update_hud() -> void:
 			"tailgate": t = "[b]E[/b] Hop down" if on_bed else "[b]E[/b] Hop in the back"
 			"hitch": t = "[b]E[/b] Unhitch the chipper" if chipper.mode == "truck" else "[b]E[/b] Grab the tongue"
 			"chipper": t = "[b]E[/b] %s the chipper" % ("Stop" if chipper.running else "Start")
+			"trailer": t = "[b]E[/b] Tarp the trailer"
 			"rack": t = "[b]E[/b] Take the saw" if saw.racked else "[b]E[/b] Hang the saw on the rack"
 			"piece":
 				var b: WoodPiece = a.piece

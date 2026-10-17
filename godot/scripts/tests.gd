@@ -1825,3 +1825,45 @@ func _halelook() -> void:
 	await _view("hl-back", Vector3(dx - 6, 0, sz - 3), Vector3(h.x, g.world.H(h.x, h.z) + 2.0, h.z))
 	var t: Vector3 = g.tree.global_position
 	await _view("hl-tree", t + Vector3(g.world.s * 14, 0, -6), t + Vector3(0, 6, 0))
+
+## Mrs. Hale's trailer: throw rounds in, everything counts as loaded, tarp it, get paid
+func _haletrailer() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	var tr: Trailer = g.trailer
+	note("trailer", tr != null)
+	var bxf := tr.bed_xf()
+	var side := bxf * Vector3(2.6, 0, -1.7)
+	g.player.teleport(Vector3(side.x, g.world.H(side.x, side.z) + 0.05, side.z))
+	look_at_point(bxf * Vector3(0, 1.0, -1.7))
+	await wait(0.5)
+	await shot("ht-empty")
+	var rs := _make_rounds(6)
+	await wait(1.5)
+	var inn := 0
+	for r: WoodPiece in rs:
+		g.player.teleport(Vector3(side.x, g.world.H(side.x, side.z) + 0.05, side.z))
+		look_at_point(bxf * Vector3(0, 1.0, -1.7))
+		await wait(0.2)
+		g.haul.pick_up(r)
+		await wait(0.4)
+		g.haul.throw_one()
+		await wait(1.6)
+		if tr.in_bed(r.center_world()): inn += 1
+	note("in_trailer", [inn, rs.size()])
+	g.objs.felled = true
+	g.update_objectives()
+	note("stacked", [g.objs.stacked, g.objs.tarped, g.done_frac])
+	await shot("ht-loaded")
+	g.aim = g.compute_aim()
+	note("aim", g.aim.get("kind", ""))
+	g.tarp_trailer()
+	await wait(2.2)
+	note("tarped", g.objs.tarped)
+	await shot("ht-tarped")
+	var vp := bxf * Vector3(3.5, 0, -5.0)
+	g.player.teleport(Vector3(vp.x, g.world.H(vp.x, vp.z) + 0.05, vp.z))
+	look_at_point(bxf * Vector3(0, 1.0, -1.7))
+	await wait(0.6)
+	await shot("ht-tarped2")

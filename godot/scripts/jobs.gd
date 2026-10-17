@@ -34,7 +34,7 @@ const EARL := {
 
 const HALE := {
 	id = "hale", n = 2, title = "Widow Hale's leaning maple", pay = 650, unlock = 1, look = "hale", who = "Mrs. Hale",
-	text = "Mrs. Hale on Cedar Ln (Earl's buddy, sort of). Dead sugar maple leaning hard at her garage. It has to go the other way. Bring wedges. A pull rope wouldn't hurt.",
+	text = "Mrs. Hale on Cedar Ln (Earl's buddy, sort of). Dead sugar maple leaning hard at her garage. It has to go the other way. Load the rounds in Walter's old utility trailer and tarp it. She says you can keep the trailer, and the firewood. Bring wedges. A pull rope wouldn't hurt.",
 	tree_word = "dead maple", bark_tint = Color(0.93, 0.82, 0.72),
 	talk = [
 		"Oh good, you came. Earl said you were 'not the worst.' From Earl that's practically a medal.",
@@ -42,7 +42,9 @@ const HALE := {
 		"And see how it leans? Right at the garage. Walter's Buick is in there. I don't drive it. I just like that it's there.",
 		"So it can't go that way. It goes out across the lawn, away from the garage. Can you do that?",
 		"Earl said a tree that leans like that sits back on you. You'll want wedges in the back cut, or a rope on it. Maybe both. I wrote it down.",
-		"Six hundred fifty dollars. Cut the trunk into rounds I can roll and stack them by the shed for the fire pit. And chip the branches, please. I hate a mess."],
+		"Six hundred fifty dollars. Chip the branches, please. I hate a mess.",
+		"And see Walter's old trailer by the drive? Cut the trunk into rounds and load them in there. Then throw the tarp over it so nothing bounces out on the road.",
+		"You keep it. The trailer, the wood, all of it. Earl says you've got a fireplace. Walter would like that his tree's keeping somebody warm."],
 	idle = [
 		"Walter used to say a tree tells you where it wants to go. Then you tell it where it's going.",
 		"I've made lemonade. It's mostly sugar. Walter liked it that way.",
@@ -55,6 +57,7 @@ const HALE := {
 	barber = "Good heavens! It split right up the trunk! Are you all right?",
 	done = "Yoo-hoo! It looks wonderful. Come get your money, dear!",
 	paid = ["Oh, it's like the yard can breathe again.", "Here you are. I put it in a card. There's a twenty extra in there for being polite.",
+		"Hitch that trailer up when you go. It's yours now. Walter kept it nice. Mostly.",
 		"My sister on Lakeview has an oak hanging over her whole roof. I'll give her your number."],
 	hit_house = "My HOUSE! Oh, Walter. Oh, the insurance man is going to have a field day.",
 	hit_garage = "THE GARAGE! Walter's Buick! Oh, I need to sit down.",

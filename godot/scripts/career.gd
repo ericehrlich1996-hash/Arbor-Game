@@ -10,7 +10,8 @@ static func load() -> Dictionary:
 	var d = JSON.parse_string(f.get_as_text())
 	if typeof(d) != TYPE_DICTIONARY: return {money = 0, jobs = 0, truck_rust = 1.0}
 	return {money = int(d.get("money", 0)), jobs = int(d.get("jobs", 0)), truck_rust = float(d.get("truck_rust", 1.0)),
-		wedges = bool(d.get("wedges", false)), rope = bool(d.get("rope", false))}
+		wedges = bool(d.get("wedges", false)), rope = bool(d.get("rope", false)),
+		trailer = bool(d.get("trailer", false)), firewood = bool(d.get("firewood", false))}
 
 static func save(c: Dictionary) -> void:
 	var f := FileAccess.open(PATH, FileAccess.WRITE)

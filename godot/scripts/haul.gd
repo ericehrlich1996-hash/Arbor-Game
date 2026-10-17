@@ -118,26 +118,42 @@ func step_carry(dt: float) -> void:
 
 # ---------------------------------------------------------------- throwing
 ## the emptiest spot in the truck bed if you're close and facing it, else null
-func throw_target():
+## the bed you're near: the trailer on Mrs. Hale's job (when you're closer to it), otherwise the truck.
+## Both use the same local bed frame.
+func bed() -> Dictionary:
 	var p: Player = game.player
 	var t: Truck = game.truck
-	var c := t.global_transform * Vector3(0, 1.0, -1.7)
+	var out := {xf = t.global_transform, v = t.linear_velocity}
+	if game.trailer:
+		var txf: Transform3D = game.trailer.bed_xf()
+		var dt := p.global_position.distance_to(txf * Vector3(0, 0, -1.7))
+		var dk := p.global_position.distance_to(t.global_transform * Vector3(0, 0, -1.7))
+		if dt < dk: out = {xf = txf, v = Vector3.ZERO}
+	return out
+
+func throw_target():
+	var p: Player = game.player
+	var bd := bed()
+	var bxf: Transform3D = bd.xf
+	var binv := bxf.affine_inverse()
+	var c := bxf * Vector3(0, 1.0, -1.7)
 	if Vector2(c.x - p.global_position.x, c.z - p.global_position.z).length() > 6.5: return null
 	var to := Vector3(c.x - p.eye().x, 0, c.z - p.eye().z).normalized()
 	var fw := p.fwd()
 	if not game.on_bed and to.dot(fw) < 0.6: return null
+	var t := bxf
 	var best := {}
 	for x in [-0.45, 0.0, 0.45]:
 		for z in [-2.25, -1.75, -1.25]:
-			var w := t.global_transform * Vector3(x, 1.0, z)
+			var w := t * Vector3(x, 1.0, z)
 			var crowd := 0.0
 			for b in game.pieces():
 				if b.mode != "dyn": continue
-				var l := t.bed_local(b.center_world())
+				var l: Vector3 = binv * b.center_world()
 				if absf(l.x - x) < 0.4 and absf(l.z - z) < 0.4: crowd += 1 + maxf(0, l.y - 0.8) * 3
 			var score := crowd * 10 + w.distance_to(p.eye() + fw * 2) * 0.3
 			if best.is_empty() or score < best.score: best = {score = score, x = x, z = z, crowd = crowd}
-	return t.global_transform * Vector3(best.x, 1.05 + minf(0.6, best.crowd * 0.25), best.z)
+	return t * Vector3(best.x, 1.05 + minf(0.6, best.crowd * 0.25), best.z)
 
 func throw_one() -> void:
 	if carry.is_empty(): return
@@ -147,8 +163,8 @@ func throw_one() -> void:
 	release(b)
 	if tgt != null:
 		# the quickest lob whose arc clears the bed walls with the piece's thickness to spare
-		var t: Truck = game.truck
-		var inv := t.global_transform.affine_inverse()
+		var bd := bed()
+		var inv: Transform3D = (bd.xf as Transform3D).affine_inverse()
 		var r := (Wood.r_at(b.T, b.center_wood().y) + 0.06) if b.kind == "trunk" else 0.15
 		var d: Vector3 = tgt - start
 		var tf := 1.2
@@ -164,7 +180,7 @@ func throw_one() -> void:
 					ok = false; break
 			if ok: tf = tt; break
 			tt += 0.04
-		b.linear_velocity = Vector3(d.x / tf, d.y / tf + 0.5 * 9.81 * tf, d.z / tf) + t.linear_velocity
+		b.linear_velocity = Vector3(d.x / tf, d.y / tf + 0.5 * 9.81 * tf, d.z / tf) + bd.v
 	else:
 		var fw: Vector3 = game.player.fwd()
 		b.linear_velocity = fw * 4.2 * (1 - minf(0.5, b.mass / 120.0)) + Vector3(0, 2.4, 0)
