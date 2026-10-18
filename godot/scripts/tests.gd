@@ -2321,16 +2321,19 @@ func _dock_fish() -> void:
 	await wait(1.2)
 	note("cast", [g.fishing.state, snappedf(g.fishing.lure.distance_to(g.player.global_position), 0.1)])
 	await shot("fish-wait")
-	var caught := 0; var lost := 0; var dry := 0
-	for round in range(4):
+	var caught := 0; var lost := 0; var dry := 0; var shot_nib := false
+	for round in range(1 if OS.get_environment("SHOTS") != "" else 4):
 		var tw := 0.0
 		while g.fishing.state == "wait" and tw < 40.0:
 			if not g.fishing.fish.is_empty() and g.fishing.fish.phase == "bite":
 				g.fishing.wheel_down(); break
 			if tw > 3.0 and fmod(tw, 2.0) < 0.1: g.fishing.alt(true); g.fishing.alt(false)       # jig now and then
+			if round == 0 and not g.fishing.fish.is_empty() and g.fishing.fish.phase == "nibble" and not shot_nib:
+				shot_nib = true; await shot("fish-nibble")
 			await wait(0.1); tw += 0.1
 		if g.fishing.state != "fight": note("nobite%d" % round, g.fishing.state); continue
-		await shot("fish-fight")
+		await wait(1.5)
+		await shot("fish-fight%d" % round)
 		# keep the tension in the middle by looking at the fish and pulling the rod up off it
 		var off := 0.4; var tf := 0.0; var tmax := 0.0
 		while g.fishing.state == "fight" and tf < 90.0:
@@ -2381,3 +2384,28 @@ func _driver() -> void:
 	g.truck.look_yaw = -1.2
 	await wait(0.6)
 	await shot("driver-b")
+
+## the underwater window, with a few species nosing up to the hook
+func _dock_uw() -> void:
+	await wait(1.0)
+	var c := Career.load(); c.rod = true; Career.save(c)
+	g._start()
+	var lc: Vector3 = (g.lake_logs[0] as WoodPiece).center_world()
+	var sz: float = g.world._shore_z(lc.x + 12.0)
+	var beach := Vector3(lc.x + 12.0, 0, sz - 1.5)
+	g.player.teleport(Vector3(beach.x, g.world.H(beach.x, beach.z) + 0.05, beach.z))
+	look_at_point(Vector3(beach.x, g.world.H(beach.x, beach.z) + 1.0, beach.z + 20.0))
+	await wait(0.4)
+	g.equip("rod")
+	g.fishing.press(true); await wait(0.7); g.fishing.press(false)
+	await wait(1.5)
+	g.fishing.rng.seed = 5
+	for n in ["Largemouth bass", "Northern pike", "Bluegill"]:
+		var lure: Vector3 = g.fishing.lure
+		g.fishing.fish = {name = n, len = {"Largemouth bass": 46.0, "Northern pike": 80.0, "Bluegill": 20.0}[n], kg = 1.0, str = 0.5, spd = 1.0,
+			pos = lure + Vector3(0.9, 0, 0.5), phase = "come", nibbles = 3, next = 0.0, uid = n.hash()}
+		await wait(1.6)
+		var img: Image = g.fishing.under.vp.get_texture().get_image()
+		if img and OS.get_environment("SHOTS") != "": img.save_png(OS.get_environment("SHOTS") + "/uw-%s.png" % n.replace(" ", "_"))
+	await shot("uw-screen")
+	note("done", true)

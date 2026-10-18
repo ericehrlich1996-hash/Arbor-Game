@@ -127,6 +127,13 @@ void fragment() {
 	ALBEDO = mix(water, sky, fres * 0.75);
 	ROUGHNESS = 0.06; SPECULAR = 0.6; METALLIC = 0.0;
 	ALPHA = mix(0.78, 0.95, clamp(COLOR.r + fres, 0.0, 1.0));
+	if (!FRONT_FACING) {
+		// from underneath: the bright, wobbling silver ceiling of the lake
+		float c = smoothstep(0.55, 0.95, a * 0.6 + b * 0.5);
+		ALBEDO = vec3(0.32, 0.55, 0.52) + c * vec3(0.35, 0.4, 0.32);
+		EMISSION = ALBEDO * 0.6;
+		ALPHA = 0.9;
+	}
 }
 """
 
@@ -179,6 +186,7 @@ func _build_lake(root: Node3D) -> void:
 		elif ld > -1.8 and ld < 1.2 and r.randf() < 0.55:
 			if absf(x - _dock_x()) < 4.0 and z < float(L.cz): continue      # keep the dock's end clear
 			reeds.append(Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3.ONE * r.randf_range(0.8, 1.3)), Vector3(x, H(x, z), z)))
+	_build_underwater(root, "lake", pads)
 	for set in [[pad, pads, "LilyPads"], [reed, reeds, "Cattails"]]:
 		var mm := MultiMesh.new(); mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.mesh = (set[0] as MeshBuilder).commit(); mm.instance_count = (set[1] as Array).size()
@@ -820,12 +828,18 @@ void fragment() {
 	ALBEDO = mix(ALBEDO, vec3(0.75, 0.78, 0.74), foam * 0.35);
 	ROUGHNESS = 0.14; METALLIC = 0.0; SPECULAR = 0.35;
 	ALPHA = mix(0.6, 0.9, edge);
+	if (!FRONT_FACING) {
+		ALBEDO = vec3(0.34, 0.52, 0.44) + foam * 0.3 + a * 0.15;
+		EMISSION = ALBEDO * 0.6;
+		ALPHA = 0.9;
+	}
 }
 """
 	mat.shader = sh
 	var mi := mb.instance(mat); mi.name = "Creek"
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(mi)
+	_build_underwater(root, "creek", [])
 	# the sound of running water, at a few spots along it
 	var r := RandomNumberGenerator.new(); r.seed = seed + 61
 	var gx := -140.0
@@ -1179,3 +1193,156 @@ func _build_grass(root: Node3D) -> void:
 		mmi.set_meta("vr", Vector2(0.0, 38.0))
 		mmi.layers = 2
 		root.add_child(mmi)
+
+
+# ================================================================ under the water
+## plants sway in the current: the higher up the stem, the further it moves
+const PLANT_SHADER := """
+shader_type spatial;
+render_mode cull_disabled, specular_disabled;
+void vertex() {
+	vec3 o = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	float k = max(VERTEX.y, 0.0);
+	VERTEX.x += sin(TIME * 1.1 + o.x * 0.8 + o.z * 0.6 + VERTEX.y * 1.6) * 0.09 * k;
+	VERTEX.z += cos(TIME * 0.85 + o.z * 0.7 + o.x * 0.3 + VERTEX.y * 1.3) * 0.07 * k;
+}
+void fragment() { ALBEDO = COLOR.rgb; ROUGHNESS = 0.85; }
+"""
+
+## the water surface over this spot, or INF if it's dry
+func water_y(x: float, z: float) -> float:
+	if not lake.is_empty(): return float(lake.y) if lake_d(x, z) < 0.0 else INF
+	var cz := creek_z(x)
+	if absf(z - cz) < 3.2: return H(x, cz) + 0.55
+	return INF
+
+## what's under the surface: a silt-and-sand bed, tape grass and milfoil swaying, lily pad stems,
+## mossy stones and the odd sunken branch. Only seen through the water, or from the underwater camera.
+func _build_underwater(root: Node3D, kind: String, pads: Array) -> void:
+	var r := RandomNumberGenerator.new(); r.seed = seed + 913
+	var x0: float; var x1: float; var z0: float; var z1: float
+	if kind == "lake":
+		x0 = lake.cx - lake.rx - 4.0; x1 = lake.cx + lake.rx + 4.0; z0 = lake.cz - lake.rz - 4.0; z1 = lake.cz + lake.rz + 4.0
+	else:
+		x0 = -150.0; x1 = 150.0; z0 = 0.0; z1 = 0.0
+	# ---- the bed: a sheet just over the terrain, sand in the shallows going to dark silt, with patches
+	var bed := MeshBuilder.new()
+	var sand := Color("#b3a27a"); var silt := Color("#6a6648"); var dark := Color("#4a4c34"); var pebble := Color("#8a8070")
+	var st := 1.25
+	if kind == "lake":
+		var nx := int((x1 - x0) / st); var nz := int((z1 - z0) / st)
+		var ids := {}
+		for j in range(nz + 1):
+			for i in range(nx + 1):
+				var x := x0 + i * st; var z := z0 + j * st
+				if lake_d(x, z) > 1.5: continue
+				var depth := float(lake.y) - H(x, z)
+				var n := _bed_noise(x, z)
+				var c := sand.lerp(silt, clampf(depth / 1.6, 0.0, 1.0)).lerp(dark, clampf(n - 0.55, 0.0, 0.45) * 1.6)
+				ids[Vector2i(i, j)] = bed.v(Vector3(x, H(x, z) + 0.025, z), Vector3.UP, c)
+		for j in range(nz):
+			for i in range(nx):
+				var a := Vector2i(i, j); var b := Vector2i(i + 1, j); var c2 := Vector2i(i + 1, j + 1); var d := Vector2i(i, j + 1)
+				if ids.has(a) and ids.has(b) and ids.has(c2) and ids.has(d): bed.quad(ids[a], ids[d], ids[c2], ids[b])
+	else:
+		var prev := []
+		var x := x0
+		while x <= x1:
+			var zc := creek_z(x)
+			var row := []
+			for k in range(7):
+				var z := zc - 3.3 + k * 1.1
+				var n := _bed_noise(x, z)
+				var c := pebble.lerp(sand, clampf(n, 0.0, 1.0) * 0.6).lerp(dark, clampf(n - 0.6, 0.0, 0.4) * 1.5)
+				row.append(bed.v(Vector3(x, H(x, z) + 0.025, z), Vector3.UP, c))
+			if not prev.is_empty():
+				for k in range(6): bed.quad(prev[k], row[k], row[k + 1], prev[k + 1])
+			prev = row
+			x += 1.5
+	var bmi := bed.instance(Mats.vcol); bmi.name = "WaterBed"; bmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(bmi)
+	# ---- the plants
+	var grass := MeshBuilder.new()                 # tape grass: a clump of long ribbons, 1 m tall before scaling
+	for k in range(9):
+		var a := TAU * k / 9.0 + r.randf() * 0.4
+		var base := Vector3(cos(a), 0, sin(a)) * r.randf_range(0.02, 0.1)
+		var lean := Vector3(cos(a), 0, sin(a)) * r.randf_range(0.05, 0.25)
+		var w := r.randf_range(0.012, 0.022)
+		var side := Vector3(-sin(a), 0, cos(a)) * w
+		var h := r.randf_range(0.6, 1.0)
+		var c0 := Color("#2e4a22"); var c1 := Color("#7a9a40").lerp(Color("#9aa848"), r.randf())
+		var prev_l := -1; var prev_r := -1
+		for s_ in range(5):
+			var t := s_ / 4.0
+			var p := base + lean * t * t + Vector3(0, h * t, 0)
+			var c := c0.lerp(c1, t)
+			var nrm := side.cross(Vector3.UP).normalized()
+			var l := grass.v(p - side * (1.0 - t * 0.6), nrm, c); var rr := grass.v(p + side * (1.0 - t * 0.6), nrm, c)
+			if prev_l >= 0: grass.quad(prev_l, prev_r, rr, l)
+			prev_l = l; prev_r = rr
+	var milfoil := MeshBuilder.new()               # milfoil: a soft stem with whorls of feathery leaves
+	for k in range(3):
+		var a := TAU * k / 3.0
+		var b0 := Vector3(cos(a), 0, sin(a)) * 0.06
+		var top := b0 + Vector3(cos(a) * 0.12, r.randf_range(0.75, 1.0), sin(a) * 0.12)
+		milfoil.tube(b0, top, 0.008, 0.005, Color("#4a5a2a"), 4)
+		for wv in range(9):
+			var t := (wv + 1) / 10.0
+			var q := b0.lerp(top, t)
+			var col := Color("#3e6a2a").lerp(Color("#8aa83e"), t)
+			for sp in range(5):
+				var aa := TAU * sp / 5.0 + wv * 0.6
+				milfoil.tube(q, q + Vector3(cos(aa) * 0.07, 0.03, sin(aa) * 0.07) * (1.15 - t * 0.5), 0.006, 0.002, col, 3)
+	var stem := MeshBuilder.new()                  # a lily pad's stem, 1 m before scaling to the depth
+	stem.tube(Vector3(0, 0, 0), Vector3(0.03, 0.5, -0.02), 0.008, 0.007, Color("#5a6a30"), 4)
+	stem.tube(Vector3(0.03, 0.5, -0.02), Vector3(0, 1.0, 0), 0.007, 0.006, Color("#6a7a38"), 4)
+	var stone := MeshBuilder.new()
+	stone.sphere(0, 0.0, 0, 0.5, 0.32, 0.42, Color("#6e6a60"), 9, 5)
+	stone.sphere(0.05, 0.14, -0.04, 0.4, 0.2, 0.33, Color("#4e6a34"), 8, 4)      # moss on top
+	var branch := MeshBuilder.new()
+	branch.tube(Vector3(-1.2, 0.08, 0), Vector3(1.3, 0.12, 0.1), 0.07, 0.045, Color("#3e3426"), 6, true)
+	branch.tube(Vector3(0.2, 0.1, 0.05), Vector3(0.8, 0.4, 0.55), 0.03, 0.012, Color("#3e3426"), 5)
+	branch.tube(Vector3(-0.5, 0.1, 0.0), Vector3(-0.9, 0.35, -0.5), 0.025, 0.01, Color("#3e3426"), 5)
+	var sets := {grass = [], milfoil = [], stone = [], branch = [], stem = []}
+	var tries := 5200 if kind == "lake" else 2600
+	for k in range(tries):
+		var x := r.randf_range(x0, x1)
+		var z := r.randf_range(z0, z1) if kind == "lake" else creek_z(x) + r.randf_range(-3.0, 3.0)
+		var wy := water_y(x, z)
+		if wy == INF: continue
+		var gy := H(x, z)
+		var depth := wy - gy
+		if depth < 0.18: continue
+		var yaw := Basis(Vector3.UP, r.randf() * TAU)
+		var roll := r.randf()
+		var patch := _bed_noise(x * 0.6 + 40.0, z * 0.6)        # plants grow in beds, not evenly
+		if roll < 0.55 and patch > 0.45 and depth > 0.3:
+			var h := clampf((depth - 0.15) * r.randf_range(0.55, 0.95), 0.2, 1.9)
+			sets.grass.append(Transform3D(yaw.scaled(Vector3(r.randf_range(0.8, 1.3), h, r.randf_range(0.8, 1.3))), Vector3(x, gy, z)))
+		elif roll < 0.7 and patch > 0.5 and depth > 0.45:
+			var h := clampf((depth - 0.2) * r.randf_range(0.5, 0.9), 0.25, 1.7)
+			sets.milfoil.append(Transform3D(yaw.scaled(Vector3(1, h, 1)), Vector3(x, gy, z)))
+		elif roll < 0.86:
+			var s := r.randf_range(0.15, 0.55) * (0.6 if kind == "creek" else 1.0)
+			sets.stone.append(Transform3D(yaw.scaled(Vector3(s, s * r.randf_range(0.7, 1.1), s)), Vector3(x, gy - s * 0.08, z)))
+		elif roll < 0.875 and kind == "lake" and depth > 0.5:
+			sets.branch.append(Transform3D(yaw.scaled(Vector3.ONE * r.randf_range(0.7, 1.3)), Vector3(x, gy, z)))
+	for t: Transform3D in pads:
+		var gy := H(t.origin.x, t.origin.z)
+		var d := t.origin.y - gy
+		if d > 0.1: sets.stem.append(Transform3D(Basis().scaled(Vector3(1, d, 1)), Vector3(t.origin.x, gy, t.origin.z)))
+	var pmat := ShaderMaterial.new(); var sh := Shader.new(); sh.code = PLANT_SHADER; pmat.shader = sh
+	for e in [[grass, sets.grass, "TapeGrass", pmat], [milfoil, sets.milfoil, "Milfoil", pmat], [stem, sets.stem, "PadStems", pmat],
+			[stone, sets.stone, "WaterStones", Mats.vcol], [branch, sets.branch, "SunkenBranches", Mats.vcol]]:
+		var list: Array = e[1]
+		if list.is_empty(): continue
+		var mm := MultiMesh.new(); mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = (e[0] as MeshBuilder).commit(); mm.instance_count = list.size()
+		for k in range(list.size()): mm.set_instance_transform(k, list[k])
+		var mmi := MultiMeshInstance3D.new(); mmi.multimesh = mm; mmi.material_override = e[3]; mmi.name = e[2]
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.visibility_range_end = 70.0
+		root.add_child(mmi)
+
+func _bed_noise(x: float, z: float) -> float:
+	return 0.5 + 0.25 * sin(x * 0.37 + z * 0.11) * cos(z * 0.29 - x * 0.07) + 0.25 * sin(x * 0.9 + 1.3) * sin(z * 0.73 + 0.4)

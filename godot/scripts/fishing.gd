@@ -64,6 +64,7 @@ const FADE_IN := 9.0
 const FADE_OUT := 3.0
 var music: AudioStreamPlayer
 var music_k := 0.0
+var under: Underwater
 
 func setup(g) -> void:
 	game = g
@@ -93,6 +94,8 @@ func setup(g) -> void:
 	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; smat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	shadow = sm.instance(smat); shadow.top_level = true; shadow.visible = false; add_child(shadow)
 	_build_ui()
+	under = Underwater.new(); under.name = "Underwater"; add_child(under)
+	under.setup(self)
 	music = AudioStreamPlayer.new(); music.name = "Music"
 	var st = load(MUSIC)
 	if st is AudioStreamMP3: (st as AudioStreamMP3).loop = true
@@ -248,7 +251,7 @@ func _wait_step(dt: float) -> void:
 		interest = maxf(0.1, interest - dt * 0.01)
 		# something takes an interest
 		if rng.randf() < dt * (0.12 + interest * 0.35):
-			fish = _spot_fish()
+			fish = _spot_fish(); fish.uid = rng.randi()
 			# from somewhere out in the water, never up the bank
 			fish.pos = lure
 			for tries in range(12):
@@ -434,6 +437,7 @@ func step(dt: float) -> void:
 		msg_t -= dt
 		if msg_t <= 0.0: msg = ""
 	_music_step(dt)
+	under.step(dt)
 	if not rod.visible: return
 	if meter >= 0.0:
 		meter_t += dt
@@ -554,21 +558,64 @@ func _rod_mb() -> MeshBuilder:
 ## a fish to hold up: body, tail, fins, an eye, coloured dark on top and pale underneath
 func _fish_model(name: String, cm: float) -> MeshBuilder:
 	var sp: Dictionary = SPECIES[name]
-	var L := clampf(cm / 100.0, 0.12, 1.2)
-	var long := name == "Northern pike" or name == "Muskellunge" or name == "Walleye" or name == "Brook trout"
-	var deep := 0.17 if long else (0.32 if name == "Bluegill" or name == "Black crappie" else 0.24)
+	var L := clampf(cm / 100.0, 0.12, 1.3)
+	var long := name == "Northern pike" or name == "Muskellunge"
+	var slim := long or name == "Walleye" or name == "Brook trout" or name == "Creek chub" or name == "Yellow perch"
+	var disc := name == "Bluegill" or name == "Black crappie" or name == "Rock bass"
+	var deep := 0.13 if long else (0.17 if slim else (0.3 if disc else 0.22))
+	var wide := L * (0.075 if not disc else 0.06)
 	var mb := MeshBuilder.new()
 	var top: Color = sp.top; var belly: Color = sp.belly
-	mb.sphere(0, 0, 0, L * 0.5, L * deep, L * 0.09, top, 14, 8)
-	mb.sphere(0, -L * deep * 0.35, 0, L * 0.44, L * deep * 0.7, L * 0.085, belly, 12, 6)
-	for sz: float in [-1.0, 1.0]: mb.sphere(L * 0.36, L * deep * 0.25, sz * L * 0.07, L * 0.03, L * 0.03, L * 0.02, Color("#1a1a1a"), 6, 4)
-	mb.face([Vector3(-L * 0.45, 0, 0), Vector3(-L * 0.68, L * deep * 0.95, 0), Vector3(-L * 0.62, 0, 0)], MeshBuilder.shade(top, 0.8))
-	mb.face([Vector3(-L * 0.45, 0, 0), Vector3(-L * 0.62, 0, 0), Vector3(-L * 0.68, -L * deep * 0.95, 0)], MeshBuilder.shade(top, 0.8))
-	mb.face([Vector3(L * 0.15, L * deep * 0.9, 0), Vector3(-L * 0.25, L * deep * 1.35, 0), Vector3(-L * 0.3, L * deep * 0.8, 0)], MeshBuilder.shade(top, 0.75))
-	if name == "Brook trout":
-		var r := RandomNumberGenerator.new(); r.seed = 7
-		for k in range(14):
-			mb.sphere(r.randf_range(-0.35, 0.3) * L, r.randf_range(-0.1, 0.6) * L * deep, 0.085 * L, L * 0.012, L * 0.012, L * 0.01, Color("#e8d070") if k % 3 else Color("#d8402a"), 4, 3)
+	var fin := MeshBuilder.shade(top, 0.8).lerp(belly, 0.2)
+	# body: a fat front tapering to the tail, dark back, pale belly
+	mb.sphere(L * 0.08, 0, 0, L * 0.4, L * deep, wide, top, 14, 8)
+	mb.sphere(-L * 0.22, L * deep * 0.05, 0, L * 0.28, L * deep * 0.62, wide * 0.75, top, 10, 6)
+	mb.sphere(L * 0.06, -L * deep * 0.38, 0, L * 0.36, L * deep * 0.62, wide * 0.92, belly, 12, 6)
+	# head and mouth: bass and pike have a big jaw, sunfish a small one
+	var jaw := 0.09 if (name.contains("bass") or long or name == "Walleye") else 0.05
+	mb.sphere(L * 0.4, -L * deep * 0.12, 0, L * jaw * 1.2, L * jaw * 0.55, wide * 0.6, MeshBuilder.shade(belly, 0.85), 8, 5)
+	var eye := L * (0.04 if name == "Walleye" else 0.03)
+	for sz: float in [-1.0, 1.0]:
+		mb.sphere(L * 0.36, L * deep * 0.28, sz * wide * 0.8, eye, eye, eye * 0.6, Color("#e8d8a0") if name == "Walleye" else Color("#d8c050"), 6, 4)
+		mb.sphere(L * 0.365, L * deep * 0.28, sz * wide * 0.92, eye * 0.6, eye * 0.6, eye * 0.4, Color("#101010"), 6, 4)
+		# gill line, pectoral fin
+		mb.sphere(L * 0.27, 0, sz * wide * 0.85, L * 0.012, L * deep * 0.7, L * 0.006, MeshBuilder.shade(top, 0.7), 5, 4)
+		mb.push(Transform3D(Basis(Vector3.UP, sz * 0.5), Vector3(L * 0.22, -L * deep * 0.3, sz * wide * 0.9)))
+		mb.sphere(-L * 0.05, 0, 0, L * 0.07, L * 0.03, L * 0.005, fin, 6, 3)
+		mb.pop()
+	# tail: a forked fan, flat both ways so it reads from either side
+	var tx := -L * 0.48
+	for sy: float in [-1.0, 1.0]:
+		mb.push(Transform3D(Basis(Vector3.BACK, sy * 0.55), Vector3(tx, 0, 0)))
+		mb.sphere(-L * 0.08, 0, 0, L * 0.11, L * deep * 0.32, L * 0.008, fin, 8, 4)
+		mb.pop()
+	# dorsal fin: spiny front and soft back on bass/perch/sunfish, set far back on a pike
+	if long:
+		mb.sphere(-L * 0.3, L * deep * 0.95, 0, L * 0.08, L * deep * 0.5, L * 0.007, fin, 8, 4)
+		mb.sphere(-L * 0.3, -L * deep * 0.9, 0, L * 0.07, L * deep * 0.4, L * 0.007, fin, 8, 4)
+	else:
+		mb.sphere(L * 0.05, L * deep * 0.95, 0, L * 0.17, L * deep * 0.45, L * 0.007, fin, 10, 4)
+		mb.sphere(-L * 0.18, L * deep * 0.85, 0, L * 0.12, L * deep * 0.5, L * 0.007, fin, 8, 4)
+		mb.sphere(-L * 0.2, -L * deep * 0.8, 0, L * 0.08, L * deep * 0.35, L * 0.007, fin, 8, 4)
+	# markings on both flanks
+	var r := RandomNumberGenerator.new(); r.seed = 7
+	for sz: float in [-1.0, 1.0]:
+		var zf := sz * wide * 0.97
+		if name.contains("bass") and name != "Rock bass":
+			# the dark lateral stripe that makes a bass a bass
+			for k in range(9):
+				var x := lerpf(L * 0.28, -L * 0.42, k / 8.0)
+				mb.sphere(x, L * deep * 0.02 + r.randf_range(-0.01, 0.01) * L, zf * (1.0 - absf(x / L) * 0.4), L * 0.045, L * deep * 0.16, L * 0.004, Color("#24301a") if name == "Largemouth bass" else Color("#4a3a1a"), 6, 3)
+		elif name == "Yellow perch" or name == "Bluegill" or name == "Walleye":
+			for k in range(6):
+				var x := lerpf(L * 0.2, -L * 0.32, k / 5.0)
+				mb.sphere(x, L * deep * 0.25, zf * (1.0 - absf(x / L) * 0.4), L * 0.022, L * deep * 0.55, L * 0.004, MeshBuilder.shade(top, 0.65), 5, 4)
+			if name == "Bluegill": mb.sphere(L * 0.27, L * deep * 0.12, zf, L * 0.035, L * 0.03, L * 0.004, Color("#14141c"), 6, 4)      # the dark ear flap
+		elif name == "Northern pike" or name == "Muskellunge" or name == "Black crappie" or name == "Brook trout":
+			for k in range(16):
+				var x := r.randf_range(-0.38, 0.3) * L
+				var c := Color("#e8e0a0") if name == "Northern pike" else (Color("#d8402a") if name == "Brook trout" and k % 3 == 0 else (Color("#e8d070") if name == "Brook trout" else MeshBuilder.shade(top, 0.6)))
+				mb.sphere(x, r.randf_range(-0.15, 0.6) * L * deep, zf * (1.0 - absf(x / L) * 0.4), L * 0.016, L * 0.01, L * 0.004, c, 4, 3)
 	return mb
 
 # ---------------------------------------------------------------- the meters
@@ -609,7 +656,7 @@ class Gauges extends Control:
 			draw_rect(Rect2(x0, y0, w * f.meter, 16), c)
 			for k in range(1, 4): draw_line(Vector2(x0 + w * k / 4.0, y0), Vector2(x0 + w * k / 4.0, y0 + 16), Color(1, 1, 1, 0.35), 1.0)
 		if f.state == "fight":
-			var w := 340.0; var x0 := (W - w) / 2.0; var y0 := 96.0
+			var w := 340.0; var x0 := (W - w) / 2.0; var y0 := H - 250.0
 			# tension: green, amber, then the red snap zone
 			draw_rect(Rect2(x0 - 3, y0 - 3, w + 6, 24), Color(0, 0, 0, 0.6))
 			draw_rect(Rect2(x0 + w * (1.0 / 1.3), y0, w * (0.3 / 1.3), 18), Color(0.55, 0.12, 0.1, 0.8))
