@@ -282,6 +282,7 @@ func kick() -> void:
 		game.saw._emit(hit.position, Vector3(0, 1.2, 0), 12, Color("#c4ae88"), 2, 0.04)
 		game.saw._finish_piece_cut(best)
 		if game.saw.cut == best: game.saw.cut = null
+		Ach.unlock("one_kick")
 		return
 	var J := Vector3(d.x, 0, d.z).normalized() * minf(220, b.mass * 3) + Vector3(0, minf(60, b.mass * 0.8), 0)
 	b.apply_impulse(J, hit.position - b.global_position)
@@ -345,5 +346,6 @@ func step_feed(dt: float) -> void:
 			b.queue_free()
 			feeding = null
 			chips_done += 1
+			if b.kind != "trunk": Ach.add("chipped")
 			game.update_objectives()
 			_next_feed()

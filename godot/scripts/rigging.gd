@@ -16,6 +16,7 @@ const ROPE_SNAP := 2.6          # metres of stretch before it lets go
 
 var game
 var wedges: Array = []          # {cut, side, depth, node}
+var rope_used := false          # the pull rope went on the tree at some point this job
 var rope := ""                  # "" | "tree" (tied on the tree) | "rigged" (tree to truck)
 var rope_pt := Vector3.ZERO     # tie-off on the tree, in the wood frame
 var rope_piece: WoodPiece = null   # a log the rope's tied round (dragging logs out of the water), or null for the tree
@@ -269,7 +270,7 @@ func _rope_action() -> bool:
 			if not lg.is_empty():
 				rope_piece = lg.piece
 				rope_local = rope_piece.global_transform.affine_inverse() * (lg.p as Vector3)
-				rope = "tree"
+				rope = "tree"; rope_used = true
 				anchor_w = _anchor()
 				_was_wet = true
 				Sfx.play("pick")
@@ -281,7 +282,7 @@ func _rope_action() -> bool:
 			var lp := tree.to_wood(p); lp.y = 0
 			var y: float = minf(tree.T.H * 0.55, 9.5)
 			rope_pt = Vector3(0, y, 0) + lp.normalized() * Wood.r_at(tree.T, y)
-			rope = "tree"
+			rope = "tree"; rope_used = true
 			anchor_w = _anchor()
 			Sfx.play("pick")
 			game.hud.toast("You toss a throw line over a limb and haul the rope up. Tied off about %d ft up. Now take the other end to the truck's hitch." % roundi(y * 3.28), 5.0)

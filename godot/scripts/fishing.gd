@@ -21,6 +21,8 @@ const SPECIES := {
 	"Walleye": {where = "lake", w = 0.35, len = [35.0, 72.0], str = 0.8, spd = 1.1, price = 8.0, top = Color("#7e6e40"), belly = Color("#e8e8d8")},
 	"Northern pike": {where = "lake", w = 0.28, len = [50.0, 100.0], str = 1.05, spd = 1.5, price = 5.0, top = Color("#3e5e38"), belly = Color("#e8e8c8")},
 	"Muskellunge": {where = "lake", w = 0.05, len = [90.0, 135.0], str = 1.35, spd = 1.6, price = 10.0, top = Color("#5e6e50"), belly = Color("#e0e0d0")},
+	# the legend off Gus's shore: an enormous old largemouth. Only at Gus's lake, and rarely
+	"Gerald": {where = "legend", w = 0.0, len = [66.0, 72.0], str = 1.7, spd = 1.5, price = 20.0, top = Color("#2e4a26"), belly = Color("#e8e4c8")},
 }
 const MAX_CAST := 24.0
 const CAST_T := 1.1               # seconds for the meter to fill
@@ -215,7 +217,10 @@ func _retrieve(why: String) -> void:
 	bobber.visible = false; shadow.visible = false
 	if why != "": _say(why, 2.0)
 
+var last_jig := -100.0
+
 func _twitch() -> void:
+	last_jig = t
 	interest = minf(1.0, interest + 0.18)
 	var nxt: Vector3 = lure + (game.player.global_position - lure).normalized() * 0.25 * Vector3(1, 0, 1)
 	if water_at(nxt) != INF: lure = nxt
@@ -225,6 +230,9 @@ func _twitch() -> void:
 # ---------------------------------------------------------------- waiting for a bite
 func _spot_fish() -> Dictionary:
 	var where := _where()
+	if not game.in_hub and game.job.id == "dock" and rng.randf() < 0.035:
+		var gl := rng.randf_range(66.0, 72.0)
+		return {name = "Gerald", len = gl, kg = 0.0000118 * pow(gl, 3.0) * 1.15, str = 1.7, spd = 1.5}
 	var pool := []; var total := 0.0
 	for n in SPECIES:
 		var sp: Dictionary = SPECIES[n]
@@ -320,6 +328,7 @@ func _strike() -> void:
 		return
 	if fish.phase == "nibble":
 		fish.phase = "spooked"; fish.next = 1.2
+		Ach.set_stat("clean_catches", 0)
 		_say("Too early! That was a nibble. It spooked.", 2.2)
 		interest = 0.05
 		return
@@ -327,6 +336,8 @@ func _strike() -> void:
 	state = "fight"
 	var d := Vector3(lure.x - game.player.global_position.x, 0, lure.z - game.player.global_position.z)
 	fish.dist = d.length(); fish.ang = atan2(d.x, d.z)
+	fish.max_t = 0.0
+	if t - last_jig < 5.0: Ach.unlock("lucky_jig")
 	fish.stamina = 1.0; fish.run = 0.0; fish.run_t = rng.randf_range(0.6, 1.4); fish.slack_t = 0.0; fish.over_t = 0.0; fish.jump_t = rng.randf_range(3.0, 7.0)
 	tension = 0.4
 	game.player.speed_mult = 0.0
@@ -360,6 +371,7 @@ func _fight_step(dt: float) -> void:
 	if running and absf(f.run) > 0.5: against = clampf(side * signf(f.run), 0.0, 1.0)  # rod swung the opposite way to the run
 	var want := pull * (0.25 + 0.6 * bend) + bend * 0.45 + (0.28 if reel_held else 0.0)
 	tension = lerpf(tension, clampf(want, 0.0, 1.4), minf(1.0, dt * 4.0))
+	f.max_t = maxf(float(f.get("max_t", 0.0)), tension)
 	# the line: a running fish takes line against a light drag; reeling takes it back, faster with the rod loaded
 	var take: float = (f.spd * 1.8 if running else 0.0) * (1.0 - clampf(tension, 0.0, 1.0) * 0.7) * (1.0 - against * 0.5)
 	if reel_held: take -= REEL_SPEED * (0.5 if running else 1.0) * (0.6 + 0.6 * bend)
@@ -450,10 +462,36 @@ func _keep(keep: bool) -> void:
 	else:
 		Sfx.play("drop", 0.5, 1.2)
 	Career.save(c)
+	_catch_achievements(keep)
 	var what: String = ("Kept it. +$%d" % int(fish.value)) if keep else "Back it goes. Grow bigger."
 	card.visible = false
 	if caught: caught.queue_free(); caught = null
 	_retrieve(what)
+
+## (after the catch is saved, so the log already has it)
+func _catch_achievements(keep: bool) -> void:
+	var n: String = fish.name
+	var lb := float(fish.kg) * 2.2046
+	Ach.unlock("first_bite")
+	if (n == "Largemouth bass" or n == "Gerald") and lb >= 5.0: Ach.unlock("lunker")
+	if n == "Muskellunge": Ach.unlock("muskie")
+	if n == "Gerald": Ach.unlock("gerald")
+	if float(fish.get("max_t", 2.0)) < 1.0: Ach.unlock("line_dancer")
+	if Ach.add("clean_catches") >= 5: Ach.unlock("patience")
+	if not game.in_hub and game.job.id == "hale": Ach.unlock("golden_hour")
+	if keep: Ach.earn(int(fish.value))
+	else: Ach.add("released")
+	var log: Dictionary = Career.load().get("fish", {})
+	var all_creek := true; var all_lake := true; var all := true
+	for s in SPECIES:
+		var w: String = SPECIES[s].where
+		var got := log.has(s)
+		if not got: all = false
+		if w == "creek" and not got: all_creek = false
+		if w == "lake" and not got: all_lake = false
+	if all_creek: Ach.unlock("mixed_bag")
+	if all_lake: Ach.unlock("lake_life")
+	if all: Ach.unlock("gone_fishin")
 
 # ---------------------------------------------------------------- every frame
 func step(dt: float) -> void:
@@ -615,6 +653,7 @@ func _rod_mb() -> MeshBuilder:
 ## a fish to hold up: body, tail, fins, an eye, coloured dark on top and pale underneath
 func _fish_model(name: String, cm: float) -> MeshBuilder:
 	var sp: Dictionary = SPECIES[name]
+	if name == "Gerald": name = "Largemouth bass"
 	var L := clampf(cm / 100.0, 0.12, 1.3)
 	var long := name == "Northern pike" or name == "Muskellunge"
 	var slim := long or name == "Walleye" or name == "Brook trout" or name == "Creek chub" or name == "Yellow perch"

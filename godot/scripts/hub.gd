@@ -662,7 +662,9 @@ func step(dt: float) -> void:
 		"computer": txt = "[b]E[/b] Use the computer"
 		"truck": txt = "" if Mats.truck_rust <= 0.0 else "Your truck. She's seen better days."
 		"bed": txt = "[b]E[/b] Have a nap"
-		"fire": txt = "Nice and warm."
+		"fire":
+			txt = "Nice and warm."
+			Ach.unlock("smoke_signals")
 		"trailer":
 			var n := WoodSplit.rounds_left()
 			if split.carrying: txt = "Take it to the chopping block."

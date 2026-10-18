@@ -2522,3 +2522,15 @@ func _sfxdump() -> void:
 	for n in ["reel", "drag", "creak"]:
 		(Sfx.sounds[n] as AudioStreamWAV).save_to_wav(OS.get_environment("SHOTS") + "/%s.wav" % n)
 	note("dumped", true)
+
+## the achievement tracker on the computer, and the pop-up
+func _hubach() -> void:
+	await wait(1.5)
+	Ach.unlock("smoke_signals")
+	await wait(0.5)
+	await shot("ach-popup")
+	g.open_computer()
+	g.hud.pc_tab = "trophies"; g.hud._render_pc()
+	await wait(0.5)
+	await shot("ach-computer")
+	note("count", [Ach.count().x, Ach.count().y, Career.load().get("ach", {}).keys()])

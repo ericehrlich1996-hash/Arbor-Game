@@ -37,6 +37,8 @@ var swing_hit := {}
 var recoil := 0.0
 var shake := 0.0
 var streak := 0
+var green_streak := 0
+var round_clean := true             # no miss or stuck axe on this round yet
 var ui: CanvasLayer
 var ring: Control
 var lbl_main: Label
@@ -384,6 +386,7 @@ func use_block() -> void:
 		carrying = false
 		carry_node.queue_free(); carry_node = null
 		var rd := carry_round
+		round_clean = true
 		_add_piece({a0 = 0.0, a1 = TAU, R = rd.R, h = rd.h, knot = rd.knot, check = rd.check, shade = rd.shade, dmg = 0.0, crack = -1.0, off = Vector2.ZERO, lean = 0.0})
 		Sfx.play("thud", 0.6, 1.2)
 	if pieces.is_empty():
@@ -500,7 +503,7 @@ func _impact() -> void:
 		# missed the wood: the blade bites the block
 		Sfx.play("thud", 0.7, 1.4); Sfx.play("clank", 0.25, 0.7)
 		game.saw._emit(h.p, Vector3(0, 1.2, 0), 4, Color("#8a7458"), 1.4, 0.02)
-		_shake(0.5); _popup("Missed!", Color(1, 0.6, 0.5)); streak = 0
+		_shake(0.5); _popup("Missed!", Color(1, 0.6, 0.5)); streak = 0; green_streak = 0; round_clean = false
 		recoil = 0.35
 		return
 	var pc: Dictionary = h.pc
@@ -540,7 +543,7 @@ func _impact() -> void:
 		_shake(0.35 + dmg * 0.3)
 		_popup("Stuck!" if dmg < 0.6 else "Almost...", Color(1, 0.85, 0.55))
 		recoil = 0.32
-		streak = 0
+		streak = 0; green_streak = 0; round_clean = false
 
 func _draw_crack(pc: Dictionary, k: float) -> void:
 	if pc.crack_node: pc.crack_node.queue_free()
@@ -560,6 +563,8 @@ func _draw_crack(pc: Dictionary, k: float) -> void:
 ## it pops open: two halves fall apart, and any that are small enough fly off onto the pile
 func _split(pc: Dictionary, sa: float, h: Dictionary) -> void:
 	streak += 1
+	green_streak = green_streak + 1 if h.get("green", false) else 0
+	if green_streak >= 10: Ach.unlock("green_zone")
 	Sfx.play("crack", 0.9, randf_range(1.05, 1.25)); Sfx.play("thud", 0.8, 1.15); Sfx.play("crunch", 0.6, 0.9)
 	if h.perfect: Sfx.play("ding", 0.35, 1.5)
 	_hitstop(0.09 if h.perfect else 0.06)
@@ -587,6 +592,7 @@ func _split(pc: Dictionary, sa: float, h: Dictionary) -> void:
 			var tw := create_tween()
 			tw.tween_method(func(k: float): if is_instance_valid(np.node): _place(np, k), 0.0, 1.0, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	if pieces.is_empty():
+		if round_clean: Ach.unlock("sweet_spot")
 		get_tree().create_timer(0.9).timeout.connect(func():
 			if active and pieces.is_empty():
 				lbl_main.text = "That round's done. E to step away, then grab another from the trailer (%d left)." % rounds_left())
@@ -630,6 +636,7 @@ func _tie_bundle() -> void:
 	c.bundles = int(c.get("bundles", 0)) + 1
 	Career.save(c)
 	game.money = int(c.money)
+	Ach.earn(BUNDLE_PRICE); Ach.check_gear()
 	Sfx.play("cash", 0.8)
 	_popup("Bundle tied! +$%d" % BUNDLE_PRICE, Color(0.55, 1.0, 0.55))
 	game.hud.toast("Bundle #%d is out on the rack by the road. +$%d" % [int(c.bundles), BUNDLE_PRICE], 2.5)

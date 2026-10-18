@@ -324,7 +324,7 @@ func show_computer(jobs: Array, bank: int, jobs_done: int, upgrades: Array = [],
 func _render_pc() -> void:
 	pc_head.text = "TREE-MAIL v1.2        BANK: $%d   JOBS DONE: %d" % [pc_data.bank, pc_data.done]
 	for ch in pc_tabs.get_children(): ch.queue_free()
-	for tb in [["jobs", "JOBS"], ["upgrades", "UPGRADES"]]:
+	for tb in [["jobs", "JOBS"], ["upgrades", "UPGRADES"], ["trophies", "ACHIEVEMENTS"]]:
 		var b := _crt_button(("[ %s ]" if pc_tab == tb[0] else "  %s  ") % tb[1])
 		var id: String = tb[0]
 		b.pressed.connect(func(): pc_tab = id; pc_msg = ""; _render_pc())
@@ -340,6 +340,8 @@ func _render_pc() -> void:
 			b.pressed.connect(func(): hide_computer(); job_chosen.emit(i))
 			pc_list.add_child(b)
 			_pc_text("     " + j.text, j.open)
+	elif pc_tab == "trophies":
+		_render_trophies()
 	else:
 		pc_list.add_child(_crt_label("> FIX UP YOUR GEAR:", 18))
 		var ups: Array = pc_data.upgrades
@@ -355,6 +357,36 @@ func _render_pc() -> void:
 			_pc_text("     " + u.text, not u.owned)
 	if pc_msg != "":
 		pc_list.add_child(_crt_label("> " + pc_msg, 18))
+
+## the achievement tracker: every one by category, ticked with the date you got it, tallies for the
+## count-based ones, and the secret ones kept secret until you find them
+func _render_trophies() -> void:
+	var n := Ach.count()
+	pc_list.add_child(_crt_label("> ACHIEVEMENTS: %d OF %d" % [n.x, n.y], 18))
+	var sc := ScrollContainer.new(); sc.custom_minimum_size = Vector2(600, 300)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 4); v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(v); pc_list.add_child(sc)
+	var got: Dictionary = Career.load().get("ach", {})
+	for cat in Ach.CATS:
+		var ids := Ach.LIST.keys().filter(func(id): return Ach.LIST[id][0] == cat)
+		var have := ids.filter(func(id): return got.has(id)).size()
+		var h := _crt_label("%s  (%d/%d)" % [cat.to_upper(), have, ids.size()], 16)
+		v.add_child(h)
+		for id in ids:
+			var e: Array = Ach.LIST[id]
+			var on := got.has(id)
+			var title: String = e[1] if (on or not e[5]) else "???"
+			var how: String = e[2] if (on or not e[5]) else "A secret. Keep playing."
+			var line := ("[X] " if on else "[ ] ") + title
+			if on: line += "   " + str(got[id])
+			elif e[3] != "": line += "   %d/%d" % [mini(Ach.tally(e[3]), int(e[4])), int(e[4])]
+			var l := _crt_label(line, 15, CRT if on else CRT_DIM)
+			v.add_child(l)
+			var d := _crt_label("      " + how, 13, CRT_DIM)
+			d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; d.custom_minimum_size = Vector2(560, 0)
+			v.add_child(d)
+		v.add_child(_crt_label(" ", 8))
 
 func _pc_text(t: String, bright: bool) -> void:
 	var d := _crt_label(t, 15, CRT if bright else CRT_DIM)

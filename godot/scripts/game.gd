@@ -51,6 +51,8 @@ func _ready() -> void:
 	_setup_input()
 	_setup_env()
 	hud = Hud.new(); add_child(hud)
+	Ach.game = self
+	get_tree().create_timer(3.0).timeout.connect(Ach.retro)
 	hud.start_pressed.connect(_on_start)
 	hud.next_job_pressed.connect(func(): Hub.come_home = true; get_tree().reload_current_scene())
 	hud.job_chosen.connect(start_job)
@@ -145,12 +147,14 @@ func buy_upgrade(id: String) -> void:
 			return
 		c.money -= UPGRADE_COST[id]; c[id] = true
 		Career.save(c); money = c.money
+		Ach.check_gear()
 		Sfx.play("cash")
 		hud.show_computer(Jobs.board(c.jobs), money, c.jobs, _upgrades(), UPGRADE_MSG[id])
 		return
 	if id == "truck" and float(c.truck_rust) > 0.0 and int(c.money) >= 400:
 		c.money -= 400; c.truck_rust = 0.0
 		Career.save(c); money = c.money
+		Ach.check_gear()
 		Mats.set_truck_rust(0.0)
 		Sfx.play("cash")
 		hud.show_computer(Jobs.board(c.jobs), money, c.jobs, _upgrades(), "TRUCK FIXED UP. GO TAKE A LOOK!")
@@ -769,6 +773,7 @@ func _guide_tilt() -> float:
 ## the truck's hung up (on a porch, a stump, a log): lift it out and set it down on its wheels at the
 ## nearest clear spot, facing the way it was, with whatever's hitched brought along behind it
 func unstick_truck() -> void:
+	Ach.add("unstuck")
 	var fwd := truck.global_transform.basis.z; fwd.y = 0
 	if fwd.length() < 0.1: fwd = Vector3.BACK
 	fwd = fwd.normalized()
@@ -1036,6 +1041,7 @@ func _step_dialog(dt: float) -> void:
 
 func talk_to_earl() -> void:
 	var E: String = job.who
+	if job.id == "earl": Ach.add("earl_talks")
 	if not objs.talk:
 		var lines := []
 		for l in job.talk: lines.append({who = E, text = l})
@@ -1058,6 +1064,7 @@ func tarp_trailer() -> void:
 		if b.mode == "dyn" and trailer.in_bed(b.center_world()):
 			b.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC; b.freeze = true
 			cargo.append(b)
+	if cargo.size() >= 12: get_tree().create_timer(2.0).timeout.connect(func(): Ach.unlock("tarp_life"))
 	trailer.tarp_it(func():
 		for k in range(4): get_tree().create_timer(0.15 * k).timeout.connect(func(): Sfx.play("clank", 0.35, 1.5 + randf() * 0.4))
 		objs.tarped = true
@@ -1098,6 +1105,7 @@ func payday() -> void:
 				var loaded := pieces().filter(func(b): return b.kind == "trunk" and trailer.in_bed(b.center_world())).size()
 				c.rounds = int(c.get("rounds", 0)) + maxi(12, loaded)
 			Career.save(c); money = c.money
+			_payday_achievements(total, mins)
 			var notes := []
 			if job.id == "dock": notes.append("Gus gave you his old spinning rod. Press 6 near water to fish.")
 			if g.has("notch_pct") and job.get("kind", "") != "logs":
@@ -1112,7 +1120,29 @@ func payday() -> void:
 			hud.show_summary(rows, total, notes, money, "Job done · %s" % job.title)
 			hud.play_timelapse(timelapse.frames, timelapse.stamps))
 
+## after the money's in the bank (so the career file already has it)
+func _payday_achievements(total: int, mins: float) -> void:
+	var g := tree.grade
+	Ach.earn(total)
+	Ach.unlock({"earl": "first_day", "hale": "widows_peace", "dock": "clear_water"}.get(job.id, "first_day"))
+	if mins < {"earl": 10.0, "hale": 15.0, "dock": 12.0}.get(job.id, 10.0): Ach.unlock({"earl": "speed_earl", "hale": "speed_hale", "dock": "speed_dock"}.get(job.id, "speed_earl"))
+	if job.id == "hale" and not damage.get("garage", false) and not damage.get("house", false): Ach.unlock("not_on_my_watch")
+	if g.has("notch_pct") and job.get("kind", "") != "logs" and g.get("open", false) and not g.get("barber", false):
+		var notch_ok: bool = g.notch_pct >= 0.18 and g.notch_pct <= 0.45 and g.notch_angle >= 40
+		var hinge_ok: bool = g.hinge_pct >= 0.05 and g.hinge_pct <= 0.18
+		if notch_ok: Ach.unlock("textbook_notch")
+		if hinge_ok: Ach.unlock("hinge_master")
+		if g.dir_err < 5: Ach.unlock("on_the_line")
+		if job.id == "hale" and notch_ok and hinge_ok and g.dir_err < 15: Ach.unlock("gentle_giant")
+	if weather and (weather.kind == "rain" or weather.kind == "storm"): Ach.unlock("rain_or_shine")
+	if trailer:
+		var loaded := pieces().filter(func(b): return b.kind == "trunk" and trailer.in_bed(b.center_world())).size()
+		if loaded >= 16: Ach.unlock("full_load")
+	Ach.check_gear()
+
 func _on_fell(kind: String) -> void:
+	if weather and weather.kind == "fog": Ach.unlock("lost_in_fog")
+	if job.id == "hale" and kind != "barber" and rig.wedges.size() > 0 and not rig.rope_used: Ach.unlock("wedge_whisperer")
 	hud.shout("BARBER CHAIR!" if kind == "barber" else "TIMBER!")
 	saw.cut = null
 	rig.on_fell()
@@ -1136,6 +1166,12 @@ func _check_damage() -> void:
 	# how high each building reaches: walls plus roof, and a little for the trunk's own thickness
 	var gar_top: float = 0.15 + float(world.garage.get("wall", 2.6)) + 1.5 + 0.9
 	var house_top: float = float(world.house.get("wall", 2.7)) + 3.6
+	# your own truck
+	if truck and not Ach.has("ow"):
+		for p in pts:
+			var lt: Vector3 = truck.to_local(tree.stem.to_world(p))
+			if absf(lt.x) < 1.1 and lt.z > -3.2 and lt.z < 2.6 and lt.y < 2.2 and lt.y > -0.2:
+				Ach.unlock("ow"); break
 	for b in [["garage", world.garage, gar_top], ["house", world.house, house_top]]:
 		var box: Dictionary = b[1]
 		if box.is_empty() or damage.get(b[0], false): continue
@@ -1325,6 +1361,9 @@ func _process(dt: float) -> void:
 		return
 	if timelapse: timelapse.step(dt)
 	if fishing: fishing.step(dt)
+	# truck, trailer and chipper all strung together and moving
+	if trailer and chipper and truck and player.in_truck and trailer.mode == "truck" and chipper.tow == trailer and truck.speed_mph() >= 12.0:
+		Ach.unlock("road_train")
 	_step_kick(dt)
 	if phase == "title":
 		# a slow orbit over the yard, between the house and the dead ash
