@@ -1202,7 +1202,9 @@ func _update_hud() -> void:
 		elif brush and haul.near_hopper() and chipper.running:
 			t = "[b]Left click[/b] Feed the chipper" + (" (%d)" % n if n > 1 else "")
 		else:
-			t = "[b]Right click[/b] %s · [b]E[/b] drop all" % (("Throw one in the trailer" if trailer and haul.bed().xf == trailer.bed_xf() else "Throw one in the truck") if haul.throw_target() != null else "Set one down")
+			var tt = haul.throw_target()
+			var where: String = haul.lands_in_bed(tt) if tt != null else ""
+			t = "[b]Right click[/b] %s · [b]E[/b] drop all" % ({"trailer": "Throw one in the trailer", "truck": "Throw one in the truck"}.get(where, "Throw one there") if tt != null else "Set one down")
 	elif (player.tool == "wedge" or player.tool == "rope") and rig.prompt() != "":
 		t = rig.prompt()
 	elif not a.is_empty():

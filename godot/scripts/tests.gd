@@ -2192,3 +2192,39 @@ func _hubstand() -> void:
 	await wait(0.8)
 	await shot("stand-close")
 	c = Career.load(); c.bundles = b0; Career.save(c)
+
+## a quick look at the trailer: rounds dropped straight in, tarped, hitched up with the chipper behind
+func _hale_trailer_look() -> void:
+	await wait(0.5)
+	g._start()
+	var tr: Trailer = g.trailer
+	var rs := _make_rounds(12)
+	var bxf := tr.bed_xf()
+	for k in range(rs.size()):
+		var r: WoodPiece = rs[k]
+		var p := bxf * Vector3(-0.5 + (k % 3) * 0.5, 1.0 + (k / 9) * 0.35, Trailer.Z1 - 0.45 - ((k / 3) % 3) * 1.2)
+		r.global_transform = Transform3D(r.global_transform.basis, p - (r.center_world() - r.global_position))
+		r.linear_velocity = Vector3.ZERO
+	await wait(1.5)
+	g.objs.felled = true; g.update_objectives()
+	g.tarp_trailer()
+	await wait(1.8)
+	var mid := (Trailer.Z0 + Trailer.Z1) / 2.0
+	var v := bxf * Vector3(4.0, 0, mid - 3.0)
+	g.player.teleport(Vector3(v.x, g.world.H(v.x, v.z) + 0.05, v.z))
+	look_at_point(bxf * Vector3(0, 1.1, mid))
+	await wait(0.5)
+	await shot("tl-tarped")
+	g.chipper.unhitch()
+	var tb := tr.global_transform.basis
+	var tp: Vector3 = tr.coupler_world() - tb * Models.HITCH + tb.z * 1.2
+	g.truck.global_transform = Transform3D(tb, Vector3(tp.x, g.world.H(tp.x, tp.z) + 0.3, tp.z))
+	await wait(1.0)
+	tr.hitch_to(g.truck, g.trailer_cargo())
+	g.chipper.hitch_now(tr)
+	await wait(1.0)
+	var sv := tr.global_transform * Vector3(-7.5, 0, (Trailer.Z0 + Trailer.Z1) / 2.0 - 1.0)
+	g.player.teleport(Vector3(sv.x, g.world.H(sv.x, sv.z) + 0.05, sv.z))
+	look_at_point(tr.global_transform * Vector3(0, 1.0, Trailer.Z0 + 0.5))
+	await wait(0.5)
+	await shot("tl-train")

@@ -135,29 +135,36 @@ func bed() -> Dictionary:
 			out = {xf = txf, v = game.trailer.linear_velocity, mid = mid, zs = zs, z0 = Trailer.Z0, z1 = Trailer.Z1}
 	return out
 
+## where a throw lands: wherever your crosshair is (on the ground, in a bed, on top of the pile), within
+## a good lob. null if you're aiming at nothing in reach.
 func throw_target():
 	var p: Player = game.player
-	var bd := bed()
-	var bxf: Transform3D = bd.xf
-	var binv := bxf.affine_inverse()
-	var c := bxf * Vector3(0, 1.0, float(bd.mid))
-	if Vector2(c.x - p.global_position.x, c.z - p.global_position.z).length() > 6.5: return null
-	var to := Vector3(c.x - p.eye().x, 0, c.z - p.eye().z).normalized()
-	var fw := p.fwd()
-	if not game.on_bed and to.dot(fw) < 0.6: return null
-	var t := bxf
-	var best := {}
-	for x in [-0.45, 0.0, 0.45]:
-		for z in bd.zs:
-			var w := t * Vector3(x, 1.0, z)
-			var crowd := 0.0
-			for b in game.pieces():
-				if b.mode != "dyn": continue
-				var l: Vector3 = binv * b.center_world()
-				if absf(l.x - x) < 0.4 and absf(l.z - z) < 0.4: crowd += 1 + maxf(0, l.y - 0.8) * 3
-			var score := crowd * 10 + w.distance_to(p.eye() + fw * 2) * 0.3
-			if best.is_empty() or score < best.score: best = {score = score, x = x, z = z, crowd = crowd}
-	return t * Vector3(best.x, 1.05 + minf(0.6, best.crowd * 0.25), best.z)
+	var e := p.eye()
+	var q := PhysicsRayQueryParameters3D.create(e, e + p.aim_dir() * 7.0)
+	q.collision_mask = 1 | 4 | 8
+	var ex: Array[RID] = []
+	for b in carry: ex.append(b.get_rid())
+	q.exclude = ex
+	var hit: Dictionary = game.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty(): return null
+	var t: Vector3 = (hit.position as Vector3) + (hit.normal as Vector3) * 0.18
+	# aimed at a bed (its floor, the load, or a rail): land it just inside the walls, where you pointed along it
+	var beds := [[game.truck.global_transform, -2.62, -0.73]]
+	if game.trailer: beds.append([game.trailer.bed_xf(), Trailer.Z0, Trailer.Z1])
+	for bd in beds:
+		var xf: Transform3D = bd[0]; var z0: float = bd[1]; var z1: float = bd[2]
+		var l := xf.affine_inverse() * t
+		if absf(l.x) < 1.35 and l.z > z0 - 0.3 and l.z < z1 + 0.3 and l.y > 0.4 and l.y < 3.2:
+			l.x = clampf(l.x, -0.65, 0.65); l.z = clampf(l.z, z0 + 0.35, z1 - 0.35); l.y = maxf(l.y, 1.05)
+			return xf * l
+	return t
+
+## is that spot in the truck bed or the trailer?
+func lands_in_bed(t: Vector3) -> String:
+	if game.trailer and game.trailer.in_bed(t): return "trailer"
+	var l: Vector3 = game.truck.bed_local(t)
+	if absf(l.x) < 1.0 and l.z > -2.7 and l.z < -0.65 and l.y > 0.6 and l.y < 3.0: return "truck"
+	return ""
 
 func throw_one() -> void:
 	if carry.is_empty(): return
