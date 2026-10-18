@@ -55,6 +55,13 @@ var lbl: Label
 var card: PanelContainer
 var card_lbl: RichTextLabel
 var _click_t := 0.0
+# the fishing song: fades in slowly when you take the rod out, fades away when you put it up
+const MUSIC := "res://audio/fishing_theme.mp3"
+const MUSIC_VOL := 0.55
+const FADE_IN := 9.0
+const FADE_OUT := 3.0
+var music: AudioStreamPlayer
+var music_k := 0.0
 
 func setup(g) -> void:
 	game = g
@@ -84,6 +91,12 @@ func setup(g) -> void:
 	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; smat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	shadow = sm.instance(smat); shadow.top_level = true; shadow.visible = false; add_child(shadow)
 	_build_ui()
+	music = AudioStreamPlayer.new(); music.name = "Music"
+	var st = load(MUSIC)
+	if st is AudioStreamMP3: (st as AudioStreamMP3).loop = true
+	music.stream = st
+	music.volume_db = -80.0
+	add_child(music)
 
 static func owned() -> bool:
 	return bool(Career.load().get("rod", false))
@@ -403,6 +416,7 @@ func step(dt: float) -> void:
 	if msg_t > 0.0:
 		msg_t -= dt
 		if msg_t <= 0.0: msg = ""
+	_music_step(dt)
 	if not rod.visible: return
 	if meter >= 0.0:
 		meter_t += dt
@@ -425,6 +439,17 @@ func step(dt: float) -> void:
 	_draw()
 	gauge.queue_redraw()
 	lbl.text = msg if msg != "" else prompt()
+
+func _music_step(dt: float) -> void:
+	if music == null or music.stream == null: return
+	if rod.visible:
+		if not music.playing: music.play()
+		music_k = minf(1.0, music_k + dt / FADE_IN)
+	elif music.playing:
+		music_k = maxf(0.0, music_k - dt / FADE_OUT)
+		if music_k <= 0.0: music.stop()
+	# ease in on a curve so the first few seconds creep up from silence
+	music.volume_db = linear_to_db(maxf(MUSIC_VOL * music_k * music_k, 0.0001))
 
 func _pose(dt: float) -> void:
 	# the rod in your hands: out in front, tip up; it bends down toward a fish on and dips as you reel

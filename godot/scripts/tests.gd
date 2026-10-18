@@ -2315,6 +2315,8 @@ func _dock_fish() -> void:
 	await wait(0.4)
 	g.equip("rod")
 	note("near", g.fishing.water_near())
+	await wait(3.0)
+	note("music", [g.fishing.music.playing, snappedf(g.fishing.music.volume_db, 0.1), g.fishing.music.stream != null])
 	g.fishing.press(true); await wait(0.9); g.fishing.press(false)
 	await wait(1.2)
 	note("cast", [g.fishing.state, snappedf(g.fishing.lure.distance_to(g.player.global_position), 0.1)])
@@ -2344,3 +2346,18 @@ func _dock_fish() -> void:
 		else: lost += 1; note("lost%d" % round, g.fishing.msg)
 		g.fishing.press(true); await wait(0.9); g.fishing.press(false); await wait(1.2)
 	note("result", [caught, lost, Career.load().get("fish", {}).keys()])
+
+## rain stops at the cabin door
+func _hubrain() -> void:
+	await wait(1.0)
+	g.weather.force("rain")
+	var h: Hub = g.hub
+	var inside := h.to_global(Vector3(0, h.y0 + Hub.F + 0.05, 0))
+	g.player.teleport(inside)
+	g.player.cam.make_current()
+	await wait(1.0)
+	note("dbg", [h.global_position, h.y0, g.player.global_position, g.get_viewport().get_camera_3d().global_position, g.get_viewport().get_camera_3d() == g.player.cam])
+	note("inside", [h.indoors(g.get_viewport().get_camera_3d().global_position), g.weather.rain_fx.emitting])
+	g.player.teleport(h.to_global(Vector3(0, 0, -Hub.HZ - 6.0)) + Vector3(0, g.world.H(0, -Hub.HZ - 6.0) + 0.05, 0))
+	await wait(1.0)
+	note("outside", [h.indoors(g.get_viewport().get_camera_3d().global_position), g.weather.rain_fx.emitting])

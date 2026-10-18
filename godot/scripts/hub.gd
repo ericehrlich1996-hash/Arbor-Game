@@ -80,6 +80,11 @@ func build(g) -> void:
 	spots.block = [block_top + Vector3(0, 0.25, 0), 2.6]
 	spots.rack = [rk + Vector3(0, 1.0, 0), 3.5]
 
+## is this world point inside the cabin (under the roof, between the walls)?
+func indoors(p: Vector3) -> bool:
+	var q := to_local(p)
+	return absf(q.x) < HX + 0.1 and absf(q.z) < HZ + 0.1 and q.y > y0 + F - 0.3 and q.y < y0 + RIDGE + 0.3
+
 ## a cabin-local point in the world
 func W(p: Vector3) -> Vector3:
 	return Vector3(p.x, p.y + y0, p.z)

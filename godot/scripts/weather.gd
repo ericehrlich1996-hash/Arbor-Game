@@ -104,6 +104,8 @@ func _build_rain() -> void:
 	rain_snd.bus = "Ambient"
 	add_child(rain_snd)
 
+var _was_in := false
+
 func step(dt: float, eye: Vector3) -> void:
 	_t += dt
 	# ease toward the target weather (about half a minute for a full change)
@@ -123,7 +125,11 @@ func step(dt: float, eye: Vector3) -> void:
 	# rain follows the camera, a little ahead of it; none inside the cab
 	var r: float = cur.rain
 	var in_cab: bool = game.player.in_truck and not game.truck.chase
-	rain_fx.emitting = r > 0.03 and not in_cab
+	# none indoors either: the cabin has a roof
+	var indoors: bool = game.in_hub and game.hub != null and game.hub.indoors(eye)
+	if indoors and not _was_in: rain_fx.restart(); rain_fx.emitting = false      # clear the drops already falling
+	_was_in = indoors
+	rain_fx.emitting = r > 0.03 and not in_cab and not indoors
 	# changing the count restarts the particles, so only step it in coarse notches
 	var want := maxi(200, int(round(r * 8.0)) * 200)
 	if rain_fx.amount != want: rain_fx.amount = want
