@@ -296,6 +296,8 @@ func pose_hands(carrying: bool) -> void:
 		# rounds ride on the right shoulder: that hand's up holding them, out of sight
 		var shouldering: bool = carrying and side > 0 and game.haul.carry.any(func(b): return not b.brushy())
 		if shouldering: fist.visible = false; arm.visible = false
+		# the rod's in the right hand: the rod model has its own grip, so that glove goes away like it does with a log
+		if side > 0 and player.tool == "rod" and not carrying: fist.visible = false; arm.visible = false
 	guide = {}
 	_draw_guide()
 

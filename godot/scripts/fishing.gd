@@ -55,6 +55,8 @@ var lbl: Label
 var card: PanelContainer
 var card_lbl: RichTextLabel
 var _click_t := 0.0
+var jig_t := 0.0                  # the lure hops when you jig it
+var bend := 0.0                   # how far the rod's pulled off the line (0 pointing at the fish, 1 hauled right back)
 # the fishing song: fades in slowly when you take the rod out, fades away when you put it up
 const MUSIC := "res://audio/fishing_theme.mp3"
 const MUSIC_VOL := 0.55
@@ -148,25 +150,23 @@ func press(down: bool) -> void:
 		"aim":
 			if down: meter = 0.0; meter_t = 0.0; Sfx.play("pull", 0.15, 1.8)
 			elif meter >= 0.0: _cast(meter)
-		"wait":
-			if down: _strike()
-		"fight":
+		"wait", "fight", "snag":
 			reel_held = down
 		"landed":
 			if down: _keep(true)
-		"snag":
-			if down: _say("Snagged. Hold right mouse to reel it in.", 2.0)
 
+## right mouse: jig the lure
 func alt(down: bool) -> void:
 	alt_held = down
-	if down: alt_t = 0.0
 	match state:
 		"wait":
-			if not down and alt_t < 0.22: _twitch()
+			if down: _twitch()
 		"landed":
 			if down: _keep(false)
-		"snag":
-			if down: _retrieve("Reeled in.")
+
+## mouse wheel down: set the hook
+func wheel_down() -> void:
+	if state == "wait": _strike()
 
 # ---------------------------------------------------------------- casting
 func _cast(power: float) -> void:
@@ -192,23 +192,25 @@ func _land() -> void:
 	if water_y == INF:
 		state = "snag"
 		Sfx.play("drop", 0.3, 1.6)
-		_say("That's in the grass. Hold right mouse to reel it in and try again.", 3.0)
+		_say("That's in the grass. Hold left mouse to reel it in and try again.", 3.0)
 		return
 	state = "wait"
 	interest = 0.15
 	fish = {}
 	Sfx.play("drop", 0.45, 1.8)
 	game.saw._emit(lure, Vector3(0, 1.4, 0), 8, Color(0.85, 0.9, 0.92), 1.0, 0.025)
-	_say("Watch the float. Strike when it goes under. Right mouse: reel slow, tap to twitch.", 4.0)
+	_say("Watch the float. When it goes under, scroll the wheel down to set the hook. Right mouse jigs.", 4.0)
 
 func _retrieve(why: String) -> void:
-	state = "aim"; fish = {}
+	state = "aim"; fish = {}; reel_held = false
 	bobber.visible = false; shadow.visible = false
 	if why != "": _say(why, 2.0)
 
 func _twitch() -> void:
 	interest = minf(1.0, interest + 0.18)
-	lure += (game.player.global_position - lure).normalized() * 0.25 * Vector3(1, 0, 1)
+	var nxt: Vector3 = lure + (game.player.global_position - lure).normalized() * 0.25 * Vector3(1, 0, 1)
+	if water_at(nxt) != INF: lure = nxt
+	jig_t = 0.3
 	Sfx.play("drop", 0.15, 2.4)
 
 # ---------------------------------------------------------------- waiting for a bite
@@ -233,23 +235,26 @@ func _spot_fish() -> Dictionary:
 
 func _wait_step(dt: float) -> void:
 	var p: Player = game.player
-	# reeling the lure in slowly (holding right mouse)
-	if alt_held:
-		alt_t += dt
-		if alt_t > 0.22:
-			var to := p.global_position - lure; to.y = 0
-			if to.length() < 2.6: _retrieve("Lure's in."); return
-			lure += to.normalized() * RETRIEVE * dt
-			interest = minf(1.0, interest + dt * 0.08)
-			if water_at(lure) == INF: _retrieve("Lure's in."); return
-			_click(dt)
+	# reeling the lure in slowly (holding left mouse)
+	if reel_held:
+		var to := p.global_position - lure; to.y = 0
+		if to.length() < 2.6: _retrieve("Lure's in."); return
+		var nxt := lure + to.normalized() * RETRIEVE * dt
+		if water_at(nxt) == INF: _retrieve("Lure's in."); return
+		lure = nxt
+		interest = minf(1.0, interest + dt * 0.08)
+		_click(dt)
 	if fish.is_empty():
 		interest = maxf(0.1, interest - dt * 0.01)
 		# something takes an interest
 		if rng.randf() < dt * (0.12 + interest * 0.35):
 			fish = _spot_fish()
-			var a := rng.randf() * TAU
-			fish.pos = lure + Vector3(cos(a), 0, sin(a)) * rng.randf_range(4.0, 8.0)
+			# from somewhere out in the water, never up the bank
+			fish.pos = lure
+			for tries in range(12):
+				var a := rng.randf() * TAU
+				var q := lure + Vector3(cos(a), 0, sin(a)) * rng.randf_range(2.5, 7.0)
+				if water_at(q) != INF: fish.pos = q; break
 			fish.pos.y = lure.y
 			fish.phase = "come"; fish.nibbles = rng.randi_range(1, 3); fish.next = 0.0
 		return
@@ -300,7 +305,7 @@ func _strike() -> void:
 	tension = 0.4
 	game.player.speed_mult = 0.0
 	Sfx.play("crunch", 0.4, 1.8)
-	_say("FISH ON! Hold left mouse to reel. Turn the rod against its runs.", 3.0)
+	_say("FISH ON! Hold left mouse to reel. Aim the rod at the fish to ease the tension, pull away to put pressure on.", 3.5)
 
 # ---------------------------------------------------------------- the fight
 func _fight_step(dt: float) -> void:
@@ -315,21 +320,33 @@ func _fight_step(dt: float) -> void:
 			f.run = [-1.0, 1.0, 0.001][rng.randi() % 3]; f.run_t = rng.randf_range(1.2, 3.0) * (0.5 + f.stamina * 0.6)
 	var running: bool = f.run != 0.0
 	var pull: float = f.str * (1.0 if running else 0.3) * (0.4 + 0.6 * f.stamina)
-	# where your rod points against where the fish is: side pressure the other way turns it and tires it
-	var to_fish := Vector3(sin(f.ang), 0, cos(f.ang))
-	var fw := p.fwd()
-	var rod_side := signf(fw.cross(to_fish).y) * minf(1.0, absf(asin(clampf(fw.cross(to_fish).y, -1.0, 1.0))) / 0.7)
+	# tension follows the rod, and the rod follows your look: point it at the fish and the line eases off,
+	# pull it away (up or to the side) and the rod bends and loads the line
+	var eye: Vector3 = p.cam.global_position
+	var fpos := _fish_world()
+	var to_fish3 := (fpos - eye).normalized()
+	var look := -p.cam.global_transform.basis.z
+	bend = clampf(look.angle_to(to_fish3) / 1.1, 0.0, 1.0)
+	var to_fish := Vector3(to_fish3.x, 0, to_fish3.z).normalized()
+	var fw := Vector3(look.x, 0, look.z).normalized()
+	var side := clampf(fw.signed_angle_to(to_fish, Vector3.UP) / 0.8, -1.0, 1.0)     # + rod off to the right of the fish
 	var against := 0.0
-	if running and absf(f.run) > 0.5: against = -rod_side * signf(f.run)      # rod pulled the other way from the run
-	var want := pull * 0.75 + (0.38 if reel_held else 0.02) - against * 0.22 + (0.15 if reel_held and running else 0.0)
-	tension = lerpf(tension, clampf(want, 0.0, 1.3), minf(1.0, dt * 3.0))
-	# the line: running fish take line (less if the drag's fighting them), reeling takes it back
-	var take: float = (f.spd * 1.8 if running else 0.0) * (1.0 - clampf(against, 0.0, 1.0) * 0.6)
-	if reel_held: take -= REEL_SPEED * (0.45 if running else 1.0)
+	if running and absf(f.run) > 0.5: against = clampf(side * signf(f.run), 0.0, 1.0)  # rod swung the opposite way to the run
+	var want := pull * (0.25 + 0.6 * bend) + bend * 0.45 + (0.28 if reel_held else 0.0)
+	tension = lerpf(tension, clampf(want, 0.0, 1.4), minf(1.0, dt * 4.0))
+	# the line: a running fish takes line against a light drag; reeling takes it back, faster with the rod loaded
+	var take: float = (f.spd * 1.8 if running else 0.0) * (1.0 - clampf(tension, 0.0, 1.0) * 0.7) * (1.0 - against * 0.5)
+	if reel_held: take -= REEL_SPEED * (0.5 if running else 1.0) * (0.6 + 0.6 * bend)
+	var old_d: float = f.dist; var old_a: float = f.ang
 	f.dist = clampf(f.dist + take * dt, 0.5, 60.0)
 	if running and absf(f.run) > 0.5: f.ang += f.run * (0.35 - against * 0.25) * dt * f.spd
+	# fish stay in the water: a run that would take it up the bank turns it back
+	if water_at(_fish_world()) == INF:
+		if reel_held and f.stamina < 0.3 and f.dist < old_d: _landed(); return     # tired out: drag it up onto the bank
+		f.dist = old_d; f.ang = old_a
+		if running: f.run = -f.run
 	# tiring: worn down by tension, faster with good side pressure
-	f.stamina = maxf(0.0, f.stamina - dt * (0.018 + tension * 0.05 + maxf(against, 0.0) * 0.05) / maxf(0.4, f.str))
+	f.stamina = maxf(0.0, f.stamina - dt * (0.018 + tension * 0.06 + against * 0.06) / maxf(0.4, f.str))
 	if reel_held: _click(dt)
 	# a jump now and then while it's still fresh
 	f.jump_t -= dt
@@ -431,7 +448,7 @@ func step(dt: float) -> void:
 		"wait": _wait_step(dt)
 		"fight": _fight_step(dt)
 		"snag":
-			if alt_held:
+			if reel_held:
 				var to: Vector3 = game.player.global_position - lure; to.y = 0
 				if to.length() < 2.0: _retrieve("Reeled in.")
 				else: lure += to.normalized() * 3.0 * dt; lure.y = game.world.H(lure.x, lure.z) + 0.03
@@ -453,15 +470,12 @@ func _music_step(dt: float) -> void:
 
 func _pose(dt: float) -> void:
 	# the rod in your hands: out in front, tip up; it bends down toward a fish on and dips as you reel
-	var bend := 0.0
-	var side := 0.0
-	if state == "fight":
-		bend = tension * 0.35
-		var to_fish := Vector3(sin(fish.ang), 0, cos(fish.ang))
-		var local: Vector3 = game.player.global_transform.basis.inverse() * to_fish
-		side = clampf(-local.x, -1.0, 1.0) * 0.3
-	if state == "aim" and meter >= 0.0: bend = -0.5 * meter        # cocked back over your shoulder for the cast
-	rod.transform = Transform3D(Basis(Vector3.UP, side) * Basis(Vector3.RIGHT, -0.35 - bend), Vector3(0.22, -0.32, -0.4))
+	var rb := 0.0
+	if state == "fight": rb = tension * 0.35
+	if state == "aim" and meter >= 0.0: rb = -0.5 * meter        # cocked back over your shoulder for the cast
+	jig_t = maxf(0.0, jig_t - dt)
+	rb -= sin(jig_t / 0.3 * PI) * 0.25                             # a flick of the tip when you jig
+	rod.transform = Transform3D(Basis(Vector3.RIGHT, -0.35 - rb), Vector3(0.22, -0.32, -0.4))
 	# the float on the water (dips on a nibble, under on the bite), the shadow below
 	if state == "wait" or state == "fly" or state == "snag":
 		var dip := 0.0
@@ -470,6 +484,7 @@ func _pose(dt: float) -> void:
 				fish.dip = maxf(0.0, fish.dip - dt); dip = sin(fish.dip / 0.35 * PI) * 0.05
 			if fish.phase == "bite": dip = 0.22
 		var bob := sin(t * 2.3) * 0.008 if state == "wait" else 0.0
+		bob += sin(jig_t / 0.3 * PI) * 0.04
 		bobber.global_position = lure + Vector3(0, bob - dip, 0)
 		bobber.visible = true
 	elif state == "fight":
@@ -519,9 +534,9 @@ func _say(s: String, secs: float) -> void:
 func prompt() -> String:
 	match state:
 		"aim": return "Hold left mouse to cast · let go to throw" if meter < 0.0 else "Cast: %d ft" % roundi((2.5 + meter * (MAX_CAST - 2.5)) * 3.28)
-		"wait": return "Strike: left mouse when the float goes under · right mouse: reel slow / tap to twitch"
-		"fight": return "Left mouse: reel · turn against the run · %.1f m" % float(fish.dist)
-		"snag": return "Hold right mouse to reel in"
+		"wait": return "Wheel down to set the hook when the float goes under · right mouse: jig · hold left: reel in"
+		"fight": return "Left mouse: reel · aim at the fish to ease off, pull away to load the rod · %.1f m" % float(fish.dist)
+		"snag": return "Hold left mouse to reel in"
 	return ""
 
 # ---------------------------------------------------------------- models

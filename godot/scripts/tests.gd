@@ -2316,36 +2316,41 @@ func _dock_fish() -> void:
 	g.equip("rod")
 	note("near", g.fishing.water_near())
 	await wait(3.0)
-	note("music", [g.fishing.music.playing, snappedf(g.fishing.music.volume_db, 0.1), g.fishing.music.stream != null])
+	note("music", [g.fishing.music.playing, snappedf(g.fishing.music.volume_db, 0.1)])
 	g.fishing.press(true); await wait(0.9); g.fishing.press(false)
 	await wait(1.2)
 	note("cast", [g.fishing.state, snappedf(g.fishing.lure.distance_to(g.player.global_position), 0.1)])
 	await shot("fish-wait")
-	var caught := 0; var lost := 0; var early := 0
+	var caught := 0; var lost := 0; var dry := 0
 	for round in range(4):
 		var tw := 0.0
 		while g.fishing.state == "wait" and tw < 40.0:
 			if not g.fishing.fish.is_empty() and g.fishing.fish.phase == "bite":
-				g.fishing.press(true); g.fishing.press(false); break
+				g.fishing.wheel_down(); break
+			if tw > 3.0 and fmod(tw, 2.0) < 0.1: g.fishing.alt(true); g.fishing.alt(false)       # jig now and then
 			await wait(0.1); tw += 0.1
 		if g.fishing.state != "fight": note("nobite%d" % round, g.fishing.state); continue
 		await shot("fish-fight")
-		# reel when the tension's low, ease off when high; turn against runs
-		var tf := 0.0
+		# keep the tension in the middle by looking at the fish and pulling the rod up off it
+		var off := 0.4; var tf := 0.0; var tmax := 0.0
 		while g.fishing.state == "fight" and tf < 90.0:
-			var f: Dictionary = g.fishing.fish
+			if g.fishing.tension > 0.8: off = maxf(0.0, off - 0.05)
+			elif g.fishing.tension < 0.45: off = minf(1.2, off + 0.05)
+			var fp: Vector3 = g.fishing._fish_world()
+			if g.fishing.water_at(fp) == INF: dry += 1
+			look_at_point(fp)
+			g.player.pitch = clampf(g.player.pitch + off, -1.5, 1.45)
 			g.fishing.reel_held = g.fishing.tension < 0.75
-			if absf(float(f.run)) > 0.5:
-				g.player.rotation.y = -float(f.ang) + float(f.run) * 0.9 + PI
+			tmax = maxf(tmax, g.fishing.tension)
 			await wait(0.1); tf += 0.1
 		if g.fishing.state == "landed":
 			caught += 1
-			note("fish%d" % round, [g.fishing.fish.name, snappedf(g.fishing.fish.len, 0.1), snappedf(tf, 0.1)])
+			note("fish%d" % round, [g.fishing.fish.name, snappedf(g.fishing.fish.len, 0.1), snappedf(tf, 0.1), snappedf(tmax, 0.01)])
 			await shot("fish-card")
 			g.fishing.press(true)
-		else: lost += 1; note("lost%d" % round, g.fishing.msg)
+		else: lost += 1; note("lost%d" % round, [g.fishing.msg, snappedf(tf, 0.1)])
 		g.fishing.press(true); await wait(0.9); g.fishing.press(false); await wait(1.2)
-	note("result", [caught, lost, Career.load().get("fish", {}).keys()])
+	note("result", [caught, lost, "dry", dry])
 
 ## rain stops at the cabin door
 func _hubrain() -> void:
@@ -2361,3 +2366,18 @@ func _hubrain() -> void:
 	g.player.teleport(h.to_global(Vector3(0, 0, -Hub.HZ - 6.0)) + Vector3(0, g.world.H(0, -Hub.HZ - 6.0) + 0.05, 0))
 	await wait(1.0)
 	note("outside", [h.indoors(g.get_viewport().get_camera_3d().global_position), g.weather.rain_fx.emitting])
+
+## you're in the truck in the chase view
+func _driver() -> void:
+	await wait(1.0)
+	g._start()
+
+	g.enter_truck()
+	await wait(0.3)
+	g.truck.chase = true; g.truck._set_cam()
+	g.truck.look_yaw = 2.2
+	await wait(1.0)
+	await shot("driver-a")
+	g.truck.look_yaw = -1.2
+	await wait(0.6)
+	await shot("driver-b")

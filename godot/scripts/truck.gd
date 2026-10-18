@@ -42,6 +42,7 @@ func setup(rng: RandomNumberGenerator) -> void:
 		mb.commit(mesh)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, part[1])
 	var body := MeshInstance3D.new(); body.mesh = mesh; body.name = "Body"; add_child(body)
+	driver = _driver_mb().instance(); driver.name = "Driver"; driver.visible = false; add_child(driver)
 	var tg: MeshInstance3D = m.tailgate.instance(Mats.vcol_glass); tg.name = "Tailgate"
 	tg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(tg)
@@ -166,7 +167,46 @@ func toggle_cam() -> void:
 func speed_mph() -> float:
 	return linear_velocity.length() * 2.237
 
+## you, behind the wheel: only drawn from the chase camera (in the cab you're looking out of your own eyes)
+var driver: MeshInstance3D
+
+func _driver_mb() -> MeshBuilder:
+	var mb := MeshBuilder.new()
+	var shirt := Color("#4f6b3a"); var pants := Color("#5a4a36"); var glove := Color("#c8a46a"); var skin := Color("#e0b090")
+	var helmet := Color("#e8701e"); var muff := Color("#2e3236"); var boot := Color("#4a3624")
+	var x := -0.4                                        # behind the wheel
+	var hip := Vector3(x, 0.86, -0.28); var sh_y := 1.33; var sh_z := -0.36
+	# legs: thighs forward along the seat, shins down to the pedals
+	for sx: float in [-1.0, 1.0]:
+		var h := hip + Vector3(sx * 0.1, 0, 0)
+		var knee := Vector3(x + sx * 0.11, 0.9, 0.12)
+		var foot := Vector3(x + sx * 0.12, 0.74, 0.34)
+		mb.tube(h, knee, 0.075, 0.065, pants, 8, true)
+		mb.tube(knee, foot, 0.06, 0.05, pants, 8, true)
+		mb.box(foot.x, foot.y - 0.02, foot.z + 0.05, 0.1, 0.07, 0.2, boot)
+	# torso, leaning back into the bench a touch
+	mb.tube(hip + Vector3(0, 0.02, 0), Vector3(x, sh_y - 0.05, sh_z), 0.17, 0.19, shirt, 10, true)
+	mb.sphere(x, sh_y - 0.04, sh_z, 0.2, 0.08, 0.13, shirt, 10, 6)
+	# arms out to the wheel at ten and two
+	for sx: float in [-1.0, 1.0]:
+		var s0 := Vector3(x + sx * 0.2, sh_y - 0.06, sh_z)
+		var elbow := Vector3(x + sx * 0.25, 1.05, -0.05)
+		var hand := Vector3(x + sx * 0.15, 1.2, 0.34)
+		mb.tube(s0, elbow, 0.05, 0.045, shirt, 8, true)
+		mb.tube(elbow, hand, 0.045, 0.04, shirt, 8, true)
+		mb.sphere(hand.x, hand.y, hand.z, 0.045, 0.045, 0.05, glove, 8, 5)
+	# neck and head, hard hat and ear muffs
+	var head := Vector3(x, Models.EYE.y + 0.02, sh_z + 0.08)
+	mb.tube(Vector3(x, sh_y, sh_z + 0.02), head + Vector3(0, -0.1, 0), 0.05, 0.05, skin, 8)
+	mb.sphere(head.x, head.y, head.z, 0.1, 0.12, 0.11, skin, 12, 8)
+	mb.sphere(head.x, head.y + 0.08, head.z - 0.01, 0.135, 0.09, 0.15, helmet, 12, 6)
+	mb.cyl(head.x, head.y + 0.03, head.z - 0.01, 0.16, 0.16, 0.015, helmet, 14, true)
+	for sx: float in [-1.0, 1.0]:
+		mb.sphere(head.x + sx * 0.11, head.y - 0.01, head.z, 0.035, 0.055, 0.05, muff, 8, 5)
+	return mb
+
 func _physics_process(dt: float) -> void:
+	if driver: driver.visible = driving and chase
 	var fwd := global_transform.basis.z
 	var v := linear_velocity.dot(fwd)
 	if driving:

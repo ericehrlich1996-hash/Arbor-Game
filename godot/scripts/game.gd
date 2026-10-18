@@ -557,7 +557,9 @@ func _unhandled_input(ev: InputEvent) -> void:
 		else: player.look(ev.relative.x * k, ev.relative.y * k)
 		return
 	if ev is InputEventMouseButton and ev.pressed and (ev.button_index == MOUSE_BUTTON_WHEEL_UP or ev.button_index == MOUSE_BUTTON_WHEEL_DOWN):
-		if player.tool == "saw" and not player.in_truck:
+		if player.tool == "rod" and not player.in_truck and ev.button_index == MOUSE_BUTTON_WHEEL_DOWN and dlg == null:
+			fishing.wheel_down()
+		elif player.tool == "saw" and not player.in_truck:
 			if not saw.guide.is_empty():
 				# guided cut: the wheel tilts the cut, in 5° steps (level, a sloping notch top, or an upward cut)
 				saw.tilt = clampf(saw.tilt + deg_to_rad(5.0 if ev.button_index == MOUSE_BUTTON_WHEEL_DOWN else -5.0), deg_to_rad(-70), deg_to_rad(70))
