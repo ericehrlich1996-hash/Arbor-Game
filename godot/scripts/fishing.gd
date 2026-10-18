@@ -65,6 +65,10 @@ const FADE_OUT := 3.0
 var music: AudioStreamPlayer
 var music_k := 0.0
 var under: Underwater
+var reel_snd: AudioStreamPlayer
+var drag_snd: AudioStreamPlayer
+var line_out := 0.0               # how fast the fish is taking line (m/s), for the drag
+var _creak_t := 0.0
 
 func setup(g) -> void:
 	game = g
@@ -94,6 +98,8 @@ func setup(g) -> void:
 	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; smat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	shadow = sm.instance(smat); shadow.top_level = true; shadow.visible = false; add_child(shadow)
 	_build_ui()
+	reel_snd = AudioStreamPlayer.new(); reel_snd.stream = Sfx.sounds.get("reel"); reel_snd.volume_db = -80; add_child(reel_snd)
+	drag_snd = AudioStreamPlayer.new(); drag_snd.stream = Sfx.sounds.get("drag"); drag_snd.volume_db = -80; add_child(drag_snd)
 	under = Underwater.new(); under.name = "Underwater"; add_child(under)
 	under.setup(self)
 	music = AudioStreamPlayer.new(); music.name = "Music"
@@ -233,7 +239,7 @@ func _spot_fish() -> Dictionary:
 	# sizes skew small, with the odd big one
 	var k := pow(rng.randf(), 1.8)
 	var L := lerpf(float(sp.len[0]), float(sp.len[1]), k)
-	var kg := 0.0000118 * pow(L, 3.0) * (0.85 if name == "Northern pike" or name == "Muskellunge" else 1.0)
+	var kg := 0.0000118 * pow(L, 3.0) * (0.85 if name == "Northern pike" or name == "Muskellunge" else (1.6 if name == "Bluegill" or name == "Black crappie" or name == "Rock bass" else 1.0))
 	return {name = name, len = L, kg = kg, str = float(sp.str) * (0.7 + 0.6 * k), spd = float(sp.spd)}
 
 func _wait_step(dt: float) -> void:
@@ -246,7 +252,6 @@ func _wait_step(dt: float) -> void:
 		if water_at(nxt) == INF: _retrieve("Lure's in."); return
 		lure = nxt
 		interest = minf(1.0, interest + dt * 0.08)
-		_click(dt)
 	if fish.is_empty():
 		interest = maxf(0.1, interest - dt * 0.01)
 		# something takes an interest
@@ -359,6 +364,7 @@ func _fight_step(dt: float) -> void:
 	var take: float = (f.spd * 1.8 if running else 0.0) * (1.0 - clampf(tension, 0.0, 1.0) * 0.7) * (1.0 - against * 0.5)
 	if reel_held: take -= REEL_SPEED * (0.5 if running else 1.0) * (0.6 + 0.6 * bend)
 	var old_d: float = f.dist; var old_a: float = f.ang
+	line_out = maxf(0.0, take)
 	f.dist = clampf(f.dist + take * dt, 0.5, 60.0)
 	if running and absf(f.run) > 0.5: f.ang += f.run * (0.35 - against * 0.25) * dt * f.spd
 	# fish stay in the water: a run that would take it up the bank turns it back
@@ -368,7 +374,6 @@ func _fight_step(dt: float) -> void:
 		if running: f.run = -f.run
 	# tiring: worn down by tension, faster with good side pressure
 	f.stamina = maxf(0.0, f.stamina - dt * (0.018 + tension * 0.06 + against * 0.06) / maxf(0.4, f.str))
-	if reel_held: _click(dt)
 	# a jump now and then while it's still fresh
 	f.jump_t -= dt
 	if f.jump_t <= 0.0 and f.stamina > 0.4:
@@ -413,8 +418,10 @@ func _landed() -> void:
 	var sp: Dictionary = SPECIES[fish.name]
 	caught = _fish_model(fish.name, float(fish.len)).instance()
 	game.player.cam.add_child(caught)
-	caught.position = Vector3(0.05, -0.18, -0.55)
-	caught.rotation = Vector3(0.15, PI / 2 + 0.2, 0.25)
+	# held up in the middle of the screen, side on, far enough off that the whole fish fits
+	var d := clampf(float(fish.len) / 100.0 * 1.3, 0.38, 1.7)
+	caught.position = Vector3(0.0, d * 0.12, -d)
+	caught.rotation = Vector3.ZERO
 	var cm: float = fish.len; var kg: float = fish.kg
 	var inch := cm / 2.54; var lb := kg * 2.2046
 	var c := Career.load()
@@ -423,8 +430,8 @@ func _landed() -> void:
 	var record := cm > best
 	var value := maxi(1, roundi(lb * float(sp.price)))
 	fish.value = value
-	card_lbl.text = "[font_size=26][b]%s[/b][/font_size]\n%.1f cm  (%.1f in)\n%.2f kg  (%d lb %d oz)%s\n\n[b]Left click[/b] keep it (+$%d)    [b]Right click[/b] let it go" % [
-		fish.name, cm, inch, kg, int(lb), int(fmod(lb, 1.0) * 16.0), "\n[color=#ffd36a]New personal best![/color]" if record else "", value]
+	card_lbl.text = "[center][font_size=30][b]%s[/b][/font_size]\n[font_size=20]Length  [b]%.1f in[/b]  (%.1f cm)\nWeight  [b]%d lb %d oz[/b]  (%.2f kg)[/font_size]%s\n\n[b]Left click[/b] keep it (+$%d)    [b]Right click[/b] let it go[/center]" % [
+		fish.name, inch, cm, int(lb), int(fmod(lb, 1.0) * 16.0), kg, "\n[color=#ffd36a]New personal best![/color]" if record else "", value]
 	card.visible = true
 	_say("", 0.0)
 
@@ -455,6 +462,7 @@ func step(dt: float) -> void:
 		msg_t -= dt
 		if msg_t <= 0.0: msg = ""
 	_music_step(dt)
+	_reel_sounds(dt)
 	under.step(dt)
 	if not rod.visible: return
 	if meter >= 0.0:
@@ -479,6 +487,34 @@ func step(dt: float) -> void:
 	gauge.queue_redraw()
 	lbl.text = msg if msg != "" else prompt()
 
+## the reel: a ticking whir while you wind in (it labours under load), the drag buzzing as a fish takes
+## line - louder and higher the harder it pulls - and the rod creaking when it's close to breaking
+func _reel_sounds(dt: float) -> void:
+	var winding: bool = rod.visible and reel_held and (state == "wait" or state == "fight" or state == "snag")
+	var reel_v := 0.0; var drag_v := 0.0
+	if winding:
+		reel_v = 0.55
+		reel_snd.pitch_scale = clampf(1.15 - tension * 0.35, 0.7, 1.2) if state == "fight" else 1.15
+	if rod.visible and state == "fight":
+		var buzz := clampf(line_out / 2.0, 0.0, 1.0) * clampf(0.35 + tension, 0.0, 1.2)
+		var strain := clampf((tension - 0.75) / 0.4, 0.0, 1.0)
+		drag_v = maxf(buzz, strain * 0.6)
+		drag_snd.pitch_scale = 0.85 + clampf(tension, 0.0, 1.3) * 0.35
+		_creak_t -= dt
+		if tension > 0.95 and _creak_t <= 0.0:
+			_creak_t = randf_range(0.5, 0.9)
+			Sfx.play("creak", 0.35 + (tension - 0.95) * 1.5, randf_range(1.3, 1.6))
+	else:
+		line_out = 0.0
+	for e in [[reel_snd, reel_v], [drag_snd, drag_v]]:
+		var p: AudioStreamPlayer = e[0]; var v: float = e[1]
+		if p.stream == null: continue
+		if v > 0.01 and not p.playing: p.play()
+		var cur := db_to_linear(p.volume_db)
+		cur = move_toward(cur, v, dt * 4.0)
+		p.volume_db = linear_to_db(maxf(cur, 0.0001))
+		if cur <= 0.002 and v <= 0.01 and p.playing: p.stop()
+
 func _music_step(dt: float) -> void:
 	if music == null or music.stream == null: return
 	if rod.visible:
@@ -497,7 +533,10 @@ func _pose(dt: float) -> void:
 	if state == "aim" and meter >= 0.0: rb = -0.5 * meter        # cocked back over your shoulder for the cast
 	jig_t = maxf(0.0, jig_t - dt)
 	rb -= sin(jig_t / 0.3 * PI) * 0.25                             # a flick of the tip when you jig
-	rod.transform = Transform3D(Basis(Vector3.RIGHT, -0.35 - rb), Vector3(0.22, -0.32, -0.4))
+	rod.transform = Transform3D(Basis(Vector3.RIGHT, -0.35 - rb), Vector3(0.22, -0.32, -0.4) + (Vector3(0.25, -0.45, 0.1) if state == "landed" else Vector3.ZERO))
+	# the catch, turning a little in your hands
+	if state == "landed" and caught:
+		caught.rotation = Vector3(0.0, sin(t * 1.1) * 0.18, sin(t * 6.0) * 0.03)
 	# the float on the water (dips on a nibble, under on the bite), the shadow below
 	if state == "wait" or state == "fly" or state == "snag":
 		var dip := 0.0
@@ -585,10 +624,13 @@ func _fish_model(name: String, cm: float) -> MeshBuilder:
 	var mb := MeshBuilder.new()
 	var top: Color = sp.top; var belly: Color = sp.belly
 	var fin := MeshBuilder.shade(top, 0.8).lerp(belly, 0.2)
-	# body: a fat front tapering to the tail, dark back, pale belly
-	mb.sphere(L * 0.08, 0, 0, L * 0.4, L * deep, wide, top, 14, 8)
-	mb.sphere(-L * 0.22, L * deep * 0.05, 0, L * 0.28, L * deep * 0.62, wide * 0.75, top, 10, 6)
-	mb.sphere(L * 0.06, -L * deep * 0.38, 0, L * 0.36, L * deep * 0.62, wide * 0.92, belly, 12, 6)
+	# body: a fat front tapering to the tail. Its colouring - dark back, pale belly and the species'
+	# markings - is painted straight onto the body's vertices, so nothing sticks out past its outline
+	var b0 := mb.verts.size()
+	mb.sphere(L * 0.08, 0, 0, L * 0.4, L * deep, wide, top, 22, 12)
+	mb.sphere(-L * 0.22, L * deep * 0.05, 0, L * 0.28, L * deep * 0.62, wide * 0.75, top, 16, 10)
+	var b1 := mb.verts.size()
+	for i in range(b0, b1): mb.cols[i] = _fish_skin(name, mb.verts[i], L, deep, top, belly)
 	# head and mouth: bass and pike have a big jaw, sunfish a small one
 	var jaw := 0.09 if (name.contains("bass") or long or name == "Walleye") else 0.05
 	mb.sphere(L * 0.4, -L * deep * 0.12, 0, L * jaw * 1.2, L * jaw * 0.55, wide * 0.6, MeshBuilder.shade(belly, 0.85), 8, 5)
@@ -615,26 +657,34 @@ func _fish_model(name: String, cm: float) -> MeshBuilder:
 		mb.sphere(L * 0.05, L * deep * 0.95, 0, L * 0.17, L * deep * 0.45, L * 0.007, fin, 10, 4)
 		mb.sphere(-L * 0.18, L * deep * 0.85, 0, L * 0.12, L * deep * 0.5, L * 0.007, fin, 8, 4)
 		mb.sphere(-L * 0.2, -L * deep * 0.8, 0, L * 0.08, L * deep * 0.35, L * 0.007, fin, 8, 4)
-	# markings on both flanks
-	var r := RandomNumberGenerator.new(); r.seed = 7
-	for sz: float in [-1.0, 1.0]:
-		var zf := sz * wide * 0.97
-		if name.contains("bass") and name != "Rock bass":
-			# the dark lateral stripe that makes a bass a bass
-			for k in range(9):
-				var x := lerpf(L * 0.28, -L * 0.42, k / 8.0)
-				mb.sphere(x, L * deep * 0.02 + r.randf_range(-0.01, 0.01) * L, zf * (1.0 - absf(x / L) * 0.4), L * 0.045, L * deep * 0.16, L * 0.004, Color("#24301a") if name == "Largemouth bass" else Color("#4a3a1a"), 6, 3)
-		elif name == "Yellow perch" or name == "Bluegill" or name == "Walleye":
-			for k in range(6):
-				var x := lerpf(L * 0.2, -L * 0.32, k / 5.0)
-				mb.sphere(x, L * deep * 0.25, zf * (1.0 - absf(x / L) * 0.4), L * 0.022, L * deep * 0.55, L * 0.004, MeshBuilder.shade(top, 0.65), 5, 4)
-			if name == "Bluegill": mb.sphere(L * 0.27, L * deep * 0.12, zf, L * 0.035, L * 0.03, L * 0.004, Color("#14141c"), 6, 4)      # the dark ear flap
-		elif name == "Northern pike" or name == "Muskellunge" or name == "Black crappie" or name == "Brook trout":
-			for k in range(16):
-				var x := r.randf_range(-0.38, 0.3) * L
-				var c := Color("#e8e0a0") if name == "Northern pike" else (Color("#d8402a") if name == "Brook trout" and k % 3 == 0 else (Color("#e8d070") if name == "Brook trout" else MeshBuilder.shade(top, 0.6)))
-				mb.sphere(x, r.randf_range(-0.15, 0.6) * L * deep, zf * (1.0 - absf(x / L) * 0.4), L * 0.016, L * 0.01, L * 0.004, c, 4, 3)
 	return mb
+
+## the colour of the fish's skin at this point on its body: back to belly shading plus the markings
+func _fish_skin(name: String, p: Vector3, L: float, deep: float, top: Color, belly: Color) -> Color:
+	var u := p.x / L                                  # nose +0.48 .. tail -0.48
+	var v := p.y / (L * deep)                         # back +1 .. belly -1
+	var c := belly.lerp(top, smoothstep(-0.55, 0.15, v))
+	var dark := MeshBuilder.shade(top, 0.55)
+	if name == "Largemouth bass" or name == "Smallmouth bass":
+		if name == "Largemouth bass":
+			# the ragged dark stripe nose to tail along the side
+			var line := 0.04 + 0.1 * sin(u * 26.0) * 0.6
+			if absf(v - line) < 0.26 and u > -0.44 and u < 0.3: c = c.lerp(Color("#22301a"), 0.85)
+		else:
+			if sin(u * 40.0) > 0.55 and v > -0.35: c = c.lerp(Color("#3e3018"), 0.7)
+	elif name == "Yellow perch" or name == "Walleye" or name == "Bluegill" or name == "Rock bass":
+		# dark saddles down the flanks
+		var k := 0.5 if name == "Walleye" or name == "Rock bass" else 0.75
+		if sin(u * 36.0 + 0.6) > 0.35 and v > -0.45 and u < 0.3 and u > -0.42: c = c.lerp(dark, k)
+		if name == "Bluegill" and Vector2(u - 0.27, v - 0.15).length() < 0.07: c = Color("#14141c")   # the dark ear flap
+	elif name == "Northern pike" or name == "Muskellunge" or name == "Black crappie" or name == "Brook trout" or name == "Creek chub":
+		var h := fposmod(sin(p.x * 913.1 + p.y * 471.3 + absf(p.z) * 37.0) * 43758.5, 1.0)
+		if v > -0.5 and h > (0.72 if name != "Creek chub" else 0.95):
+			if name == "Northern pike": c = Color("#e8e0a0")
+			elif name == "Brook trout": c = Color("#d8402a") if h > 0.93 else Color("#e8d070")
+			else: c = c.lerp(dark, 0.7)
+	if name == "Muskellunge" and sin(u * 30.0) > 0.5 and v > -0.4: c = c.lerp(dark, 0.6)
+	return c
 
 # ---------------------------------------------------------------- the meters
 func _build_ui() -> void:
@@ -653,7 +703,9 @@ func _build_ui() -> void:
 	var sb := StyleBoxFlat.new(); sb.bg_color = Color(0.07, 0.08, 0.07, 0.86); sb.set_corner_radius_all(8)
 	sb.content_margin_left = 18; sb.content_margin_right = 18; sb.content_margin_top = 12; sb.content_margin_bottom = 12
 	card.add_theme_stylebox_override("panel", sb)
-	card.set_anchors_preset(Control.PRESET_CENTER_TOP); card.offset_left = -230; card.offset_right = 230; card.offset_top = 70
+	# under the fish, which is held up in the middle of the screen
+	card.set_anchors_preset(Control.PRESET_CENTER_BOTTOM); card.offset_left = -240; card.offset_right = 240; card.offset_top = -330; card.offset_bottom = -150
+	card.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	card_lbl = RichTextLabel.new(); card_lbl.bbcode_enabled = true; card_lbl.fit_content = true; card_lbl.scroll_active = false
 	card_lbl.custom_minimum_size = Vector2(420, 0)
 	card_lbl.add_theme_font_size_override("normal_font_size", 17); card_lbl.add_theme_font_size_override("bold_font_size", 17)

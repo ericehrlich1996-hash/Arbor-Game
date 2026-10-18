@@ -2478,3 +2478,47 @@ func _driverseat() -> void:
 	await wait(0.3)
 	await shot("seat-left")
 	note("eye", [Models.EYE, g.truck.driver.visible])
+
+## the fish models held up in front of you, the way you see them when you land one
+func _dock_models() -> void:
+	await wait(1.0)
+	g._start()
+	g.player.teleport(g.player.global_position, g.player.yaw)
+	look_at_point(g.player.global_position + Vector3(0, 1.6, 10))
+	await wait(0.3)
+	for n in ["Walleye", "Largemouth bass", "Yellow perch", "Northern pike", "Bluegill", "Brook trout"]:
+		var m: MeshInstance3D = g.fishing._fish_model(n, {"Northern pike": 80.0, "Bluegill": 20.0, "Brook trout": 30.0, "Yellow perch": 28.0}.get(n, 55.0)).instance()
+		g.player.cam.add_child(m)
+		m.position = Vector3(0.0, -0.05, -0.75 if n != "Northern pike" else -1.1)
+		m.rotation = Vector3(0.0, 0.0, 0.0)
+		await wait(0.3)
+		await shot("model-" + n.replace(" ", "_"))
+		m.rotation = Vector3(0.15, PI / 2 + 0.2, 0.25)
+		m.position = Vector3(0.05, -0.18, -0.55)
+		await wait(0.2)
+		await shot("held-" + n.replace(" ", "_"))
+		m.queue_free()
+
+## landing a fish: held up in the middle of the screen, length and weight underneath
+func _dock_landed() -> void:
+	await wait(1.0)
+	var c := Career.load(); c.rod = true; Career.save(c)
+	g._start()
+	look_at_point(g.player.global_position + Vector3(0, 1.4, 10))
+	g.equip("rod")
+	await wait(0.3)
+	for n in ["Walleye", "Bluegill", "Northern pike"]:
+		var L: float = {"Walleye": 59.3, "Bluegill": 19.0, "Northern pike": 84.0}[n]
+		g.fishing.fish = {name = n, len = L, kg = 0.0000118 * pow(L, 3.0), str = 0.5, spd = 1.0, uid = 7, ang = 0.0, dist = 2.0, run = 0.0, stamina = 0.1}
+		g.fishing.state = "fight"
+		g.fishing._landed()
+		await wait(0.6)
+		await shot("landed-" + n.replace(" ", "_"))
+		g.fishing.alt(true); g.fishing.alt(false)
+		await wait(0.3)
+
+func _sfxdump() -> void:
+	await wait(0.5)
+	for n in ["reel", "drag", "creak"]:
+		(Sfx.sounds[n] as AudioStreamWAV).save_to_wav(OS.get_environment("SHOTS") + "/%s.wav" % n)
+	note("dumped", true)

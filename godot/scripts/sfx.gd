@@ -155,6 +155,9 @@ func _build() -> void:
 	b = _buf(1.1)
 	for i in range(12): _noise(b, 0.025, 1400, 3, 0.35 * (1.0 - i / 14.0), "bandpass", i * 0.055)
 	sounds.woodpecker = _wav(b)
+	# the fishing reel: the soft ticking whir of winding line in, and the angry buzz of the drag as a fish takes line
+	sounds.reel = _ratchet_loop(34.0, 1700.0, 0.9, 0.3)
+	sounds.drag = _ratchet_loop(120.0, 3100.0, 0.5, 0.22)
 
 ## a bird call: a few quick whistled sweeps, each variant a different song
 func _bird(v: int) -> AudioStreamWAV:
@@ -281,6 +284,24 @@ func _engine_loop(f: float, lfo: float, lp: float) -> AudioStreamWAV:
 			var x := tanh((saw * 0.5 + sq * 0.25) * 3)
 			var y := flt.run(x) * (1.0 + 0.25 * sin(TAU * lfo * t))
 			if pass_i == 1: b[i] = y * 0.6
+	return _wav(b, true)
+
+## a looping ratchet: evenly spaced clicks (rate a second) through a band, over a little gear whir
+func _ratchet_loop(rate: float, band: float, click: float, whir: float) -> AudioStreamWAV:
+	var b := _buf(1.0)
+	var n := b.size()
+	var raw := PackedFloat32Array(); raw.resize(n)
+	var step := int(RATE / rate)
+	for k in range(0, n, step):
+		var amp := click * randf_range(0.8, 1.0)
+		for j in range(60):
+			if k + j < n: raw[k + j] += (randf() * 2 - 1) * amp * exp(-j / 9.0)
+	for i in range(n): raw[i] += (randf() * 2 - 1) * whir
+	var flt := Biquad.new("bandpass", band, 2.5, RATE)
+	for pass_i in range(2):        # twice over, so the loop seam is already settled
+		for i in range(n):
+			var y := flt.run(raw[i])
+			if pass_i == 1: b[i] = y * 1.4
 	return _wav(b, true)
 
 func _grit_loop(freq: float) -> AudioStreamWAV:
