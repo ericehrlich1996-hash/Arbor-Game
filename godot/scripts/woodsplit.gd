@@ -10,6 +10,8 @@ const PILE_PER_BUNDLE := 8
 const BUNDLE_PRICE := 5
 const SWEET_A := 0.55            # seconds of wind-up where the swing is at its best
 const SWEET_B := 0.9
+const GREEN_A := 0.68            # a sliver in the middle of the sweet spot: let go here and it splits, guaranteed
+const GREEN_B := 0.77
 
 var hub
 var game
@@ -343,14 +345,20 @@ class PowerRing extends Control:
 		draw_arc(c, r, 0, TAU, 48, Color(0, 0, 0, 0.35), 7.0, true)
 		var sa: float = split.SWEET_A / 1.2 * full; var sb: float = split.SWEET_B / 1.2 * full
 		draw_arc(c, r, a0 + sa, a0 + sb, 24, Color(1.0, 0.82, 0.3, 0.55), 7.0, true)
+		var ga: float = split.GREEN_A / 1.2 * full; var gb: float = split.GREEN_B / 1.2 * full
+		draw_arc(c, r, a0 + ga, a0 + gb, 12, Color(0.35, 0.95, 0.4, 0.85), 7.0, true)
 		if split.hold >= 0.0:
 			var k := clampf(split.hold / 1.2, 0.0, 1.0)
 			var col := Color(1.0, 0.85, 0.3) if split.in_sweet() else Color(1, 1, 1, 0.9)
+			if split.in_green(): col = Color(0.4, 1.0, 0.45)
 			if split.hold > split.SWEET_B: col = Color(1.0, 0.5, 0.35)
 			draw_arc(c, r, a0, a0 + k * full, 48, col, 5.0, true)
 
 func in_sweet() -> bool:
 	return hold >= SWEET_A and hold <= SWEET_B
+
+func in_green() -> bool:
+	return hold >= GREEN_A and hold <= GREEN_B
 
 # ---------------------------------------------------------------- what you can do
 func can_take_round() -> bool:
@@ -417,10 +425,11 @@ func release() -> void:
 	if not active or hold < 0.0: return
 	var power := _power(hold)
 	var perfect := in_sweet()
+	var green := in_green()
 	hold = -1.0
 	swing = 0.0
 	swing_hit = _aim_hit()
-	swing_hit.power = power; swing_hit.perfect = perfect
+	swing_hit.power = power; swing_hit.perfect = perfect; swing_hit.green = green
 	Sfx.play("whoosh", 0.5 + power * 0.4, 0.9 + power * 0.3)
 
 func _power(hld: float) -> float:
@@ -518,6 +527,7 @@ func _impact() -> void:
 	elif full and pc.check >= 0.0 and split_a == pc.check: acc *= 1.4
 	var dmg: float = h.power * acc * (1.35 if h.perfect else 1.0)
 	pc.dmg += dmg
+	if h.get("green", false): pc.dmg = maxf(pc.dmg, _toughness(pc))      # let go in the green: it splits, every time
 	pc.crack = split_a
 	var chips_c := Color("#e0c48e")
 	game.saw._emit(h.p + Vector3(0, 0.02, 0), Vector3(0, 1.6, 0) - cam_f * 0.8, int(4 + dmg * 5), chips_c, 2.2, 0.022)
@@ -555,6 +565,7 @@ func _split(pc: Dictionary, sa: float, h: Dictionary) -> void:
 	_hitstop(0.09 if h.perfect else 0.06)
 	_shake(0.9 if h.perfect else 0.65)
 	var msgs := ["Clean split!", "Beautiful!", "Like butter!", "Textbook!"] if h.perfect else ["Split!", "Nice!", "Got it!"]
+	if h.get("green", false): msgs = ["PERFECT!", "Dead centre!", "Clean through!"]
 	if streak >= 3: msgs = ["%d in a row!" % streak]
 	_popup(msgs[randi() % msgs.size()], Color(1.0, 0.86, 0.35) if h.perfect else Color(0.85, 1.0, 0.7))
 	pieces.erase(pc)
