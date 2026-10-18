@@ -2228,3 +2228,17 @@ func _hale_trailer_look() -> void:
 	look_at_point(tr.global_transform * Vector3(0, 1.0, Trailer.Z0 + 0.5))
 	await wait(0.5)
 	await shot("tl-train")
+
+## a foggy morning: the timelapse camera should still see the yard (and you in it)
+func _fogtl() -> void:
+	await wait(0.5)
+	g.weather.force("fog")
+	g._start()
+	await wait(2.0)
+	g.timelapse.interval = 0.3
+	await wait(1.5)
+	await shot("fog-ground")
+	var f: Array = g.timelapse.frames
+	note("tl_frames", f.size())
+	if f.size() > 0: (f[f.size() - 1] as Image).save_png(out_dir + "/fog-timelapse.png")
+	note("cam_env", [g.timelapse.cam.environment != null, g.timelapse.cam.environment.fog_enabled if g.timelapse.cam.environment else true])
