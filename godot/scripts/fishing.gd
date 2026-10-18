@@ -265,10 +265,28 @@ func _wait_step(dt: float) -> void:
 	match fish.phase:
 		"come":
 			var to: Vector3 = lure - fish.pos; to.y = 0
+			if to.length() < 0.9:
+				# it doesn't just take it: it has a look first, circling round the lure
+				fish.phase = "circle"; fish.next = rng.randf_range(1.6, 3.6)
+				fish.ca = atan2(fish.pos.z - lure.z, fish.pos.x - lure.x); fish.cdir = [-1.0, 1.0][rng.randi() % 2]
+			else:
+				fish.pos += to.normalized() * minf(to.length(), (0.8 + 0.6 * float(fish.spd)) * dt)
+		"circle":
+			fish.next -= dt
+			var na: float = fish.ca + fish.cdir * 1.1 * dt
+			var q: Vector3 = lure + Vector3(cos(na), 0, sin(na)) * 0.8
+			if water_at(q) != INF:
+				fish.ca = na
+				fish.pos = fish.pos.lerp(Vector3(q.x, lure.y, q.z), minf(1.0, dt * 3.0))
+			else:
+				fish.cdir = -fish.cdir
+			if fish.next <= 0.0: fish.phase = "approach"
+		"approach":
+			var to: Vector3 = lure - fish.pos; to.y = 0
 			if to.length() < 0.35:
 				fish.phase = "nibble"; fish.next = rng.randf_range(0.6, 1.8)
 			else:
-				fish.pos += to.normalized() * minf(to.length(), (0.8 + 0.6 * float(fish.spd)) * dt)
+				fish.pos += to.normalized() * minf(to.length(), 0.6 * dt)
 		"nibble":
 			fish.next -= dt
 			if fish.next <= 0.0:
@@ -292,7 +310,7 @@ func _wait_step(dt: float) -> void:
 
 func _strike() -> void:
 	Sfx.play("whoosh", 0.4, 1.8)
-	if fish.is_empty() or fish.phase == "come" or fish.phase == "spooked":
+	if fish.is_empty() or fish.phase == "come" or fish.phase == "spooked" or fish.phase == "circle" or fish.phase == "approach":
 		_say("Nothing there. Wait for the float to go under.", 1.8)
 		return
 	if fish.phase == "nibble":

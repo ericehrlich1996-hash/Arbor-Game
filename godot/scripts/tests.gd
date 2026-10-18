@@ -2409,3 +2409,50 @@ func _dock_uw() -> void:
 		if img and OS.get_environment("SHOTS") != "": img.save_png(OS.get_environment("SHOTS") + "/uw-%s.png" % n.replace(" ", "_"))
 	await shot("uw-screen")
 	note("done", true)
+
+## the underwater sequence, frame by frame: dive in, a bass comes and circles, strikes, the fight, back up
+func _dock_seq() -> void:
+	await wait(1.0)
+	var c := Career.load(); c.rod = true; Career.save(c)
+	g._start()
+	var lc: Vector3 = (g.lake_logs[0] as WoodPiece).center_world()
+	var sz: float = g.world._shore_z(lc.x + 12.0)
+	var beach := Vector3(lc.x + 12.0, 0, sz - 1.5)
+	g.player.teleport(Vector3(beach.x, g.world.H(beach.x, beach.z) + 0.05, beach.z))
+	look_at_point(Vector3(beach.x, g.world.H(beach.x, beach.z) + 1.0, beach.z + 20.0))
+	await wait(0.4)
+	g.equip("rod")
+	g.fishing.press(true); await wait(0.7); g.fishing.press(false)
+	await wait(1.25)
+	await _uwgrab("1-dive")
+	await wait(0.5)
+	await _uwgrab("2-dive")
+	await wait(1.0)
+	await _uwgrab("3-under")
+	var lure: Vector3 = g.fishing.lure
+	g.fishing.rng.seed = 3
+	g.fishing.fish = {name = "Largemouth bass", len = 48.0, kg = 1.5, str = 0.7, spd = 1.1, pos = lure + Vector3(2.5, 0, 1.0),
+		phase = "come", nibbles = 1, next = 0.0, uid = 99}
+	var tw := 0.0; var got := {}
+	while tw < 20.0 and g.fishing.state == "wait" and not g.fishing.fish.is_empty():
+		var ph: String = g.fishing.fish.phase
+		if not got.has(ph):
+			got[ph] = true
+			await wait(0.5 if ph != "bite" else 0.3)
+			await _uwgrab("4-" + ph)
+		if ph == "bite": g.fishing.wheel_down(); break
+		await wait(0.1); tw += 0.1
+	await wait(0.4)
+	await _uwgrab("5-strike")
+	await wait(2.5)
+	await _uwgrab("6-fight")
+	g.fishing._lost("test")
+	await wait(0.5)
+	await _uwgrab("7-rise")
+	await shot("seq-screen")
+	note("phases", got.keys())
+
+func _uwgrab(n: String) -> void:
+	await RenderingServer.frame_post_draw
+	var img: Image = g.fishing.under.vp.get_texture().get_image()
+	if img and OS.get_environment("SHOTS") != "": img.save_png(OS.get_environment("SHOTS") + "/uw-%s.png" % n)

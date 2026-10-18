@@ -108,14 +108,15 @@ func setup(sd: int, job_id := "earl") -> void:
 const LAKE_SHADER := """
 shader_type spatial;
 render_mode blend_mix, depth_draw_always, cull_disabled, specular_schlick_ggx;
-uniform vec3 deep : source_color = vec3(0.09, 0.22, 0.3);
-uniform vec3 shallow : source_color = vec3(0.24, 0.38, 0.36);
+varying vec3 wpos;
+uniform vec3 deep : source_color = vec3(0.05, 0.17, 0.27);
+uniform vec3 shallow : source_color = vec3(0.14, 0.32, 0.38);
 uniform vec3 sky : source_color = vec3(0.6, 0.72, 0.8);
 varying vec3 wp;
 float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float n(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
 	return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
-void vertex() { wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
+void vertex() { wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; wpos = wp; }
 void fragment() {
 	float t = TIME;
 	vec2 p = wp.xz;
@@ -126,8 +127,8 @@ void fragment() {
 	vec3 water = mix(shallow, deep, clamp(COLOR.r, 0.0, 1.0));
 	ALBEDO = mix(water, sky, fres * 0.5);
 	ROUGHNESS = 0.22; SPECULAR = 0.3; METALLIC = 0.0;
-	ALPHA = mix(0.7, 0.92, clamp(COLOR.r * 1.4 + fres, 0.0, 1.0));
-	if (!FRONT_FACING) {
+	ALPHA = mix(0.8, 0.94, clamp(COLOR.r * 1.4 + fres, 0.0, 1.0));
+	if (CAMERA_POSITION_WORLD.y < wpos.y) {
 		// from underneath: the bright, wobbling silver ceiling of the lake
 		float c = smoothstep(0.55, 0.95, a * 0.6 + b * 0.5);
 		ALBEDO = vec3(0.32, 0.55, 0.52) + c * vec3(0.35, 0.4, 0.32);
@@ -811,6 +812,8 @@ func _build_creek(root: Node3D) -> void:
 	sh.code = """
 shader_type spatial;
 render_mode blend_mix, cull_disabled, depth_draw_always, specular_schlick_ggx;
+varying vec3 wpos;
+void vertex() { wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
 uniform vec3 deep : source_color = vec3(0.07, 0.13, 0.12);
 uniform vec3 shallow : source_color = vec3(0.22, 0.28, 0.2);
 float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -828,7 +831,7 @@ void fragment() {
 	ALBEDO = mix(ALBEDO, vec3(0.75, 0.78, 0.74), foam * 0.35);
 	ROUGHNESS = 0.25; METALLIC = 0.0; SPECULAR = 0.25;
 	ALPHA = mix(0.55, 0.85, edge);
-	if (!FRONT_FACING) {
+	if (CAMERA_POSITION_WORLD.y < wpos.y) {
 		ALBEDO = vec3(0.34, 0.52, 0.44) + foam * 0.3 + a * 0.15;
 		EMISSION = ALBEDO * 0.6;
 		ALPHA = 0.9;
@@ -1250,7 +1253,7 @@ func _build_underwater(root: Node3D, kind: String, pads: Array) -> void:
 		x0 = -150.0; x1 = 150.0; z0 = 0.0; z1 = 0.0
 	# ---- the bed: a sheet just over the terrain, sand in the shallows going to dark silt, with patches
 	var bed := MeshBuilder.new()
-	var sand := Color("#b3a27a"); var silt := Color("#6a6648"); var dark := Color("#4a4c34"); var pebble := Color("#8a8070")
+	var sand := Color("#9a8c68"); var silt := Color("#5e5c44"); var dark := Color("#4a4c34"); var pebble := Color("#8a8070")
 	var st := 1.25
 	if kind == "lake":
 		var nx := int((x1 - x0) / st); var nz := int((z1 - z0) / st)
