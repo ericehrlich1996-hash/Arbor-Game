@@ -30,6 +30,18 @@ var title_cam: Camera3D
 var clock := 0.0
 var seed := 0
 var start_time := 0.0
+var touch: TouchControls          # on-screen controls on phones and tablets
+
+## the mouse is "ours": captured on a computer, always on a touchscreen (there's no pointer to capture)
+func cap() -> bool:
+	return touch != null or cap()
+
+func _capture() -> void:
+	if touch == null and tests == null: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func _mobile_scale() -> void:
+	var w := float(get_viewport().get_visible_rect().size.x)
+	get_viewport().scaling_3d_scale = clampf(1280.0 / maxf(w, 1.0), 0.5, 1.0)
 var tests = null
 var force_rev := false         # scripted tests hold the throttle without a captured mouse
 var on_bed := false
@@ -52,6 +64,13 @@ func _ready() -> void:
 	_setup_env()
 	hud = Hud.new(); add_child(hud)
 	Ach.game = self
+	if TouchControls.wanted():
+		touch = TouchControls.new(); touch.name = "Touch"; add_child(touch)
+		touch.setup(self)
+		Input.emulate_mouse_from_touch = true
+		# phones: lighter detail, and render the 3D at about 1280 across however sharp the screen is
+		get_tree().create_timer(0.5).timeout.connect(func(): set_detail(0); _mobile_scale())
+		get_viewport().size_changed.connect(_mobile_scale)
 	get_tree().create_timer(3.0).timeout.connect(Ach.retro)
 	hud.start_pressed.connect(_on_start)
 	hud.next_job_pressed.connect(func(): Hub.come_home = true; get_tree().reload_current_scene())
@@ -114,7 +133,7 @@ func hub_begin() -> void:
 	hud.set_play_visible(true)
 	for n in [hud.obj_panel, hud.hotbar, hud.tilt]: n.visible = false
 	hub.begin()
-	if tests == null: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_capture()
 	hud.fade.color.a = 1.0
 	create_tween().tween_property(hud.fade, "color:a", 0.0, 1.0)
 	if not hud.toast_lbl.visible or hud.toast_lbl.text == "": hud.toast("Home sweet home. The old computer in the corner is where the work comes in.", 5.0)
@@ -161,7 +180,7 @@ func buy_upgrade(id: String) -> void:
 
 func _close_computer() -> void:
 	hub.busy = false
-	if tests == null: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_capture()
 
 func start_job(idx: int) -> void:
 	if idx < 0 or idx >= Jobs.LIST.size(): return
@@ -184,8 +203,8 @@ func _hub_input(ev: InputEvent) -> void:
 	if hud.pc_screen.visible:
 		if ev is InputEventKey and ev.pressed and ev.physical_keycode == KEY_ESCAPE: hud.hide_computer(); _close_computer()
 		return
-	if ev is InputEventMouseButton and ev.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED; return
+	if ev is InputEventMouseButton and ev.pressed and not cap():
+		_capture(); return
 	if ev is InputEventKey and ev.pressed and ev.physical_keycode == KEY_ESCAPE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE; return
 	if ev.is_action_pressed("help"): hud.help.visible = not hud.help.visible; return
@@ -528,16 +547,16 @@ func _start() -> void:
 	hud.title.visible = false
 	hud.set_play_visible(true)
 	player.cam.make_current()
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_capture()
 	earl.state = "wave"
 	get_tree().create_timer(4.0).timeout.connect(func(): if earl.state == "wave": earl.state = "idle")
-	hud.toast("Click to look around. Walk with WASD. Talk to %s with E." % job.who, 5)
+	hud.toast(("Swipe to look around, left thumb to walk. Talk to %s with E." if touch else "Click to look around. Walk with WASD. Talk to %s with E.") % job.who, 5)
 	hud.set_tool(player.tool, muffs)
 	if weather: get_tree().create_timer(5.5).timeout.connect(weather.announce)
 
 # ================================================================ input
 func _input(ev: InputEvent) -> void:
-	if (phase == "play" or phase == "hub") and ev is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and dlg == null:
+	if (phase == "play" or phase == "hub") and ev is InputEventMouseMotion and cap() and dlg == null:
 		var k := 0.0022
 		if player.in_truck: truck.look(ev.relative.x * k, ev.relative.y * k)
 		else: player.look(ev.relative.x * k, ev.relative.y * k)
@@ -553,10 +572,10 @@ func _unhandled_input(ev: InputEvent) -> void:
 		if ev is InputEventKey and ev.pressed and ev.physical_keycode in [KEY_SPACE, KEY_ENTER, KEY_ESCAPE]: end_intro()
 		return
 	if phase != "play": return
-	if ev is InputEventMouseButton and ev.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and dlg == null:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if ev is InputEventMouseButton and ev.pressed and not cap() and dlg == null:
+		_capture()
 		return
-	if ev is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if ev is InputEventMouseMotion and cap():
 		var k := 0.0022
 		if player.in_truck: truck.look(ev.relative.x * k, ev.relative.y * k)
 		else: player.look(ev.relative.x * k, ev.relative.y * k)
@@ -584,14 +603,14 @@ func _unhandled_input(ev: InputEvent) -> void:
 		elif ev.is_action_pressed("camera"): truck.toggle_cam()
 		elif ev.is_action_pressed("unstick"): unstick_truck()
 		return
-	if player.tool == "rod" and ev is InputEventMouseButton and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if player.tool == "rod" and ev is InputEventMouseButton and cap():
 		if ev.button_index == MOUSE_BUTTON_LEFT: fishing.press(ev.pressed); return
 		if ev.button_index == MOUSE_BUTTON_RIGHT: fishing.alt(ev.pressed); return
-	if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT and (player.tool == "wedge" or player.tool == "rope") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT and (player.tool == "wedge" or player.tool == "rope") and cap():
 		if rig.use(): return
 	if ev.is_action_pressed("interact") and (player.tool == "wedge" or player.tool == "rope") and rig.prompt().begins_with("[b]"):
 		rig.use(); return
-	if ev is InputEventMouseButton and ev.pressed and player.tool == "hands" and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if ev is InputEventMouseButton and ev.pressed and player.tool == "hands" and cap():
 		if ev.button_index == MOUSE_BUTTON_LEFT and _grab_aimed(): return
 		if ev.button_index == MOUSE_BUTTON_RIGHT and haul.carrying():
 			# into the truck bed if you're by it, otherwise set one down
@@ -1024,7 +1043,7 @@ func advance_dialog() -> void:
 	var cb: Callable = dlg.on_done
 	dlg = null; earl.talking = false
 	hud.hide_dialog()
-	if phase == "play" and tests == null: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if phase == "play": _capture()
 	if cb.is_valid(): cb.call()
 
 func _step_dialog(dt: float) -> void:
@@ -1389,7 +1408,7 @@ func _process(dt: float) -> void:
 	player.speed_mult = (0.55 if chipper.mode == "hand" else 1.0) * (1.0 - haul.carry_mass() / Wood.LIFT_MAX * 0.45) * (0.5 if haul.drag != null else 1.0)
 	haul.step_carry(dt)
 	# the saw (or bare hands)
-	var rev := (Input.is_action_pressed("rev") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and dlg == null) or force_rev
+	var rev := (Input.is_action_pressed("rev") and cap() and dlg == null) or force_rev
 	var show_hands := not player.in_truck
 	if player.tool == "saw" and not player.in_truck and not haul.carrying():
 		saw.set_visible_tool(true)

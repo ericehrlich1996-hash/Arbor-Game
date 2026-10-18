@@ -79,3 +79,14 @@ Drop it on the garage and the roof caves in, and the damage comes out of your pa
 | `godot/scripts/tests.gd` | scripted playthroughs: `godot --path godot -- --test=job` |
 | `godot/export_web.sh` | exports the web build and copies it to the repo root |
 | `legacy/` | the earlier hand-written WebGL version |
+
+## Phones and tablets
+
+The same link works on a phone or tablet: touch controls turn on by themselves on a touchscreen.
+Left thumb is a joystick (walk, push to the edge to run; drive and steer in the truck), swipe on the
+right to look. USE and ALT are the left and right mouse buttons, E talks/uses/drives, JUMP (brake in
+the truck), KICK, and ▲ ▼ are the mouse wheel (cut angle; ▼ sets the hook). Tap a hotbar slot to switch
+tools; the small buttons along the top cover the saw start, drag, throw, drop, crouch, camera, unstick
+and help. Hold the phone sideways. To install it like an app: open the link in Chrome (Android) and
+choose "Add to Home screen" / "Install app", or in Safari (iPhone) Share → "Add to Home Screen".
+

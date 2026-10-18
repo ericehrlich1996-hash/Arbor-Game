@@ -2534,3 +2534,43 @@ func _hubach() -> void:
 	await wait(0.5)
 	await shot("ach-computer")
 	note("count", [Ach.count().x, Ach.count().y, Career.load().get("ach", {}).keys()])
+
+## touch controls: walk with the stick, look with a swipe, pick the saw from the hotbar, USE
+func _touch_job() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(1.0)
+	note("touch", [g.touch != null, g.touch != null and g.touch.active()])
+	var s: Vector2 = g.get_viewport().get_visible_rect().size
+	var p0: Vector3 = g.player.global_position
+	_tp(0, Vector2(s.x * 0.15, s.y * 0.75), true)
+	await wait(0.1)
+	_td(0, Vector2(s.x * 0.15, s.y * 0.75 - 120))
+	await wait(1.5)
+	await shot("touch-walk")
+	_tp(0, Vector2(s.x * 0.15, s.y * 0.75 - 120), false)
+	note("walked", snappedf(g.player.global_position.distance_to(p0), 0.1))
+	var y0: float = g.player.yaw
+	_tp(1, Vector2(s.x * 0.6, s.y * 0.4), true)
+	for k in range(10):
+		_td(1, Vector2(s.x * 0.6 - k * 20, s.y * 0.4)); await wait(0.03)
+	_tp(1, Vector2(s.x * 0.4, s.y * 0.4), false)
+	note("turned", snappedf(g.player.yaw - y0, 0.01))
+	g.touch._tool("saw")
+	await wait(0.3)
+	note("tool", g.player.tool)
+	g.touch._press("saw_start", true); g.touch._press("saw_start", false)
+	await wait(1.5)
+	g.touch._press("alt", true)
+	await wait(0.5)
+	note("saw", [g.saw.on, Input.is_action_pressed("rev")])
+	await shot("touch-saw")
+	g.touch._press("alt", false)
+
+func _tp(i: int, p: Vector2, down: bool) -> void:
+	var e := InputEventScreenTouch.new(); e.index = i; e.position = p; e.pressed = down
+	Input.parse_input_event(e)
+
+func _td(i: int, p: Vector2) -> void:
+	var e := InputEventScreenDrag.new(); e.index = i; e.position = p
+	Input.parse_input_event(e)

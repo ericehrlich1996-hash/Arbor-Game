@@ -27,6 +27,8 @@ var dlg_name: Label
 var dlg_text: Label
 var dlg_hint: Label
 var help: PanelContainer
+var help_lbl: RichTextLabel
+var title_hint: Label
 var drive: PanelContainer
 var drive_lbl: RichTextLabel
 var title: Control
@@ -212,8 +214,9 @@ func _ready() -> void:
 	help.set_anchors_preset(Control.PRESET_TOP_RIGHT); help.position = Vector2(-410, 90); help.custom_minimum_size = Vector2(390, 0)
 	var hl := RichTextLabel.new(); hl.bbcode_enabled = true; hl.fit_content = true; hl.scroll_active = false; hl.custom_minimum_size = Vector2(360, 0)
 	hl.add_theme_font_size_override("normal_font_size", 14); hl.add_theme_font_size_override("bold_font_size", 14)
-	hl.text = "[b]WASD[/b] walk · [b]Shift[/b] run · [b]Space[/b] jump · [b]C[/b] crouch\n[b]Mouse[/b] look (click to capture)\n[b]E[/b] talk / pick up / use / drive / hitch\n[b]1 2 3[/b] hands · chainsaw · ear muffs · [b]4 5[/b] wedges · pull rope (once you've bought them) · [b]6[/b] fishing rod\n[b]Fishing[/b] hold left mouse to cast · left click when the float goes under · hold left to reel · turn against the fish's run\n[b]R[/b] pull-start the saw · [b]Right mouse[/b] rev and cut\n[b]Wheel[/b] angle the cut (aim at a trunk or log: the line shows where it goes)\n[b]Left click[/b] grab · [b]Right click[/b] set down / throw in the truck · [b]T[/b] drag · [b]F[/b] kick\n[b]U[/b] unstick the truck (lifts it onto its wheels in a clear spot)\n[b]F3[/b] graphics detail (high / low) · [b]H[/b] this help"
+	hl.text = "[b]WASD[/b] walk · [b]Shift[/b] run · [b]Space[/b] jump · [b]C[/b] crouch\n[b]Mouse[/b] look (click to capture)\n[b]E[/b] talk / pick up / use / drive / hitch\n[b]1 2 3[/b] hands · chainsaw · ear muffs · [b]4 5[/b] wedges · pull rope (once you've bought them) · [b]6[/b] fishing rod\n[b]Fishing[/b] hold left mouse to cast · wheel down to set the hook when the float goes under · right mouse jigs · hold left to reel · aim at the fish to ease the tension\n[b]R[/b] pull-start the saw · [b]Right mouse[/b] rev and cut\n[b]Wheel[/b] angle the cut (aim at a trunk or log: the line shows where it goes)\n[b]Left click[/b] grab · [b]Right click[/b] set down / throw in the truck · [b]T[/b] drag · [b]F[/b] kick\n[b]U[/b] unstick the truck (lifts it onto its wheels in a clear spot)\n[b]F3[/b] graphics detail (high / low) · [b]H[/b] this help"
 	help.add_child(hl); help.visible = false
+	help_lbl = hl
 	root.add_child(help)
 	# fade + intro card
 	fade = ColorRect.new(); fade.color = Color(0, 0, 0, 0); fade.set_anchors_preset(Control.PRESET_FULL_RECT); fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -253,6 +256,7 @@ func _build_title() -> void:
 	b.pressed.connect(func(): start_pressed.emit())
 	var bc := CenterContainer.new(); bc.add_child(b); v.add_child(bc)
 	var hint := _label("Mouse to look · WASD to walk · E to use · H for all controls", 15, DIM); hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; v.add_child(hint)
+	title_hint = hint
 	root.add_child(title)
 
 # ---------------------------------------------------------------- the old computer (job select)
@@ -494,6 +498,11 @@ func shout(msg: String) -> void:
 	toast(msg, 2.5)
 	toast_lbl.add_theme_font_size_override("font_size", 40)
 	get_tree().create_timer(2.5).timeout.connect(func(): toast_lbl.add_theme_font_size_override("font_size", 17))
+
+## phones: the hints and the help card talk about thumbs, not the mouse and keys
+func use_touch_text() -> void:
+	if title_hint: title_hint.text = "Left thumb to move · swipe to look · USE and ALT are your mouse buttons · HELP for all controls"
+	if help_lbl: help_lbl.text = "[b]Left stick[/b] walk (push to the edge to run) · in the truck: drive and steer\n[b]Swipe[/b] anywhere on the right to look\n[b]USE[/b] = left mouse: grab, cut, cast, reel, swing the axe\n[b]ALT[/b] = right mouse: rev the saw, set down / throw in the truck, jig the lure\n[b]E[/b] talk / pick up / drive / hitch · [b]JUMP[/b] jump (brake in the truck) · [b]KICK[/b] kick\n[b]▲ ▼[/b] the mouse wheel: angle the cut · ▼ sets the hook when the float goes under\n[b]Tap a slot[/b] on the bar to switch tools\n[b]START SAW[/b] pull-start (a few pulls) · [b]DRAG[/b] drag a log · [b]THROW[/b] / [b]DROP[/b] what you carry\n[b]CAMERA[/b] truck view · [b]UNSTICK[/b] free the truck"
 
 func toast(msg: String, secs := 3.2) -> void:
 	toast_lbl.text = msg
