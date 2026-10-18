@@ -2456,3 +2456,25 @@ func _uwgrab(n: String) -> void:
 	await RenderingServer.frame_post_draw
 	var img: Image = g.fishing.under.vp.get_texture().get_image()
 	if img and OS.get_environment("SHOTS") != "": img.save_png(OS.get_environment("SHOTS") + "/uw-%s.png" % n)
+
+## close up on the cab: who's behind the wheel, from in front and from the cab camera
+func _driverseat() -> void:
+	await wait(1.0)
+	g._start()
+	g.enter_truck()
+	await wait(0.5)
+	await shot("seat-cab")
+	g.truck.chase = true; g.truck._set_cam()
+	await wait(0.3)
+	var tc := Camera3D.new(); g.add_child(tc)
+	var xf: Transform3D = g.truck.global_transform
+	tc.global_position = xf * Vector3(0.0, 1.6, 3.2)
+	tc.look_at(xf * Vector3(0.0, 1.2, 0.0))
+	tc.make_current()
+	await wait(0.3)
+	await shot("seat-front")
+	tc.global_position = xf * Vector3(2.6, 1.5, 0.2)
+	tc.look_at(xf * Vector3(0.0, 1.2, 0.0))
+	await wait(0.3)
+	await shot("seat-left")
+	note("eye", [Models.EYE, g.truck.driver.visible])

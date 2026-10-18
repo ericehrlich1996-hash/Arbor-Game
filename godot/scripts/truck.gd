@@ -174,7 +174,7 @@ func _driver_mb() -> MeshBuilder:
 	var mb := MeshBuilder.new()
 	var shirt := Color("#4f6b3a"); var pants := Color("#5a4a36"); var glove := Color("#c8a46a"); var skin := Color("#e0b090")
 	var helmet := Color("#e8701e"); var muff := Color("#2e3236"); var boot := Color("#4a3624")
-	var x := -0.4                                        # behind the wheel
+	var x := Models.EYE.x                                # in the driver's seat, where the cab camera sits behind the wheel
 	var hip := Vector3(x, 0.86, -0.28); var sh_y := 1.33; var sh_z := -0.36
 	# legs: thighs forward along the seat, shins down to the pedals
 	for sx: float in [-1.0, 1.0]:
