@@ -12,6 +12,8 @@ A physics arborist game, built with **Godot 4.7**. You start with a chainsaw, a 
 
 Drop it on the garage and the roof caves in, and the damage comes out of your pay. You need to buy the wedges before Mrs. Hale's job opens up.
 
+**Level 3 · Gus's dock logs.** Unlocks after two jobs (bring the bull rope). Old log-drive timber is floating in the waist-deep shallows where Gus wants his dock. Wade out, tie the rope round a log, hook it to the truck, and drive up the lawn to drag it onto the beach. Then buck the logs and load the rounds in your trailer. Gus pays in cash and his old spinning rod.
+
 **Walter's trailer.** The rounds go in Mrs. Hale's long utility trailer, tarped over the top. Back the truck up to its tongue and press E to hitch it (the load comes along), and walk the chipper's tongue to the ball on the trailer's back bumper to tow both: truck, trailer, chipper.
 
 ## Play it

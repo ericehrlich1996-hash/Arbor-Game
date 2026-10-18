@@ -63,7 +63,35 @@ const HALE := {
 	hit_garage = "THE GARAGE! Walter's Buick! Oh, I need to sit down.",
 }
 
-const LIST := [EARL, HALE]
+const DOCK := {
+	id = "dock", n = 3, title = "Gus's dock logs", pay = 800, unlock = 2, needs = "rope", look = "gus", who = "Gus", kind = "logs",
+	text = "Gus on Loon Lake wants a new dock, and there's a raft of old logs sunk in the shallows right where it goes. Rope 'em, drag 'em out with the truck, buck 'em and load your trailer. Bring the bull rope.",
+	tree_word = "logs", bark_tint = Color(0.72, 0.7, 0.66),
+	talk = [
+		"There he is! Mrs. Hale says you're the fella who didn't flatten Walter's Buick. High praise in this town.",
+		"So. Forty years I've been meaning to build a proper dock. Forty years those logs have been sitting right where it goes.",
+		"Old log-drive timber, they think. Sank in the shallows before my granddad's time. Water's about waist deep out there.",
+		"Wade out, get your bull rope round one, hook it to your truck and drag it up the beach. Then buck 'em and load 'em in that trailer of yours.",
+		"Eight hundred dollars. And if you do it right, I've got something better than money for you. Well. Almost as good.",
+		"Mind the drop-off past the last stake. It's cold enough to stop a clock."],
+	idle = [
+		"There's a bass under that log the size of a mailbox. I've named him Gerald. No relation to Mrs. Hale's gnome.",
+		"My wife says a man my age doesn't need a dock. My wife doesn't fish.",
+		"Waders are cold, son. Cold and wet. That's the deal you make with the lake.",
+		"I've been retired eleven years and I've never been busier. Nobody tells you that.",
+		"You hear that loon? That's how you know you're home.",
+		"Granddad said they floated a million feet of pine down this lake once. Guess a few didn't make it."],
+	porch = "I'll be on the bench. Shout if you fall in. I won't help, but I'd like to know.",
+	fell = ["There she comes!", "Look at that old girl. Must be a hundred years down there.", "Ha! Didn't think the lake'd let go of that one."],
+	barber = "",
+	done = "Well I'll be. Clear water where my dock goes! Come on over here.",
+	paid = ["Forty years I've looked at those logs. Forty years. Thank you.", "Here's your eight hundred. And here, take this. My old spinning rod. She's caught more fish than I've had hot dinners.",
+		"Creeks, lakes, wherever you're working. A tree man ought to know how to fish. Press 6 by the water and give her a cast."],
+	hit_house = "My house! The logs were in the LAKE, son!",
+	hit_garage = "",
+}
+
+const LIST := [EARL, HALE, DOCK]
 
 ## the job list for the computer, open or locked by how many jobs you've done
 static func board(jobs_done: int) -> Array:
@@ -76,7 +104,7 @@ static func board(jobs_done: int) -> Array:
 		var need: String = j.get("needs", "")
 		if open and need != "" and not bool(c.get(need, false)):
 			open = false
-			text = j.text + "  >> BUY THE FELLING WEDGES (UPGRADES TAB) BEFORE YOU TAKE THIS ONE."
+			text = j.text + ("  >> BUY THE FELLING WEDGES (UPGRADES TAB) BEFORE YOU TAKE THIS ONE." if need == "wedges" else "  >> BUY THE BULL ROPE (UPGRADES TAB) BEFORE YOU TAKE THIS ONE.")
 		out.append({title = j.title, pay = j.pay, open = open, text = text})
 	out.append({title = "-- nothing else yet --", pay = 0, open = false, text = "Check back after a job or two."})
 	return out

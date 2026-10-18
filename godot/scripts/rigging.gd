@@ -18,6 +18,9 @@ var game
 var wedges: Array = []          # {cut, side, depth, node}
 var rope := ""                  # "" | "tree" (tied on the tree) | "rigged" (tree to truck)
 var rope_pt := Vector3.ZERO     # tie-off on the tree, in the wood frame
+var rope_piece: WoodPiece = null   # a log the rope's tied round (dragging logs out of the water), or null for the tree
+var rope_local := Vector3.ZERO      # where on the log, in the log's own frame
+var _was_wet := true
 var anchor_w := Vector3.ZERO    # where the tie-off was when you tied it: tension is measured from here, so
                                 # the tree easing over toward the truck doesn't quietly let the rope go slack
 var rope_len := 0.0
@@ -162,12 +165,14 @@ func prompt() -> String:
 	if tool == "rope":
 		match rope:
 			"":
+				if not _aimed_log().is_empty(): return "[b]Left click[/b] Tie the rope round this log"
 				if _near_tree(): return "[b]Left click[/b] Throw the rope up and tie it off on the trunk"
 			"tree":
 				if _near_hitch(): return "[b]Left click[/b] Hook the rope on the truck's hitch"
-				if _near_tree(): return "[b]Left click[/b] Untie the rope"
-				return "Rope's on the tree · take the other end to the truck's hitch"
+				if _near_tie(): return "[b]Left click[/b] Untie the rope"
+				return ("Rope's round the log" if rope_piece else "Rope's on the tree") + " · take the other end to the truck's hitch"
 			"rigged":
+				if rope_piece: return ("[b]Left click[/b] Unhook the rope" if _near_hitch() or _near_tie() else "Rope's on the log and the truck") + " · drive away to drag it out"
 				if _near_hitch() or _near_tree(): return "[b]Left click[/b] Unhook the rope" + _tension_txt()
 				return "Rope rigged" + _tension_txt() + " · drive the truck away to take up the slack"
 	return ""
@@ -260,7 +265,18 @@ func _rope_action() -> bool:
 	var tree: AshTree = game.tree
 	match rope:
 		"":
+			var lg := _aimed_log()
+			if not lg.is_empty():
+				rope_piece = lg.piece
+				rope_local = rope_piece.global_transform.affine_inverse() * (lg.p as Vector3)
+				rope = "tree"
+				anchor_w = _anchor()
+				_was_wet = true
+				Sfx.play("pick")
+				game.hud.toast("You get the bull rope round the log and cinch it tight. Now take the other end to the truck's hitch.", 4.0)
+				return true
 			if not _near_tree(): return false
+			rope_piece = null
 			var p: Vector3 = game.player.global_position
 			var lp := tree.to_wood(p); lp.y = 0
 			var y: float = minf(tree.T.H * 0.55, 9.5)
@@ -273,25 +289,49 @@ func _rope_action() -> bool:
 		"tree":
 			if _near_hitch():
 				rope = "rigged"
-				rope_len = anchor_w.distance_to(game.truck.hitch_world()) + 0.6
+				rope_len = (_anchor() if rope_piece else anchor_w).distance_to(game.truck.hitch_world()) + 0.6
 				Sfx.play("clank")
-				game.hud.toast("Rope's on the hitch. Get in and ease the truck away until it's bar-tight (don't overdo it), park, then go make your cuts.", 5.5)
+				if rope_piece: game.hud.toast("Rope's on the hitch. Get in and drive up the lawn, nice and slow, to drag the log out.", 4.5)
+				else: game.hud.toast("Rope's on the hitch. Get in and ease the truck away until it's bar-tight (don't overdo it), park, then go make your cuts.", 5.5)
 				return true
-			if _near_tree():
-				rope = ""; Sfx.play("pick"); game.hud.toast("Rope's off.", 1.5); return true
+			if _near_tie():
+				rope = ""; rope_piece = null; Sfx.play("pick"); game.hud.toast("Rope's off.", 1.5); return true
 			return false
 		"rigged":
-			if _near_hitch() or _near_tree():
-				rope = ""; rope_stretch = 0.0; _update_push()
+			if _near_hitch() or _near_tie():
+				rope = ""; rope_stretch = 0.0; rope_piece = null; _update_push()
 				Sfx.play("pick"); game.hud.toast("Rope's off.", 1.5)
 				return true
 	return false
 
 func _anchor() -> Vector3:
+	if rope_piece and is_instance_valid(rope_piece): return rope_piece.global_transform * rope_local
 	return game.tree.to_world(rope_pt)
+
+## the log under the crosshair, within arm's reach: {piece, p} or {}
+func _aimed_log() -> Dictionary:
+	var e: Vector3 = game.player.eye()
+	var q := PhysicsRayQueryParameters3D.create(e, e + game.player.aim_dir() * 3.0)
+	q.collision_mask = 8
+	var hit: Dictionary = game.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty() or not (hit.collider is WoodPiece): return {}
+	var wp := hit.collider as WoodPiece
+	if wp.kind != "trunk" or wp.mode != "dyn": return {}
+	return {piece = wp, p = hit.position}
+
+## close enough to where the rope's tied (the log, or the tree)
+func _near_tie() -> bool:
+	if rope_piece and is_instance_valid(rope_piece): return game.player.global_position.distance_to(_anchor()) < 3.2
+	return _near_tree()
 
 # ---------------------------------------------------------------- every frame
 func physics_step(_dt: float) -> void:
+	if rope_piece != null and not is_instance_valid(rope_piece):
+		rope = ""; rope_piece = null; rope_stretch = 0.0
+		return
+	if rope == "rigged" and rope_piece:
+		_drag_log()
+		return
 	if rope != "rigged" or game.tree.state != "stand": return
 	var a := anchor_w; var hpt: Vector3 = game.truck.hitch_world()
 	var d := a.distance_to(hpt)
@@ -308,13 +348,36 @@ func physics_step(_dt: float) -> void:
 		game.truck.apply_central_force(dir * rope_stretch * 3000.0)
 	_update_push()
 
+## the rope's on a log and the truck: once it's tight, it hauls the log toward the truck
+func _drag_log() -> void:
+	var a := _anchor(); var hpt: Vector3 = game.truck.hitch_world()
+	var d := a.distance_to(hpt)
+	rope_stretch = d - rope_len
+	if rope_stretch > ROPE_SNAP * 1.6:
+		rope = ""; rope_piece = null; rope_stretch = 0.0
+		Sfx.play("crack", 0.7, 1.4)
+		game.hud.toast("TWANG! You yanked it too hard and the rope snapped. Tie it on again and drive slower.", 4.5)
+		return
+	if rope_stretch <= 0.0: return
+	var dir := (hpt - a).normalized()
+	var f := minf(rope_stretch * 6000.0, 14000.0)
+	rope_piece.apply_force(dir * f, a - rope_piece.global_position)
+	if game.truck.driving: game.truck.apply_central_force(-dir * f * 0.5)
+	var c := rope_piece.center_world()
+	var wet: bool = game.world.lake_d(c.x, c.z) < -0.4
+	if _was_wet and not wet:
+		_was_wet = false
+		Sfx.play("thud", 0.8, 0.8)
+		game.hud.toast("That one's out of the water! Unhook it and go get the next.", 3.0)
+		game.update_objectives()
+
 func step(dt: float) -> void:
 	pose(dt)
 	_draw_rope()
 
 func _draw_rope() -> void:
 	rope_im.clear_surfaces()
-	if rope == "" or game.tree.state != "stand": return
+	if rope == "" or (rope_piece == null and game.tree.state != "stand"): return
 	var a := _anchor()
 	var b: Vector3
 	var slack := 0.0

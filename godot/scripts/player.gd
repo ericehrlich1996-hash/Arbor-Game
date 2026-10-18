@@ -15,6 +15,7 @@ var step_t := 0.0
 var tool := "hands"
 var in_truck := false
 var speed_mult := 1.0
+var wade := 1.0                 # slowed down wading in water
 var col_shape: CollisionShape3D
 
 const WALK := 3.3
@@ -66,7 +67,7 @@ func _physics_process(dt: float) -> void:
 	var dir := (global_transform.basis * Vector3(mv.x, 0, mv.y))
 	dir.y = 0
 	if dir.length() > 1: dir = dir.normalized()
-	var sp := (RUN if Input.is_action_pressed("run") and not crouch else (CROUCH_SPEED if crouch else WALK)) * speed_mult
+	var sp := (RUN if Input.is_action_pressed("run") and not crouch else (CROUCH_SPEED if crouch else WALK)) * speed_mult * wade
 	var hv := dir * sp
 	velocity.x = move_toward(velocity.x, hv.x, dt * 30); velocity.z = move_toward(velocity.z, hv.z, dt * 30)
 	if is_on_floor():

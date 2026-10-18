@@ -2242,3 +2242,61 @@ func _fogtl() -> void:
 	note("tl_frames", f.size())
 	if f.size() > 0: (f[f.size() - 1] as Image).save_png(out_dir + "/fog-timelapse.png")
 	note("cam_env", [g.timelapse.cam.environment != null, g.timelapse.cam.environment.fog_enabled if g.timelapse.cam.environment else true])
+
+
+## job 3: Gus's dock logs. Wade out, rope a log, hook it to the truck, drive off and drag it up the beach
+func _dock() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	note("logs", [g.lake_logs.size(), g.logs_in_water()])
+	var lg: WoodPiece = g.lake_logs[0]
+	await wait(2.0)
+	var c := lg.center_world()
+	note("log_float", [snappedf(c.y - float(g.world.lake.y), 0.01), snappedf(float(g.world.lake.y) - g.world.H(c.x, c.z), 0.01)])
+	# the view from the beach
+	var sz: float = g.world._shore_z(c.x)
+	var beach := Vector3(c.x - 3.0, 0, sz - 4.0)
+	g.player.teleport(Vector3(beach.x, g.world.H(beach.x, beach.z) + 0.05, beach.z))
+	look_at_point(c)
+	await wait(0.8)
+	await shot("dock-beach")
+	# wade out to it
+	var ax: Vector3 = lg.global_transform.basis.y; ax.y = 0; ax = ax.normalized()
+	var side := ax.cross(Vector3.UP).normalized()
+	if side.z > 0: side = -side                                         # the shore side of it
+	var stand := c + side * 1.2
+	g.player.teleport(Vector3(stand.x, g.world.H(stand.x, stand.z) + 0.05, stand.z))
+	look_at_point(c)
+	await wait(0.6)
+	note("wade", snappedf(g.player.wade, 0.01))
+	g.player.tool = "rope"
+	note("rope_prompt", g.rig.prompt())
+	g.rig.use()
+	await shot("dock-tie")
+	# park the truck up the lawn facing away from the lake, hook up
+	var tp := Vector3(c.x, 0, sz - 9.0)
+	g.chipper.unhitch()
+	g.truck.global_transform = Transform3D(Basis(Vector3.UP, PI), Vector3(tp.x, g.world.H(tp.x, tp.z) + 0.3, tp.z))
+	await wait(1.5)
+	var hp: Vector3 = g.truck.hitch_world()
+	g.player.teleport(Vector3(hp.x, g.world.H(hp.x, hp.z) + 0.05, hp.z + 0.8))
+	await wait(0.3)
+	g.rig.use()
+	note("rigged", [g.rig.rope, g.rig.rope_piece == lg])
+	g.enter_truck()
+	await wait(0.4)
+	Input.action_press("move_fwd")
+	for k in range(40):
+		await wait(0.25)
+		if g.logs_in_water() < 4: break
+	Input.action_release("move_fwd")
+	Input.action_press("jump"); await wait(1.0); Input.action_release("jump")
+	g.exit_truck()
+	c = lg.center_world()
+	note("dragged", [g.logs_in_water(), snappedf(g.world.lake_d(c.x, c.z), 0.1), g.rig.rope])
+	var v := c + Vector3(5, 0, -3)
+	g.player.teleport(Vector3(v.x, g.world.H(v.x, v.z) + 0.05, v.z))
+	look_at_point(c)
+	await wait(0.6)
+	await shot("dock-out")

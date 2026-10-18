@@ -334,11 +334,14 @@ static func plaid(mb: MeshBuilder, prof: Array, base: Color, dark: Color, seg :=
 
 ## Earl, in parts so he can be posed. Returns {torso, head, upper, fore, leg, cane}
 ## torso origin at the hips, neck at y 0.58, shoulders at (±0.25, 0.5); the head faces +Z
-static func old_man() -> Dictionary:
+static func old_man(look := "earl") -> Dictionary:
 	var P := {}
 	var r := RandomNumberGenerator.new(); r.seed = 4242
 	var skin := h("#e3b393"); var denim := h("#3f5f88"); var shirt := h("#b3322a"); var plaid_dk := h("#2a1414")
 	var dkC := h("#262626"); var boot := h("#5a3e26"); var white := h("#eeece6"); var cap := h("#3e6a3a"); var brass := h("#c9a640")
+	if look == "gus":
+		# Gus: olive chest waders over a blue flannel, a blaze-orange cap, rubber boots
+		denim = h("#5a6440"); shirt = h("#2f5f86"); plaid_dk = h("#0e1e30"); cap = h("#e0701a"); boot = h("#3a3a30"); skin = h("#d9a888")
 	var mb := MeshBuilder.new()
 	# flannel shirt, a bit of a belly
 	plaid(mb, [[0.1, 0.2, 0.15], [0.22, 0.225, 0.175], [0.36, 0.225, 0.16], [0.48, 0.215, 0.14], [0.55, 0.17, 0.12], [0.59, 0.07, 0.07]], shirt, plaid_dk, 20, 2)
@@ -434,6 +437,14 @@ static func old_man() -> Dictionary:
 		var q := Vector3(0, sin(a) * 0.05, 0.05 - cos(a) * 0.05)
 		mb.tube(prev, q, 0.016, 0.016, wood, 6); prev = q
 	P.cane = mb
+	if look == "gus":
+		# a fishing rod where Earl has his cane: cork grip, a little spinning reel, a long tapering blank
+		mb = MeshBuilder.new()
+		mb.tube(Vector3(0, -0.18, 0.02), Vector3(0, 0.02, 0.06), 0.016, 0.014, h("#b8946a"), 6, true)
+		mb.tube(Vector3(0, 0.02, 0.06), Vector3(0, 1.75, 0.42), 0.009, 0.003, h("#2a2a30"), 5, true)
+		mb.cyl(0, -0.02, 0.0, 0.03, 0.03, 0.05, h("#8a8e94"), 10, true)
+		for k in range(6): mb.sphere(0, 0.3 + k * 0.28, 0.105 + k * 0.058, 0.008, 0.008, 0.008, h("#c8ccd0"), 5, 3)
+		P.cane = mb
 	return P
 
 ## Mrs. Hale: cardigan over a blouse, pleated skirt, pearls, glasses, grey hair up in a bun, sensible shoes,

@@ -64,6 +64,7 @@ func _ready() -> void:
 	if test_name == "" or test_name.begins_with("hub"): enter_hub()
 	else:
 		if test_name.begins_with("hale"): job = Jobs.HALE
+		if test_name.begins_with("dock"): job = Jobs.DOCK
 		new_level(randi() % 1000000 + 1)
 	Sfx.start_ambience()
 	_prewarm_shaders()
@@ -335,7 +336,7 @@ func new_level(sd: int) -> void:
 	ambient = Ambient.new(); ambient.name = "Ambient"; level_root.add_child(ambient)
 	weather = Weather.new(); weather.name = "Weather"; level_root.add_child(weather)
 	weather.setup(self, sd)
-	Sfx.set_ambient_level(0.6 if job.id == "hale" else 1.0)     # the lake house is a quiet spot
+	Sfx.set_ambient_level(0.6 if job.id == "hale" or job.id == "dock" else 1.0)     # the lake jobs are quiet spots
 	ambient.setup(Vector3(0, world.H(0, 0), 0))
 	var rng := RandomNumberGenerator.new(); rng.seed = sd + 99
 	truck = Truck.new(); truck.name = "Truck"
@@ -380,7 +381,9 @@ func new_level(sd: int) -> void:
 	title_cam = Camera3D.new(); title_cam.fov = 60; level_root.add_child(title_cam); title_cam.make_current()
 	timelapse = Timelapse.new(); timelapse.name = "Timelapse"; level_root.add_child(timelapse)
 	timelapse.setup(self)
-	objs = {talk = false, felled = false, limbed = false, stacked = false, tarped = trailer == null, paid = false}
+	var logs_job: bool = job.get("kind", "") == "logs"
+	objs = {talk = false, felled = logs_job, limbed = false, stacked = false, tarped = trailer == null or logs_job, hauled = not logs_job, paid = false}
+	if logs_job: _spawn_lake_logs()
 	called_pay = false; called_tarp = false
 	update_objectives()
 
@@ -862,6 +865,51 @@ func trailer_hitch_action() -> void:
 	if chipper.mode == "truck" and chipper.tow == trailer: chipper.hitch_now(trailer)
 	Sfx.play("clank"); hud.toast("Trailer hitched. The chipper can go on the ball on its back bumper.", 3.5)
 
+## Gus's job: the old log-drive timber floating in the shallows where his dock goes
+var lake_logs: Array = []
+func _spawn_lake_logs() -> void:
+	lake_logs = []
+	var T: Dictionary = tree.T
+	for L in world.logs:
+		var y0 := 2.0; var y1: float = y0 + float(L.len)
+		var p := WoodPiece.new(); p.T = T; p.kind = "trunk"; p.y0 = y0; p.y1 = y1
+		p.ops = [{type = "clip", p = Vector3(0, y0, 0), n = Vector3.DOWN}, {type = "clip", p = Vector3(0, y1, 0), n = Vector3.UP}]
+		level_root.add_child(p)
+		var b := Basis(Vector3.UP, float(L.yaw)) * Basis(Vector3.RIGHT, PI / 2)
+		var mid := Vector3(float(L.x), float(world.lake.y) - 0.08, float(L.z))
+		p.global_transform = Transform3D(b, mid - b * Vector3(0, (y0 + y1) / 2.0, 0))
+		p.build()
+		p.mass *= 3.0                    # a century in the lake: soaked through, far too heavy to lift or drag by hand
+		lake_logs.append(p)
+
+## how many pieces of wood are still out in the water
+func logs_in_water() -> int:
+	if world.lake.is_empty(): return 0
+	var n := 0
+	for b in pieces():
+		if b.kind != "trunk" or b.mode != "dyn": continue
+		var c: Vector3 = b.center_world()
+		if world.lake_d(c.x, c.z) < -0.4: n += 1
+	return n
+
+## water: wood floats (old waterlogged timber rides low, mostly under), and drags; you wade slowly
+func _water_step(dt: float) -> void:
+	if world == null or world.lake.is_empty(): return
+	var wy: float = world.lake.y
+	for b in pieces():
+		if b.mode != "dyn" or b.freeze: continue
+		var c: Vector3 = b.center_world()
+		if world.lake_d(c.x, c.z) > 0.5: continue
+		var r: float = Wood.r_at(b.T, b.center_wood().y) if b.kind == "trunk" else 0.06
+		var sub := clampf((wy - c.y) / (2.0 * r) + 0.5, 0.0, 1.0)
+		if sub <= 0.0: continue
+		b.apply_central_force(Vector3.UP * b.mass * 9.81 * sub * 1.2)
+		b.apply_central_force(-b.linear_velocity * b.mass * 1.4 * sub)
+		b.angular_velocity *= 1.0 - minf(1.0, 2.0 * dt * sub)
+	var pf := player.global_position
+	var deep := wy - world.H(pf.x, pf.z)
+	player.wade = 1.0 if world.lake_d(pf.x, pf.z) > 0.0 or deep < 0.25 else clampf(1.0 - deep * 0.5, 0.45, 1.0)
+
 ## the rounds in the trailer right now
 func trailer_cargo() -> Array:
 	if trailer == null: return []
@@ -1010,7 +1058,7 @@ func customer_sits_back() -> void:
 func payday() -> void:
 	var g := tree.grade
 	var total: int = job.pay
-	var rows := [["Job: drop, limb, chip and %s" % ("load" if trailer else "pile"), job.pay]]
+	var rows := [["Job: haul, buck and load" if job.get("kind", "") == "logs" else "Job: drop, limb, chip and %s" % ("load" if trailer else "pile"), job.pay]]
 	var clean: bool = g.get("open", false) and not g.get("barber", false) and g.notch_pct >= 0.18 and g.notch_pct <= 0.45 and g.notch_angle >= 40 and g.hinge_pct >= 0.05 and g.hinge_pct <= 0.18 and g.dir_err < 15
 	if clean: rows.append(["Textbook felling (notch, hinge, aim)", 50]); total += 50
 	if g.get("barber", false): rows.append(["Barber chair (%s is shaken)" % job.who, -100]); total -= 100
@@ -1031,13 +1079,15 @@ func payday() -> void:
 		func():
 			objs.paid = true; update_objectives(); Sfx.play("cash")
 			var c := Career.load(); c.money += total; c.jobs += 1
+			if job.id == "dock": c.rod = true
 			if trailer:
 				c.trailer = true; c.firewood = true
 				var loaded := pieces().filter(func(b): return b.kind == "trunk" and trailer.in_bed(b.center_world())).size()
 				c.rounds = int(c.get("rounds", 0)) + maxi(12, loaded)
 			Career.save(c); money = c.money
 			var notes := []
-			if g.has("notch_pct"):
+			if job.id == "dock": notes.append("Gus gave you his old spinning rod. Press 6 near water to fish.")
+			if g.has("notch_pct") and job.get("kind", "") != "logs":
 				if g.open:
 					notes.append("Notch: %d%% of the diameter deep, %d° open." % [roundi(g.notch_pct * 100), roundi(g.notch_angle)])
 					notes.append("Hinge: %.1f in, %d%% of the diameter." % [g.hinge_in, roundi(g.hinge_pct * 100)])
@@ -1131,13 +1181,27 @@ func update_objectives() -> void:
 	if objs.felled and rounds > 0:
 		buck_txt += " · %d/%d · %d%%" % [piled, rounds, int(floor(done_frac * 100.0))]
 		if heavy > 0: buck_txt += " · %d too heavy" % heavy
-	hud.set_objectives([
-		[objs.talk, "Talk to %s" % job.who],
-		[objs.felled, ("Drop the %s, away from the garage" % job.tree_word) if job.id == "hale" else ("Drop the %s" % job.tree_word)],
-		[objs.limbed, "Limb it and chip the brush" + (" · %d left" % brush if objs.felled and not objs.limbed else "")],
-		[objs.stacked, buck_txt]]
-		+ ([[objs.tarped, "Tarp the trailer so nothing falls out"]] if trailer else [])
-		+ [[objs.paid, "Get paid"]])
+	if job.get("kind", "") == "logs":
+		var wet := logs_in_water()
+		if not objs.hauled and wet == 0 and lake_logs.size() > 0:
+			objs.hauled = true
+			Sfx.play("ding"); hud.toast("That's the last of them out of the water. Buck 'em and load the trailer.", 4.0)
+		var lb_txt := "Buck them into liftable rounds and load them in your trailer"
+		if objs.hauled and rounds > 0: lb_txt += " · %d/%d · %d%%" % [piled, rounds, int(floor(done_frac * 100.0))]
+		objs.stacked = objs.stacked and objs.hauled
+		hud.set_objectives([
+			[objs.talk, "Talk to %s" % job.who],
+			[objs.hauled, "Rope the logs and drag them out of the water with the truck" + (" · %d left" % wet if not objs.hauled else "")],
+			[objs.stacked, lb_txt],
+			[objs.paid, "Get paid"]])
+	else:
+		hud.set_objectives([
+			[objs.talk, "Talk to %s" % job.who],
+			[objs.felled, ("Drop the %s, away from the garage" % job.tree_word) if job.id == "hale" else ("Drop the %s" % job.tree_word)],
+			[objs.limbed, "Limb it and chip the brush" + (" · %d left" % brush if objs.felled and not objs.limbed else "")],
+			[objs.stacked, buck_txt]]
+			+ ([[objs.tarped, "Tarp the trailer so nothing falls out"]] if trailer else [])
+			+ [[objs.paid, "Get paid"]])
 	if trailer and objs.stacked and not objs.tarped and not called_tarp:
 		called_tarp = true
 		Sfx.play("ding")
@@ -1233,6 +1297,7 @@ func _physics_process(dt: float) -> void:
 	if chipper and chipper.mode == "hand":
 		chipper.move_hand(_hand_point(), dt)
 	if rig and phase == "play": rig.physics_step(dt)
+	if phase == "play": _water_step(dt)
 	if haul: haul.step_drag(dt)
 
 func _process(dt: float) -> void:

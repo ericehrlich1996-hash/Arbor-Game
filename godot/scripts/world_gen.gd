@@ -79,6 +79,7 @@ func setup(sd: int, job_id := "earl") -> void:
 	if tree.is_empty():
 		tree = {x = s * 24, z = 30.0, h = 16.0, dbh = 0.5, lean = 0.04, lean_dir = 1.0, seed = 5}
 	if job == "hale": _hale_layout()
+	if job == "dock": _dock_layout()
 	old_man = Vector2(park.x - s * 3.2, park.z + 4.5)
 	mailbox = Vector2(drive[0].x + s * 2.4, road_z + 3.2)
 	# background woods
@@ -201,7 +202,7 @@ func _dock_x() -> float:
 
 ## where the shore is, straight up the lawn from the house at this x
 func _shore_z(x: float) -> float:
-	var z := 40.0
+	var z: float = float(lake.cz) - float(lake.rz) - 12.0 if not lake.is_empty() else 40.0
 	while z < 200.0 and lake_d(x, z) > 0.0: z += 0.25
 	return z
 
@@ -221,6 +222,37 @@ static func _adirondack(mb: MeshBuilder, at: Vector3, yaw: float, col: Color) ->
 		mb.push(Transform3D(Basis(Vector3.RIGHT, -0.3), Vector3(sx * 0.31, 0.22, 0.0)))
 		mb.box(0, 0, 0, 0.04, 0.08, 0.8, dk); mb.pop()
 	mb.pop()
+
+## where Gus's dock goes: two rows of stakes with orange flagging running out from the beach, a stack of
+## new treated lumber on sawhorses, and his bench by the water
+func _build_dock_site(root: Node3D) -> void:
+	var mb := MeshBuilder.new()
+	var r := RandomNumberGenerator.new(); r.seed = seed + 91
+	var dx := s * 4.0
+	var sz := _shore_z(dx)
+	for row: float in [-1.0, 1.0]:
+		for k in range(7):
+			var x := dx + row * 1.1; var z := sz - 1.0 + k * 2.0
+			var y := H(x, z)
+			mb.box(x, y + 0.35, z, 0.06, 1.3 if z > sz else 0.8, 0.06, Color("#b89a6a"))
+			mb.box(x, y + (0.95 if z > sz else 0.72), z, 0.08, 0.12, 0.01, Color("#ff6a1a"))
+	# the lumber: pale green treated 2x8s stacked on two sawhorses, up on the lawn
+	var lx := dx - s * 4.5; var lz := sz - 5.5
+	var ly := H(lx, lz)
+	for sx: float in [-1.0, 1.0]:
+		var hx := lx + sx * 1.3
+		for lg: float in [-0.3, 0.3]: mb.box(hx, ly + 0.35, lz + lg, 0.06, 0.7, 0.06, Color("#a88a5a"))
+		mb.box(hx, ly + 0.72, lz, 0.1, 0.06, 0.8, Color("#a88a5a"))
+	for row in range(4):
+		for k in range(4 - row % 2):
+			mb.box(lx, ly + 0.8 + row * 0.05, lz - 0.32 + k * 0.2 + (row % 2) * 0.1, 3.6, 0.045, 0.18, Color("#a8b88a").lerp(Color("#bcc49a"), r.randf()))
+	# Gus's bench, facing the water
+	var bx := dx - s * 7.0; var bz := sz - 2.5
+	var by := H(bx, bz)
+	mb.box(bx, by + 0.45, bz, 1.5, 0.06, 0.4, Color("#6e5a44"))
+	mb.box(bx, by + 0.8, bz - 0.2, 1.5, 0.3, 0.05, Color("#6e5a44"))
+	for sx: float in [-0.65, 0.65]: mb.box(bx + sx, by + 0.22, bz, 0.08, 0.45, 0.36, Color("#5a4632"))
+	var mi := mb.instance(); mi.name = "DockSite"; root.add_child(mi)
 
 ## the lake house dressing: a dock with a rowboat, a fire pit with chairs, a picket fence, mums and
 ## pumpkins, a stone path, Gerald the gnome, and her autumn leaves raked into piles
@@ -391,6 +423,23 @@ func _hale_layout() -> void:
 	# Cedar Ln backs onto a little lake: the lawn runs down to the water, woods wrap round the far shore
 	lake = {cx = s * -6.0, cz = 108.0, rx = 78.0, rz = 42.0, y = _base - 0.85}
 
+## Gus's place on Loon Lake: a brown-sided house, the lawn running down to a beach, and a raft of old sunk
+## log-drive timber floating in the waist-deep shallows right where his new dock is staked out
+var logs: Array = []            # [{x, z, yaw, len}] the logs in the water (the dock job)
+func _dock_layout() -> void:
+	house.siding = Color.html("#8a6446"); house.roof = Color.html("#33402f"); house.door = Color.html("#7a2a20")
+	trailer = {x = s * 5.5, z = 9.0, yaw = PI}
+	pile = {x = trailer.x, z = trailer.z + 2.6, w = 2.4, d = 6.6}
+	flat.append({x = trailer.x, z = trailer.z + 2.0, r = 5.0})
+	# no tree to drop on this job: the dead ash is off in the woods, out of the way
+	tree = {x = s * 62.0, z = -38.0, h = 16.0, dbh = 0.72, lean = 0.02, lean_dir = 0.0, seed = rng.randi_range(1, 1000000)}     # old-growth pine: the sunk logs are cut from the same stock
+	lake = {cx = s * 4.0, cz = 52.0, rx = 64.0, rz = 26.0, y = _base - 0.85}
+	logs = []
+	for k in range(4):
+		var x := s * (0.5 + k * 2.4)
+		var z := _shore_z(x) + 8.5 + float(k % 2) * 1.8                 # out where it's waist deep
+		logs.append({x = x, z = z, yaw = _range(-0.5, 0.5) + (PI / 2 if k % 2 else 0.0), len = _range(3.6, 4.6)})
+
 var _edge := FastNoiseLite.new()
 ## 0 on the mown lawn, 1 deep in the woods; the edge of the woods wanders
 func forestness(x: float, z: float) -> float:
@@ -496,6 +545,7 @@ func build(root: Node3D) -> void:
 	_build_house(root)
 	if not garage.is_empty(): _build_garage(root)
 	if job == "hale": _build_hale_yard(root)
+	if job == "dock": _build_dock_site(root)
 	var forest := Forest.new(); forest.build(self, root)
 	_build_grass(root)
 
