@@ -108,9 +108,9 @@ func setup(sd: int, job_id := "earl") -> void:
 const LAKE_SHADER := """
 shader_type spatial;
 render_mode blend_mix, depth_draw_always, cull_disabled, specular_schlick_ggx;
-uniform vec3 deep : source_color = vec3(0.06, 0.14, 0.17);
-uniform vec3 shallow : source_color = vec3(0.2, 0.3, 0.27);
-uniform vec3 sky : source_color = vec3(0.62, 0.72, 0.8);
+uniform vec3 deep : source_color = vec3(0.09, 0.22, 0.3);
+uniform vec3 shallow : source_color = vec3(0.24, 0.38, 0.36);
+uniform vec3 sky : source_color = vec3(0.6, 0.72, 0.8);
 varying vec3 wp;
 float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float n(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -124,9 +124,9 @@ void fragment() {
 	NORMAL_MAP = normalize(vec3((a - 0.875) * 0.35, (b - 0.875) * 0.35, 1.0)) * 0.5 + 0.5;
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
 	vec3 water = mix(shallow, deep, clamp(COLOR.r, 0.0, 1.0));
-	ALBEDO = mix(water, sky, fres * 0.75);
-	ROUGHNESS = 0.06; SPECULAR = 0.6; METALLIC = 0.0;
-	ALPHA = mix(0.78, 0.95, clamp(COLOR.r + fres, 0.0, 1.0));
+	ALBEDO = mix(water, sky, fres * 0.5);
+	ROUGHNESS = 0.22; SPECULAR = 0.3; METALLIC = 0.0;
+	ALPHA = mix(0.7, 0.92, clamp(COLOR.r * 1.4 + fres, 0.0, 1.0));
 	if (!FRONT_FACING) {
 		// from underneath: the bright, wobbling silver ceiling of the lake
 		float c = smoothstep(0.55, 0.95, a * 0.6 + b * 0.5);
@@ -826,8 +826,8 @@ void fragment() {
 	ALBEDO = mix(shallow, deep, edge);
 	float foam = smoothstep(0.72, 0.9, n(uv * vec2(1.5, 4.0) + vec2(t * 3.0, 0.0))) * (1.0 - edge * 0.6);
 	ALBEDO = mix(ALBEDO, vec3(0.75, 0.78, 0.74), foam * 0.35);
-	ROUGHNESS = 0.14; METALLIC = 0.0; SPECULAR = 0.35;
-	ALPHA = mix(0.6, 0.9, edge);
+	ROUGHNESS = 0.25; METALLIC = 0.0; SPECULAR = 0.25;
+	ALPHA = mix(0.55, 0.85, edge);
 	if (!FRONT_FACING) {
 		ALBEDO = vec3(0.34, 0.52, 0.44) + foam * 0.3 + a * 0.15;
 		EMISSION = ALBEDO * 0.6;
@@ -1206,7 +1206,30 @@ void vertex() {
 	VERTEX.x += sin(TIME * 1.1 + o.x * 0.8 + o.z * 0.6 + VERTEX.y * 1.6) * 0.09 * k;
 	VERTEX.z += cos(TIME * 0.85 + o.z * 0.7 + o.x * 0.3 + VERTEX.y * 1.3) * 0.07 * k;
 }
-void fragment() { ALBEDO = COLOR.rgb; ROUGHNESS = 0.85; }
+void fragment() { ALBEDO = pow(COLOR.rgb, vec3(2.2)); ROUGHNESS = 0.85; }
+"""
+
+## the bed under the water: its colours, with a slow web of caustic light playing over it
+const BED_SHADER := """
+shader_type spatial;
+render_mode cull_disabled, specular_disabled;
+varying vec3 wp;
+void vertex() { wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
+float cell(vec2 p) {
+	vec2 i = floor(p); vec2 f = fract(p); float d = 1.0;
+	for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+		vec2 g = vec2(float(x), float(y));
+		vec2 o = 0.5 + 0.4 * sin(TIME * 0.6 + 6.2831 * fract(sin(vec2(dot(i + g, vec2(127.1, 311.7)), dot(i + g, vec2(269.5, 183.3)))) * 43758.5453));
+		d = min(d, length(g + o - f));
+	}
+	return d;
+}
+void fragment() {
+	vec3 c = pow(COLOR.rgb, vec3(2.2));
+	float k = pow(1.0 - smoothstep(0.0, 0.35, cell(wp.xz * 1.3)), 3.0) + 0.6 * pow(1.0 - smoothstep(0.0, 0.3, cell(wp.xz * 2.1 + 7.0)), 3.0);
+	ALBEDO = c * (0.92 + 0.35 * k);
+	ROUGHNESS = 1.0;
+}
 """
 
 ## the water surface over this spot, or INF if it's dry
@@ -1259,7 +1282,8 @@ func _build_underwater(root: Node3D, kind: String, pads: Array) -> void:
 				for k in range(6): bed.quad(prev[k], row[k], row[k + 1], prev[k + 1])
 			prev = row
 			x += 1.5
-	var bmi := bed.instance(Mats.vcol); bmi.name = "WaterBed"; bmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var bmat := ShaderMaterial.new(); var bsh := Shader.new(); bsh.code = BED_SHADER; bmat.shader = bsh
+	var bmi := bed.instance(bmat); bmi.name = "WaterBed"; bmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(bmi)
 	# ---- the plants
 	var grass := MeshBuilder.new()                 # tape grass: a clump of long ribbons, 1 m tall before scaling

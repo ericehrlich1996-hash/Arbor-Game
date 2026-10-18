@@ -60,8 +60,8 @@ func _models() -> void:
 	# young firs coming up in the understorey (the far fir model, scaled right down)
 	for i in range(2): models["sapling%d" % i] = {mesh = Nature.fir(150 + i, 1), end = 70.0, shadow = true}
 
-const NEAR := 42.0
-const MID := 88.0
+const NEAR := 38.0
+const MID := 78.0
 const FAR := 280.0              # past this the fog and the painted treeline take over
 
 ## the three models cross-fade (a dithered blend in the foliage shader) instead of popping

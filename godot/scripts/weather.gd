@@ -5,11 +5,11 @@ class_name Weather
 extends Node
 
 const PRESETS := {
-	"clear":    {sun = 1.3,  amb = 0.95, fog = 0.0022, fog_col = Color("#dcd6c0"), sky_fog = 0.15, cover = 0.0,  grey = 0.0,  rain = 0.0, wet = 0.0, sat = 1.0},
-	"overcast": {sun = 0.5,  amb = 0.82, fog = 0.0055, fog_col = Color("#b9bdbb"), sky_fog = 0.3,  cover = 0.78, grey = 0.18, rain = 0.0, wet = 0.0, sat = 0.88},
+	"clear":    {sun = 1.22, amb = 1.0,  fog = 0.0033, fog_col = Color("#c9d2d0"), sky_fog = 0.15, cover = 0.0,  grey = 0.0,  rain = 0.0, wet = 0.0, sat = 1.06},
+	"overcast": {sun = 0.5,  amb = 0.9,  fog = 0.0078, fog_col = Color("#b9bdbb"), sky_fog = 0.3,  cover = 0.78, grey = 0.18, rain = 0.0, wet = 0.0, sat = 0.88},
 	"fog":      {sun = 0.42, amb = 0.85, fog = 0.032,  fog_col = Color("#c9cdcb"), sky_fog = 0.85, cover = 0.65, grey = 0.75, rain = 0.0, wet = 0.25, sat = 0.82},
-	"rain":     {sun = 0.32, amb = 0.72, fog = 0.012,  fog_col = Color("#9ea6aa"), sky_fog = 0.5,  cover = 0.92, grey = 0.45, rain = 0.55, wet = 1.0, sat = 0.8},
-	"storm":    {sun = 0.2,  amb = 0.58, fog = 0.017,  fog_col = Color("#7f888e"), sky_fog = 0.6,  cover = 1.0,  grey = 0.55, rain = 1.0, wet = 1.0, sat = 0.75},
+	"rain":     {sun = 0.32, amb = 0.78, fog = 0.014,  fog_col = Color("#9ea6aa"), sky_fog = 0.5,  cover = 0.92, grey = 0.45, rain = 0.55, wet = 1.0, sat = 0.8},
+	"storm":    {sun = 0.2,  amb = 0.62, fog = 0.019,  fog_col = Color("#7f888e"), sky_fog = 0.6,  cover = 1.0,  grey = 0.55, rain = 1.0, wet = 1.0, sat = 0.75},
 }
 const NAMES := {"clear": "Clear skies", "overcast": "Grey and overcast", "fog": "Fog's in this morning", "rain": "Rain today", "storm": "Storm's rolling in"}
 

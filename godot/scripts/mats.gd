@@ -11,6 +11,8 @@ func _init() -> void:
 	vcol.vertex_color_is_srgb = true
 	vcol.cull_mode = BaseMaterial3D.CULL_DISABLED
 	vcol.roughness = 0.9
+	vcol.metallic_specular = 0.2
+	vcol.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP        # broad, soft light-to-shadow, like baked lighting
 	vcol_glass = vcol.duplicate()
 	vcol_glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	vcol_glass.albedo_color = Color(1, 1, 1, 0.28)
@@ -148,6 +150,7 @@ void vertex() {
 }
 void fragment() {
 	ALBEDO = pow(COLOR.rgb, vec3(2.2));
+	ALBEDO = mix(ALBEDO, vec3(dot(ALBEDO, vec3(0.3, 0.59, 0.11))), smoothstep(20.0, 60.0, length(VERTEX)) * 0.3);
 	ROUGHNESS = 0.95;
 }
 """

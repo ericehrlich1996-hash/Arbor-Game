@@ -262,18 +262,18 @@ func _setup_env() -> void:
 	sky.radiance_size = Sky.RADIANCE_SIZE_64
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_color = Color("#c9d2b0")
-	env.ambient_light_energy = 0.95
-	env.ambient_light_sky_contribution = 0.55
+	# PS2-style look: broad, baked-feeling light - more fill, a gentler sun, softer shadows, no bloom, more haze
+	env.ambient_light_energy = 1.0
+	env.ambient_light_sky_contribution = 0.5
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_exposure = 1.0
 	env.tonemap_white = 6.0
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.0
-	env.adjustment_contrast = 1.05
-	env.glow_enabled = true
-	env.glow_intensity = 0.25; env.glow_bloom = 0.04
+	env.adjustment_contrast = 1.0
+	env.glow_enabled = false
 	env.fog_enabled = true
-	env.fog_light_color = Color("#dcd6c0"); env.fog_density = 0.0022; env.fog_sky_affect = 0.15; env.fog_aerial_perspective = 0.3
+	env.fog_light_color = Color("#c9d2d0"); env.fog_density = 0.0033; env.fog_sky_affect = 0.25; env.fog_aerial_perspective = 0.5
 	env.fog_sun_scatter = 0.25
 	if OS.has_feature("web"): env.tonemap_exposure = 1.08      # browsers present the frame a touch darker
 	var we := WorldEnvironment.new(); we.environment = env; add_child(we)
@@ -282,7 +282,8 @@ func _setup_env() -> void:
 	sun.rotation = Vector3(deg_to_rad(-40), deg_to_rad(145), 0)     # warm afternoon light from behind your shoulder on the drive in
 	sun.light_energy = 1.3; sun.light_color = Color("#ffe2b8")
 	sun.shadow_enabled = true
-	sun.shadow_blur = 1.5
+	sun.shadow_blur = 2.6
+	sun.shadow_opacity = 0.82
 	sun.directional_shadow_max_distance = 60
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	add_child(sun)

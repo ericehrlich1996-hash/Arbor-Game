@@ -276,6 +276,9 @@ void fragment() {
 	}
 	vec4 tx = texture(tex, UV);
 	ALBEDO = tx.rgb * pow(COLOR.rgb, vec3(2.2));
+	// the further off, the more the colour drains into the haze (foreground stays rich)
+	float far_k = smoothstep(28.0, 190.0, length(VERTEX)) * 0.45;
+	ALBEDO = mix(ALBEDO, vec3(dot(ALBEDO, vec3(0.3, 0.59, 0.11))) * vec3(0.94, 1.0, 1.06), far_k);
 	ALPHA = tx.a;
 	ALPHA_SCISSOR_THRESHOLD = cut;
 	ROUGHNESS = 0.85;
@@ -291,6 +294,8 @@ static func _bark(t: Texture2D, scale: Vector3) -> StandardMaterial3D:
 	m.vertex_color_use_as_albedo = true
 	m.vertex_color_is_srgb = true
 	m.roughness = 0.95
+	m.metallic_specular = 0.15
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 	return m
 
 # ================================================================ plant models
