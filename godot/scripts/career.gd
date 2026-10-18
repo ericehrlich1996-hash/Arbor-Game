@@ -12,7 +12,8 @@ static func load() -> Dictionary:
 	return {money = int(d.get("money", 0)), jobs = int(d.get("jobs", 0)), truck_rust = float(d.get("truck_rust", 1.0)),
 		wedges = bool(d.get("wedges", false)), rope = bool(d.get("rope", false)),
 		trailer = bool(d.get("trailer", false)), firewood = bool(d.get("firewood", false)),
-		rounds = int(d.get("rounds", 18 if bool(d.get("trailer", false)) else 0)), bundles = int(d.get("bundles", 0))}
+		rounds = int(d.get("rounds", 18 if bool(d.get("trailer", false)) else 0)), bundles = int(d.get("bundles", 0)),
+		rod = bool(d.get("rod", false)), fish = d.get("fish", {}) if typeof(d.get("fish", {})) == TYPE_DICTIONARY else {}}
 
 static func save(c: Dictionary) -> void:
 	var f := FileAccess.open(PATH, FileAccess.WRITE)

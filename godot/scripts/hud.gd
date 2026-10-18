@@ -145,13 +145,13 @@ func _ready() -> void:
 	# hotbar
 	hotbar = HBoxContainer.new(); hotbar.set_anchors_preset(Control.PRESET_CENTER_BOTTOM); hotbar.position = Vector2(-190, -62)
 	hotbar.add_theme_constant_override("separation", 10)
-	for k in [["hands", "1  Hands"], ["saw", "2  Chainsaw"], ["muffs", "3  Ear muffs"], ["wedge", "4  Wedges"], ["rope", "5  Pull rope"]]:
+	for k in [["hands", "1  Hands"], ["saw", "2  Chainsaw"], ["muffs", "3  Ear muffs"], ["wedge", "4  Wedges"], ["rope", "5  Pull rope"], ["rod", "6  Fishing rod"]]:
 		var p := PanelContainer.new(); var sb := _panel(0.8); sb.content_margin_top = 8; sb.content_margin_bottom = 8
 		p.add_theme_stylebox_override("panel", sb)
 		var l := _label(k[1], 15); p.add_child(l)
 		hotbar.add_child(p); slots[k[0]] = p
 	root.add_child(hotbar)
-	slots.wedge.visible = false; slots.rope.visible = false
+	slots.wedge.visible = false; slots.rope.visible = false; slots.rod.visible = false
 	_center_hotbar.call_deferred()
 	# bar tilt readout (bottom right)
 	tilt = _label("", 16, DIM); tilt.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
@@ -212,7 +212,7 @@ func _ready() -> void:
 	help.set_anchors_preset(Control.PRESET_TOP_RIGHT); help.position = Vector2(-410, 90); help.custom_minimum_size = Vector2(390, 0)
 	var hl := RichTextLabel.new(); hl.bbcode_enabled = true; hl.fit_content = true; hl.scroll_active = false; hl.custom_minimum_size = Vector2(360, 0)
 	hl.add_theme_font_size_override("normal_font_size", 14); hl.add_theme_font_size_override("bold_font_size", 14)
-	hl.text = "[b]WASD[/b] walk · [b]Shift[/b] run · [b]Space[/b] jump · [b]C[/b] crouch\n[b]Mouse[/b] look (click to capture)\n[b]E[/b] talk / pick up / use / drive / hitch\n[b]1 2 3[/b] hands · chainsaw · ear muffs · [b]4 5[/b] wedges · pull rope (once you've bought them)\n[b]R[/b] pull-start the saw · [b]Right mouse[/b] rev and cut\n[b]Wheel[/b] angle the cut (aim at a trunk or log: the line shows where it goes)\n[b]Left click[/b] grab · [b]Right click[/b] set down / throw in the truck · [b]T[/b] drag · [b]F[/b] kick\n[b]U[/b] unstick the truck (lifts it onto its wheels in a clear spot)\n[b]F3[/b] graphics detail (high / low) · [b]H[/b] this help"
+	hl.text = "[b]WASD[/b] walk · [b]Shift[/b] run · [b]Space[/b] jump · [b]C[/b] crouch\n[b]Mouse[/b] look (click to capture)\n[b]E[/b] talk / pick up / use / drive / hitch\n[b]1 2 3[/b] hands · chainsaw · ear muffs · [b]4 5[/b] wedges · pull rope (once you've bought them) · [b]6[/b] fishing rod\n[b]Fishing[/b] hold left mouse to cast · left click when the float goes under · hold left to reel · turn against the fish's run\n[b]R[/b] pull-start the saw · [b]Right mouse[/b] rev and cut\n[b]Wheel[/b] angle the cut (aim at a trunk or log: the line shows where it goes)\n[b]Left click[/b] grab · [b]Right click[/b] set down / throw in the truck · [b]T[/b] drag · [b]F[/b] kick\n[b]U[/b] unstick the truck (lifts it onto its wheels in a clear spot)\n[b]F3[/b] graphics detail (high / low) · [b]H[/b] this help"
 	help.add_child(hl); help.visible = false
 	root.add_child(help)
 	# fade + intro card
@@ -438,9 +438,10 @@ func set_objectives(lines: Array) -> void:
 	obj_list.text = s.strip_edges()
 
 ## the wedges and rope only show on the hotbar once you've bought them
-func set_owned(wedges: bool, rope: bool) -> void:
+func set_owned(wedges: bool, rope: bool, rod := false) -> void:
 	if slots.has("wedge"): slots.wedge.visible = wedges
 	if slots.has("rope"): slots.rope.visible = rope
+	if slots.has("rod"): slots.rod.visible = rod
 	_center_hotbar.call_deferred()
 
 ## keep the hotbar centred along the bottom, however many slots are showing

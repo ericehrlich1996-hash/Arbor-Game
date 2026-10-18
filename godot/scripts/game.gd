@@ -9,6 +9,7 @@ var earl: Earl                  # the client (Earl, or Mrs. Hale)
 var tree: AshTree
 var job: Dictionary = Jobs.EARL
 var rig: Rigging                # felling wedges and the pull rope
+var fishing: Fishing            # Gus's rod, once you have it
 var trailer: Trailer            # Mrs. Hale's job: Walter's trailer, where the rounds go (null elsewhere)
 var damage := {}                # "house" / "garage" -> true once a tree's come down on it
 var saw: Saw
@@ -197,7 +198,7 @@ func _setup_input() -> void:
 	var keys := {
 		move_fwd = [KEY_W, KEY_UP], move_back = [KEY_S, KEY_DOWN], move_left = [KEY_A, KEY_LEFT], move_right = [KEY_D, KEY_RIGHT],
 		jump = [KEY_SPACE], run = [KEY_SHIFT], crouch = [KEY_C, KEY_CTRL], interact = [KEY_E], drop = [KEY_Q], kick = [KEY_F],
-		throw = [KEY_G], drag = [KEY_T], tool1 = [KEY_1], tool2 = [KEY_2], tool3 = [KEY_3], tool4 = [KEY_4], tool5 = [KEY_5], unstick = [KEY_U], saw_start = [KEY_R], help = [KEY_H], camera = [KEY_V],
+		throw = [KEY_G], drag = [KEY_T], tool1 = [KEY_1], tool2 = [KEY_2], tool3 = [KEY_3], tool4 = [KEY_4], tool5 = [KEY_5], tool6 = [KEY_6], unstick = [KEY_U], saw_start = [KEY_R], help = [KEY_H], camera = [KEY_V],
 	}
 	for act in keys:
 		if not InputMap.has_action(act): InputMap.add_action(act)
@@ -367,6 +368,8 @@ func new_level(sd: int) -> void:
 	haul.setup(self)
 	rig = Rigging.new(); rig.name = "Rigging"; level_root.add_child(rig)
 	rig.setup(self)
+	fishing = Fishing.new(); fishing.name = "Fishing"; level_root.add_child(fishing)
+	fishing.setup(self)
 	damage = {}
 	trailer = null
 	if not world.trailer.is_empty():
@@ -377,7 +380,7 @@ func new_level(sd: int) -> void:
 		trailer.global_transform = Transform3D(Basis(Vector3.UP, tw.yaw), Vector3(tw.x, gy, tw.z))
 		chipper.trailer = trailer
 	hud.obj_title.text = "Job %d · %s" % [job.n, job.title]
-	hud.set_owned(Rigging.owned("wedges"), Rigging.owned("rope"))
+	hud.set_owned(Rigging.owned("wedges"), Rigging.owned("rope"), Fishing.owned())
 	title_cam = Camera3D.new(); title_cam.fov = 60; level_root.add_child(title_cam); title_cam.make_current()
 	timelapse = Timelapse.new(); timelapse.name = "Timelapse"; level_root.add_child(timelapse)
 	timelapse.setup(self)
@@ -574,6 +577,9 @@ func _unhandled_input(ev: InputEvent) -> void:
 		elif ev.is_action_pressed("camera"): truck.toggle_cam()
 		elif ev.is_action_pressed("unstick"): unstick_truck()
 		return
+	if player.tool == "rod" and ev is InputEventMouseButton and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		if ev.button_index == MOUSE_BUTTON_LEFT: fishing.press(ev.pressed); return
+		if ev.button_index == MOUSE_BUTTON_RIGHT: fishing.alt(ev.pressed); return
 	if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT and (player.tool == "wedge" or player.tool == "rope") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		if rig.use(): return
 	if ev.is_action_pressed("interact") and (player.tool == "wedge" or player.tool == "rope") and rig.prompt().begins_with("[b]"):
@@ -595,6 +601,9 @@ func _unhandled_input(ev: InputEvent) -> void:
 	elif ev.is_action_pressed("tool3"): toggle_muffs()
 	elif ev.is_action_pressed("tool4"): _equip_owned("wedge", "wedges", "felling wedges")
 	elif ev.is_action_pressed("tool5"): _equip_owned("rope", "rope", "a pull rope")
+	elif ev.is_action_pressed("tool6"):
+		if Fishing.owned(): equip("rod")
+		else: hud.toast("No fishing rod yet. Somebody down by a lake might lend you one.", 3.0)
 	elif ev.is_action_pressed("crouch"): player.crouch = not player.crouch
 	elif ev.is_action_pressed("unstick"):
 		if player.global_position.distance_to(truck.global_position) < 12.0: unstick_truck()
@@ -605,6 +614,7 @@ func equip(t: String) -> void:
 	if t == "saw" and saw.racked: hud.toast("The saw is on the chipper rack.", 1.8); return
 	if haul.carrying(): haul.drop_all()
 	if t != "saw" and saw.on: saw.stop()
+	if fishing and (player.tool == "rod") != (t == "rod"): fishing.equip(t == "rod")
 	player.tool = t
 	hud.set_tool(t, muffs)
 	if t == "saw" and not saw.on: hud.toast("Press R to pull-start the saw.", 2.2)
@@ -1311,6 +1321,7 @@ func _process(dt: float) -> void:
 		hud.money.text = "$%d" % money
 		return
 	if timelapse: timelapse.step(dt)
+	if fishing: fishing.step(dt)
 	_step_kick(dt)
 	if phase == "title":
 		# a slow orbit over the yard, between the house and the dead ash

@@ -2300,3 +2300,47 @@ func _dock() -> void:
 	look_at_point(c)
 	await wait(0.6)
 	await shot("dock-out")
+
+## Gus's rod at his lake: cast, strike on the bite, fight it in, keep it
+func _dock_fish() -> void:
+	await wait(1.0)
+	var c := Career.load(); c.rod = true; Career.save(c)
+	g._start()
+	var lg: WoodPiece = g.lake_logs[0]
+	var lc := lg.center_world()
+	var sz: float = g.world._shore_z(lc.x + 12.0)
+	var beach := Vector3(lc.x + 12.0, 0, sz - 1.5)
+	g.player.teleport(Vector3(beach.x, g.world.H(beach.x, beach.z) + 0.05, beach.z))
+	look_at_point(Vector3(beach.x, g.world.H(beach.x, beach.z) + 1.0, beach.z + 20.0))
+	await wait(0.4)
+	g.equip("rod")
+	note("near", g.fishing.water_near())
+	g.fishing.press(true); await wait(0.9); g.fishing.press(false)
+	await wait(1.2)
+	note("cast", [g.fishing.state, snappedf(g.fishing.lure.distance_to(g.player.global_position), 0.1)])
+	await shot("fish-wait")
+	var caught := 0; var lost := 0; var early := 0
+	for round in range(4):
+		var tw := 0.0
+		while g.fishing.state == "wait" and tw < 40.0:
+			if not g.fishing.fish.is_empty() and g.fishing.fish.phase == "bite":
+				g.fishing.press(true); g.fishing.press(false); break
+			await wait(0.1); tw += 0.1
+		if g.fishing.state != "fight": note("nobite%d" % round, g.fishing.state); continue
+		await shot("fish-fight")
+		# reel when the tension's low, ease off when high; turn against runs
+		var tf := 0.0
+		while g.fishing.state == "fight" and tf < 90.0:
+			var f: Dictionary = g.fishing.fish
+			g.fishing.reel_held = g.fishing.tension < 0.75
+			if absf(float(f.run)) > 0.5:
+				g.player.rotation.y = -float(f.ang) + float(f.run) * 0.9 + PI
+			await wait(0.1); tf += 0.1
+		if g.fishing.state == "landed":
+			caught += 1
+			note("fish%d" % round, [g.fishing.fish.name, snappedf(g.fishing.fish.len, 0.1), snappedf(tf, 0.1)])
+			await shot("fish-card")
+			g.fishing.press(true)
+		else: lost += 1; note("lost%d" % round, g.fishing.msg)
+		g.fishing.press(true); await wait(0.9); g.fishing.press(false); await wait(1.2)
+	note("result", [caught, lost, Career.load().get("fish", {}).keys()])
