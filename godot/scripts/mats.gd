@@ -66,6 +66,7 @@ void fragment() {
 	ALBEDO = col;
 	ROUGHNESS = mix(shine, 0.97, max(r, low * 0.5 * rust));
 	METALLIC = metal * (1.0 - r);
+	SPECULAR = 0.3;      // restrained, PS2-era paint: a soft sheen, not a mirror
 }
 """
 

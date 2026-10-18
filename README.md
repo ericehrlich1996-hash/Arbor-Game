@@ -33,7 +33,7 @@ Drop it on the garage and the roof caves in, and the damage comes out of your pa
 | E | talk, pick up (several pieces at once), use, drive, hitch/unhitch, hop in the truck bed |
 | 1 / 2 / 3 | hands / chainsaw / ear muffs |
 | 4 / 5 | felling wedges / pull rope (once bought); left click to set or drive a wedge, tie or hook the rope |
-| 6 | fishing rod (Gus gives it to you after Job 3). Works at Earl's creek and both lakes: hold left mouse to cast, strike when the float goes under (not on a nibble), right mouse reels the lure in slowly or twitches it. Hooked: hold left to reel, keep the tension out of the red, turn the rod against the fish's runs to tire it, keep it ($) or let it go |
+| 6 | fishing rod (Gus gives it to you after Job 3). Works at Earl's creek and both lakes. Hold left mouse to fill the cast meter and let go to cast. An underwater window dives in: watch fish cruise in, circle and nibble. When the float goes under, scroll the wheel down to set the hook (too early on a nibble spooks it). Right mouse jigs the lure. Fighting: hold left to reel; tension follows where you point - aim at the fish to ease off, pull up or away to load the rod. Keep it out of the red, let it run, tire it, and land it. Keep it ($) or let it go |
 | U | unstick the truck: lifts it onto its wheels at the nearest clear spot (whatever's hitched comes along) |
 | R | pull-start or stop the saw |
 | Right mouse | rev and cut |
