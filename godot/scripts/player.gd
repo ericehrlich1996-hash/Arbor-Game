@@ -73,7 +73,9 @@ func _physics_process(dt: float) -> void:
 		if Input.is_action_just_pressed("jump") and not crouch: velocity.y = JUMP
 	else:
 		velocity.y -= GRAV * dt
+	var grounded := is_on_floor()
 	move_and_slide()
+	if grounded and hv.length() > 0.1 and is_on_wall(): _step_up(hv, dt)
 	var moving := hv.length() > 0.1 and is_on_floor()
 	if moving:
 		bob += dt * sp * 2.2
@@ -83,3 +85,22 @@ func _physics_process(dt: float) -> void:
 			Sfx.play("step")
 	var bob_y := absf(sin(bob)) * 0.025 if moving else 0.0
 	head.position.y = eye_h + bob_y
+
+const STEP_H := 0.36            # the tallest step you walk straight up (stairs, a porch, a dock edge)
+
+## walked into something low: if there's room above it, step up onto it instead of stopping dead
+func _step_up(hv: Vector3, dt: float) -> void:
+	var fwd := hv.normalized() * maxf(hv.length() * dt, 0.08)
+	var xf := global_transform
+	var up := Vector3(0, STEP_H, 0)
+	if test_move(xf, up): return                        # no headroom
+	var raised := xf.translated(up)
+	if test_move(raised, fwd): return                   # still a wall up there: it's not a step
+	var over := raised.translated(fwd)
+	var hit := KinematicCollision3D.new()
+	if not test_move(over, -up * 1.05, hit): return     # nothing to stand on: don't step off into the air
+	var top := over.origin + hit.get_travel()
+	if hit.get_normal().y < cos(floor_max_angle): return    # landed on a slope too steep to stand on
+	if top.y - xf.origin.y < 0.02: return
+	global_position = top + Vector3(0, 0.01, 0)
+	velocity.y = 0.0

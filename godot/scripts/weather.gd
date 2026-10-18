@@ -101,6 +101,7 @@ func _build_rain() -> void:
 	rain_snd = AudioStreamPlayer.new()
 	rain_snd.stream = Sfx.sounds.get("rain")
 	rain_snd.volume_db = -60
+	rain_snd.bus = "Ambient"
 	add_child(rain_snd)
 
 func step(dt: float, eye: Vector3) -> void:
@@ -133,7 +134,7 @@ func step(dt: float, eye: Vector3) -> void:
 	if rain_snd.stream:
 		if r > 0.03 and not rain_snd.playing: rain_snd.play()
 		elif r <= 0.03 and rain_snd.playing: rain_snd.stop()
-		rain_snd.volume_db = linear_to_db(maxf(r * (0.55 if in_cab else 0.4), 0.0005))
+		rain_snd.volume_db = linear_to_db(maxf(r * (0.55 if in_cab else 0.4) * Sfx.amb_level, 0.0005))
 	# lightning in a storm: a double flash, then thunder a moment later
 	if kind == "storm" and cur.rain > 0.7:
 		_flash_t -= dt
@@ -143,7 +144,7 @@ func step(dt: float, eye: Vector3) -> void:
 			_thunder_at = _t + rng.randf_range(0.4, 2.8)
 	if _thunder_at > 0 and _t >= _thunder_at:
 		_thunder_at = -1.0
-		Sfx.play("thunder", rng.randf_range(0.5, 0.9), rng.randf_range(0.85, 1.1))
+		Sfx.play("thunder", rng.randf_range(0.5, 0.9) * Sfx.amb_level, rng.randf_range(0.85, 1.1), "Ambient")
 	_flash = maxf(0.0, _flash - dt * 2.2)
 	_apply()
 

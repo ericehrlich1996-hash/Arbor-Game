@@ -190,7 +190,9 @@ func _build_lake(root: Node3D) -> void:
 	for k in range(3):
 		var ap := AudioStreamPlayer3D.new(); ap.stream = Sfx.sounds.get("creek")
 		var x := _dock_x() + (k - 1) * 22.0
-		ap.position = Vector3(x, L.y + 0.3, _shore_z(x)); ap.unit_size = 5.0; ap.max_distance = 40.0; ap.volume_db = -10.0; ap.pitch_scale = 0.7
+		# a calm lake: soft, slow lapping you only really hear near the shore
+		ap.position = Vector3(x, L.y + 0.3, _shore_z(x)); ap.unit_size = 3.0; ap.max_distance = 28.0; ap.volume_db = -22.0; ap.pitch_scale = 0.5
+		ap.bus = "Ambient"
 		ap.autoplay = ap.stream != null
 		root.add_child(ap)
 
@@ -248,7 +250,7 @@ func _build_hale_yard(root: Node3D) -> void:
 	_adirondack(mb, Vector3(dx - 0.45, deck + 0.03, ze - 1.2), PI + 0.25, Color("#c24a2a"))
 	_adirondack(mb, Vector3(dx + 0.45, deck + 0.03, ze - 1.4), PI - 0.2, Color("#3a7a8a"))
 	# a rowboat tied alongside, a rope to the post
-	var bx := dx - 1.9; var bz := ze - 3.5; var by: float = float(L.y) + 0.02
+	var bx := dx - 1.9; var bz := ze - 3.5; var by: float = float(L.y) + 0.17      # floats: only the bottom of the hull is under
 	mb.push(Transform3D(Basis(Vector3.UP, 0.08), Vector3(bx, by, bz)))
 	var secs := []
 	for k in range(9):
@@ -267,6 +269,20 @@ func _build_hale_yard(root: Node3D) -> void:
 			WorldGen._face_out(mb, [p0 + Vector3(-sx * 0.04, 0, 0), p1 + Vector3(-sx * 0.04, 0, 0), q1 + Vector3(0, 0.06, 0), q0 + Vector3(0, 0.06, 0)], Vector3(-sx, 0.6, 0), inside)
 			mb.tube(p0, p1, 0.03, 0.03, white, 4)
 	for t: float in [-0.7, 0.0, 0.6]: mb.box(0, 0.12, t * 1.9 * 0.9, 1.0 - absf(t) * 0.4, 0.04, 0.24, inside)
+	# little decks (breasthooks) capping the bow and the stern
+	for e: float in [-1.0, 1.0]:
+		var ez := e * 1.9 * 0.86
+		mb.box(0, 0.3, ez, 0.42, 0.04, 0.5, inside)
+		mb.box(0, 0.12, ez - e * 0.05, 0.3, 0.32, 0.36, MeshBuilder.shade(inside, 0.85))
+	# floorboards across the bottom, above the waterline, so the inside of the boat is dry
+	var fy := -0.08
+	for k in range(8):
+		var a: Array = secs[k]; var b: Array = secs[k + 1]
+		var wa: float = a[1] * clampf((fy - a[2]) / (a[3] - a[2]), 0.0, 1.0)
+		var wb: float = b[1] * clampf((fy - b[2]) / (b[3] - b[2]), 0.0, 1.0)
+		var hw := maxf(wa, wb) + 0.01
+		if hw < 0.03: continue
+		mb.box(0, fy, (a[0] + b[0]) / 2, hw * 2, 0.03, absf(b[0] - a[0]) + 0.02, MeshBuilder.shade(inside, 0.92 if k % 2 else 1.0))
 	mb.tube(Vector3(0.3, 0.15, 0.2), Vector3(1.3, 0.25, -1.2), 0.025, 0.02, Color("#9a8a6a"), 4)        # oars
 	mb.tube(Vector3(-0.3, 0.15, 0.2), Vector3(-0.2, 0.2, -1.4), 0.025, 0.02, Color("#9a8a6a"), 4)
 	mb.pop()
@@ -302,7 +318,7 @@ func _build_hale_yard(root: Node3D) -> void:
 					var gy2 := H(x + 2.4, fz)
 					for ry: float in [0.25, 0.7]: mb.box(x + 1.2, (gy + gy2) / 2 + ry, fz + 0.04, 2.4, 0.06, 0.03, white)
 		x += 0.16
-	# --- the house front: mums along the beds, pumpkins on the porch steps, hanging baskets
+	# --- the house front: mums along the beds, pumpkins on the porch steps
 	var W: float = house.w; var D: float = house.d
 	var hy := H(house.x, house.z)
 	var front: float = house.z - D / 2 - 0.02
@@ -322,11 +338,6 @@ func _build_hale_yard(root: Node3D) -> void:
 			var a := TAU * g / 6.0
 			mb.box(px + cos(a) * sz * 0.98, py + sz * 0.7, pz + sin(a) * sz * 0.98, 0.012, sz * 1.3, 0.012, Color("#b85410"))
 		mb.cyl(px, py + sz * 1.4, pz, 0.025, 0.02, 0.08, Color("#5a6a2a"), 6, true)
-	for sx: float in [-1.45, 1.45]:
-		var hb := Vector3(pdx + sx, hy + 2.35, front - 2.3)
-		mb.tube(hb + Vector3(0, 0.35, 0), hb, 0.006, 0.006, Color("#3a3a36"), 3)
-		mb.cyl(hb.x, hb.y - 0.12, hb.z, 0.16, 0.12, 0.14, Color("#6a4a30"), 10, true)
-		mb.blob(hb.x, hb.y + 0.02, hb.z, 0.22, Color("#c84a5a"), r, 0.8)
 	# --- a stepping-stone path from the drive to the porch
 	var start := Vector3(park.x - s * 1.5, 0, park.z + 2.0)
 	var to := Vector3(pdx, 0, front - 3.6)
@@ -371,8 +382,8 @@ func _hale_layout() -> void:
 	flat.append({x = garage.x, z = garage.z, r = 7.5})
 	# Walter's old trailer, parked on the lawn by the drive with its tongue toward the road; the rounds go in it
 	trailer = {x = s * -1.6, z = -2.5, yaw = PI}
-	pile = {x = trailer.x, z = trailer.z + 1.7, w = 2.2, d = 4.6}
-	flat.append({x = trailer.x, z = trailer.z + 1.0, r = 4.0})
+	pile = {x = trailer.x, z = trailer.z + 2.6, w = 2.4, d = 6.6}
+	flat.append({x = trailer.x, z = trailer.z + 2.0, r = 5.0})
 	var tx := s * 15.6; var tz := 15.5
 	var to := Vector2(garage.x - tx, garage.z - tz)
 	tree = {x = tx, z = tz, h = _range(17.5, 18.5), dbh = 0.56, lean = _range(0.115, 0.13),
@@ -772,7 +783,7 @@ void fragment() {
 		var ap := AudioStreamPlayer3D.new()
 		ap.stream = Sfx.sounds.get("creek")
 		ap.position = Vector3(gx, H(gx, creek_z(gx)) + 0.5, creek_z(gx))
-		ap.unit_size = 6.0; ap.max_distance = 45.0; ap.volume_db = -6.0
+		ap.unit_size = 6.0; ap.max_distance = 45.0; ap.volume_db = -6.0; ap.bus = "Ambient"
 		ap.autoplay = ap.stream != null
 		root.add_child(ap)
 		gx += 35.0
@@ -959,6 +970,11 @@ func _build_house(root: Node3D) -> void:
 	mb.pop()
 	_static_box(root, Vector3(h.x, y0 + 1.6, h.z), Vector3(h.w, 3.6, h.d))
 	_static_box(root, Vector3(h.x + dx, y0 + 0.1, h.z + fz - 1.3), Vector3(3.2, 0.68, 2.4))
+	# the three porch steps, solid, so you (and the client) walk straight up them
+	for k in range(3):
+		var sy := deck_y - 0.12 - k * 0.14
+		var sz: float = h.z + pz1 - 0.1 - k * 0.3
+		_static_box(root, Vector3(h.x + dx, y0 + (sy - 0.4) / 2, sz), Vector3(1.4, sy + 0.4, 0.3))
 	for px in [-1.45, 1.45]:
 		_static_box(root, Vector3(h.x + dx + px, y0 + 1.6, h.z + post_z), Vector3(0.16, 3.0, 0.16))
 	# shed: board-and-batten walls, a Z-braced door, a little window, a shingled roof

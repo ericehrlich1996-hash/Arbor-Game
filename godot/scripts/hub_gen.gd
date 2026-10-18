@@ -21,7 +21,7 @@ func setup(sd: int, _job_id := "earl") -> void:
 	# the cabin stands in for the "house"; nothing else on the property but woods
 	house = {x = 0.0, z = 0.0, w = 9.6, d = 8.6, wall = 2.4, siding = Color.WHITE, roof = Color.WHITE, door = Color.WHITE}
 	shed = {x = 0.0, z = -900.0, w = 1.0, d = 1.0}
-	pile = {x = 0.0, z = -900.0, w = 1.0, d = 1.0}
+	pile = {x = 8.6, z = -27.0, w = 1.0, d = 1.0}     # the firewood stand by the track: kept clear of trees and ferns
 	tree = {x = 0.0, z = -900.0, h = 0.0}
 	mailbox = Vector2(0, -900)
 	old_man = Vector2(0, -900)

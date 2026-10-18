@@ -123,12 +123,16 @@ func step_carry(dt: float) -> void:
 func bed() -> Dictionary:
 	var p: Player = game.player
 	var t: Truck = game.truck
-	var out := {xf = t.global_transform, v = t.linear_velocity}
+	var out := {xf = t.global_transform, v = t.linear_velocity, mid = -1.7, zs = [-2.25, -1.75, -1.25], z0 = -2.62, z1 = -0.73}
 	if game.trailer:
 		var txf: Transform3D = game.trailer.bed_xf()
-		var dt := p.global_position.distance_to(txf * Vector3(0, 0, -1.7))
+		var mid := (Trailer.Z0 + Trailer.Z1) / 2.0
+		var dt := p.global_position.distance_to(txf * Vector3(0, 0, mid))
 		var dk := p.global_position.distance_to(t.global_transform * Vector3(0, 0, -1.7))
-		if dt < dk: out = {xf = txf, v = Vector3.ZERO}
+		if dt < dk:
+			var zs := []
+			for k in range(7): zs.append(lerpf(Trailer.Z1 - 0.4, Trailer.Z0 + 0.4, k / 6.0))
+			out = {xf = txf, v = game.trailer.linear_velocity, mid = mid, zs = zs, z0 = Trailer.Z0, z1 = Trailer.Z1}
 	return out
 
 func throw_target():
@@ -136,7 +140,7 @@ func throw_target():
 	var bd := bed()
 	var bxf: Transform3D = bd.xf
 	var binv := bxf.affine_inverse()
-	var c := bxf * Vector3(0, 1.0, -1.7)
+	var c := bxf * Vector3(0, 1.0, float(bd.mid))
 	if Vector2(c.x - p.global_position.x, c.z - p.global_position.z).length() > 6.5: return null
 	var to := Vector3(c.x - p.eye().x, 0, c.z - p.eye().z).normalized()
 	var fw := p.fwd()
@@ -144,7 +148,7 @@ func throw_target():
 	var t := bxf
 	var best := {}
 	for x in [-0.45, 0.0, 0.45]:
-		for z in [-2.25, -1.75, -1.25]:
+		for z in bd.zs:
 			var w := t * Vector3(x, 1.0, z)
 			var crowd := 0.0
 			for b in game.pieces():
@@ -175,8 +179,9 @@ func throw_one() -> void:
 				var f := i / 20.0
 				var w := start + Vector3(d.x * f, d.y * f + 0.5 * 9.81 * tt * tt * f * (1 - f), d.z * f)
 				var l := inv * w
-				var outside := absf(l.x) > 0.9 - r * 0.3 or l.z < -2.55 or l.z > -0.8
-				if outside and absf(l.x) < 1.1 + r and l.z > -2.75 - r and l.z < -0.6 + r and l.y < 1.36 + r:
+				var bz0: float = bd.z0; var bz1: float = bd.z1
+				var outside := absf(l.x) > 0.9 - r * 0.3 or l.z < bz0 + 0.07 or l.z > bz1 - 0.07
+				if outside and absf(l.x) < 1.1 + r and l.z > bz0 - 0.13 - r and l.z < bz1 + 0.13 + r and l.y < 1.36 + r:
 					ok = false; break
 			if ok: tf = tt; break
 			tt += 0.04
@@ -249,11 +254,19 @@ func kick() -> void:
 	if hit.is_empty() or not (hit.collider is WoodPiece): Sfx.play("step"); return
 	var b: WoodPiece = hit.collider
 	b.sleeping = false
-	# a piece that's nearly cut through snaps apart
+	# a piece that's nearly cut through snaps apart. Cuts in the same plane add up: a top cut and a cut
+	# up from underneath that meet (or nearly) count as one cut through
 	var best = null
-	for op in b.ops:
-		if op.type == "kerf" and not op.get("done", false) and op.s < op.exit and op.s / op.exit > 0.72:
-			if best == null or op.s / op.exit > best.s / best.exit: best = op
+	var open := b.ops.filter(func(op): return op.type == "kerf" and not op.get("done", false) and op.s < op.exit)
+	for op in open:
+		var through: float = op.s / op.exit
+		for o2 in open:
+			if o2 == op: continue
+			var n1: Vector3 = op.n; var n2: Vector3 = o2.n
+			if absf(n1.normalized().dot(n2.normalized())) < 0.94: continue           # not the same plane angle
+			if absf(((o2.e as Vector3) - (op.e as Vector3)).dot(n1.normalized())) > 0.05: continue   # a different spot
+			through += o2.s / o2.exit
+		if through > 0.72 and (best == null or op.s > best.s): best = op
 	if best != null:
 		best.s = best.exit + 0.01
 		best.piece = b

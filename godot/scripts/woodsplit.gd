@@ -76,7 +76,7 @@ func refresh_trailer() -> void:
 			if k >= mini(n, 9): break
 			var rr := r.randf_range(0.17, 0.24)
 			var mi := _slice_mesh(0.0, TAU, rr, 0.4, false, -1.0).instance()
-			mi.position = Vector3(-0.55 + ix * 0.55 + r.randf_range(-0.05, 0.05), 0.8, -2.3 + iz * 0.6)
+			mi.position = Vector3(-0.55 + ix * 0.55 + r.randf_range(-0.05, 0.05), 0.8, Trailer.Z1 - 0.6 - iz * 0.6)
 			trailer_rounds.add_child(mi)
 			k += 1
 
@@ -176,52 +176,140 @@ func _stick_axe_in_block() -> void:
 	var target := block_c + Vector3(0.05, 0.03, 0.04)
 	axe_stuck.global_transform = Transform3D(B, target - B * Vector3(0, -0.15, -0.8))
 
-## the honour-box rack at the end of the track: a little roofed shelf, a cash box, a hand-painted sign,
-## and the bundles you've tied so far stacked on it
+## the firewood stand at the end of the track, like the ones you see along back roads: a cedar box on
+## skids with slatted sides and back, a shelf, a little shed roof with green trim, "$5.00 BUNDLE" painted
+## across the header, a black honour box on the post, and a cleared gravel pad out front. The bundles
+## you've tied sit on it in red mesh bags, beside a neat stack of loose splits.
+const STAND_W := 1.5
+const STAND_D := 0.72
 func _build_rack() -> void:
 	var mb := MeshBuilder.new()
-	var wood := Color("#7a5c3e"); var dk := Color("#5a4230"); var roof := Color("#3f5a3a")
+	var r := RandomNumberGenerator.new(); r.seed = 77
+	var cedar := Color("#c08a56"); var cedar2 := Color("#a9743f"); var trim := Color("#3d7f72")
+	var hw := STAND_W / 2; var hd := STAND_D / 2
 	mb.push(Transform3D(Basis(Vector3.UP, rack_yaw), rack_p))
-	for sx: float in [-0.75, 0.75]:
-		for sz: float in [-0.3, 0.3]: mb.box(sx, 0.9, sz, 0.08, 1.8, 0.08, dk)
-	for yy: float in [0.35, 0.9]: mb.box(0, yy, 0, 1.6, 0.05, 0.66, wood)
+	# the gravel pad: a flat grey bed, and plenty of little stones scattered over it
+	mb.cyl(0, -0.02, -0.6, 1.9, 1.95, 0.05, Color("#8e8c86"), 22, true)
+	for k in range(140):
+		var a := r.randf() * TAU; var d := sqrt(r.randf()) * 1.85
+		var g := Color("#b8b6ae").lerp(Color("#6e6c66"), r.randf())
+		mb.box(cos(a) * d, 0.035, -0.6 + sin(a) * d, r.randf_range(0.03, 0.06), 0.02, r.randf_range(0.03, 0.06), g)
+	# skids, deck and corner posts
+	for sx: float in [-1.0, 1.0]: mb.box(sx * (hw - 0.1), 0.08, 0, 0.1, 0.12, STAND_D + 0.1, cedar2)
+	for k in range(5): mb.box(0, 0.19, -hd + 0.07 + k * (STAND_D - 0.14) / 4.0, STAND_W, 0.035, 0.13, cedar.lerp(cedar2, r.randf() * 0.5))
 	for sx: float in [-1.0, 1.0]:
-		mb.push(Transform3D(Basis(Vector3.BACK, sx * 0.35), Vector3(sx * 0.42, 1.95, 0)))
-		mb.box(0, 0, 0, 0.95, 0.04, 0.85, roof); mb.pop()
-	mb.box(0, 1.55, -0.34, 1.3, 0.32, 0.03, Color("#e8dcc0"))                       # the sign
-	for k in range(8): mb.box(-0.5 + k * 0.14, 1.6 - (k % 2) * 0.06, -0.36, 0.08, 0.05, 0.01, Color("#b83a2a"))
-	mb.box(0.6, 1.05, -0.2, 0.25, 0.22, 0.2, Color("#3a4a5a"))                      # cash box
-	mb.box(0.6, 1.17, -0.2, 0.12, 0.01, 0.02, Color("#1a1a1a"))
+		for sz: float in [-1.0, 1.0]: mb.box(sx * (hw - 0.04), 0.95, sz * (hd - 0.04), 0.08, 1.6, 0.08, cedar2)
+	# slatted back and sides: boards with a finger's gap between them
+	var y := 0.24
+	while y < 1.55:
+		var c := cedar.lerp(cedar2, r.randf() * 0.6)
+		mb.box(0, y + 0.06, hd - 0.02, STAND_W - 0.04, 0.12, 0.025, c)
+		for sx: float in [-1.0, 1.0]: mb.box(sx * (hw - 0.02), y + 0.06, 0, 0.025, 0.12, STAND_D - 0.04, c)
+		y += 0.155
+	# the shelf, on cleats
+	mb.box(0, 0.86, 0.02, STAND_W - 0.08, 0.035, STAND_D - 0.1, cedar)
+	for sx: float in [-1.0, 1.0]: mb.box(sx * (hw - 0.07), 0.83, 0.02, 0.04, 0.04, STAND_D - 0.12, cedar2)
+	# the header board across the front, and the shed roof sloping to the back with green trim
+	mb.box(0, 1.5, -hd - 0.01, STAND_W + 0.06, 0.3, 0.04, cedar)
+	var rf := 0.22                                       # roof fall, high at the front down to the back
+	var roof_b := Basis(Vector3.RIGHT, atan2(rf, STAND_D + 0.3))
+	mb.push(Transform3D(roof_b, Vector3(0, 1.78 - rf / 2, 0)))
+	for k in range(7): mb.box(-hw - 0.08 + (k + 0.5) * (STAND_W + 0.16) / 7.0, 0, 0, (STAND_W + 0.16) / 7.0 - 0.01, 0.03, STAND_D + 0.32, cedar.lerp(cedar2, r.randf()))
+	mb.box(0, 0.03, -(STAND_D + 0.32) / 2, STAND_W + 0.2, 0.05, 0.05, trim)
+	mb.box(0, 0.03, (STAND_D + 0.32) / 2, STAND_W + 0.2, 0.05, 0.05, trim)
+	for sx: float in [-1.0, 1.0]: mb.box(sx * (hw + 0.1), 0.03, 0, 0.05, 0.05, STAND_D + 0.36, trim)
+	mb.pop()
+	# the honour box on the left front post: black steel, a slot, a padlock
+	mb.box(-hw - 0.14, 0.45, -hd + 0.12, 0.08, 0.9, 0.08, cedar2)                   # its post
+	mb.box(-hw - 0.08, 0.86, -hd + 0.02, 0.18, 0.06, 0.05, cedar2)                  # a cleat to the stand
+	mb.box(-hw - 0.14, 1.0, -hd + 0.02, 0.2, 0.26, 0.18, Color("#1c1d1f"))
+	mb.box(-hw - 0.14, 1.14, -hd + 0.02, 0.22, 0.03, 0.2, Color("#26282a"))
+	mb.box(-hw - 0.14, 1.11, -hd - 0.075, 0.1, 0.012, 0.01, Color("#050505"))
+	mb.box(-hw - 0.14, 0.92, -hd - 0.08, 0.035, 0.045, 0.02, Color("#b89a40"))
+	# a little "HONOR SYSTEM" sign on a stake out front
+	mb.box(hw + 0.35, 0.35, -hd - 0.45, 0.04, 0.7, 0.04, cedar2)
+	mb.box(hw + 0.35, 0.72, -hd - 0.47, 0.42, 0.28, 0.02, Color("#f2efe6"))
+	# loose splits stacked neatly on the deck, right-hand side: triangular pie pieces, bark side out
+	for row in range(5):
+		for k in range(4 - (row / 2)):
+			var px := hw - 0.16 - k * 0.15 - (row % 2) * 0.07
+			var py := 0.27 + row * 0.12
+			mb.push(Transform3D(Basis(Vector3.RIGHT, PI / 2) * Basis(Vector3.UP, (row + k) * 1.7), Vector3(px, py, 0.02)))
+			_split_piece(mb, r)
+			mb.pop()
 	mb.pop()
 	var mi := mb.instance(); mi.name = "Rack"; hub.add_child(mi)
-	var lbl := Label3D.new(); lbl.text = "FIREWOOD\n$5 / BUNDLE"; lbl.font_size = 34; lbl.pixel_size = 0.004
-	lbl.modulate = Color("#7a2a1a"); lbl.outline_size = 0
-	lbl.global_transform = Transform3D(Basis(Vector3.UP, rack_yaw + PI), rack_p + Basis(Vector3.UP, rack_yaw) * Vector3(0, 1.56, -0.36) + Basis(Vector3.UP, rack_yaw) * Vector3(0, 0, -0.02))
+	var B := Basis(Vector3.UP, rack_yaw)
+	var lbl := Label3D.new(); lbl.text = "$5.00 BUNDLE"; lbl.font_size = 40; lbl.pixel_size = 0.0042
+	lbl.modulate = Color("#b8261c"); lbl.outline_size = 0
+	lbl.global_transform = Transform3D(B * Basis(Vector3.UP, PI), rack_p + B * Vector3(0, 1.5, -hd - 0.04))
 	hub.add_child(lbl)
+	var lb2 := Label3D.new(); lb2.text = "HONOR\nSYSTEM\nTHANK YOU"; lb2.font_size = 26; lb2.pixel_size = 0.0035
+	lb2.modulate = Color("#2a2a2a"); lb2.outline_size = 0
+	lb2.global_transform = Transform3D(B * Basis(Vector3.UP, PI), rack_p + B * Vector3(hw + 0.35, 0.72, -hd - 0.485))
+	hub.add_child(lb2)
 	bundles_node = Node3D.new(); hub.add_child(bundles_node)
 	_refresh_rack()
 
+## one split: a pie-shaped wedge of a round, 0.32 long along y, bark on the curved side
+static func _split_piece(mb: MeshBuilder, r: RandomNumberGenerator) -> void:
+	var L := 0.32; var R := r.randf_range(0.075, 0.095); var a := r.randf_range(0.85, 1.15)
+	var wood := Color("#d8b884").lerp(Color("#c49a62"), r.randf()); var bark := Color("#5e4a38").lerp(Color("#4a3a2c"), r.randf())
+	var pts := [Vector3.ZERO]
+	for k in range(4):
+		var t := -a / 2 + a * k / 3.0
+		pts.append(Vector3(sin(t) * R, 0, cos(t) * R))
+	for yy: float in [-L / 2, L / 2]:
+		var ring := []
+		for p in pts: ring.append((p as Vector3) + Vector3(0, yy, 0))
+		var f := ring.duplicate()
+		if yy > 0: f.reverse()
+		mb.face(f, wood.lerp(Color("#e8d0a0"), 0.3))
+	for k in range(pts.size()):
+		var p0: Vector3 = pts[k]; var p1: Vector3 = pts[(k + 1) % pts.size()]
+		var c := bark if k >= 1 and k < pts.size() - 1 else wood
+		mb.face([p0 + Vector3(0, -L / 2, 0), p1 + Vector3(0, -L / 2, 0), p1 + Vector3(0, L / 2, 0), p0 + Vector3(0, L / 2, 0)], c)
+
+## a bundle: a red mesh firewood bag stuffed with splits, the top gathered and tied, a paper tag
 static func _bundle_mesh() -> MeshBuilder:
 	var mb := MeshBuilder.new()
 	var r := RandomNumberGenerator.new(); r.seed = 3
-	for k in range(7):
-		var a := TAU * k / 7.0; var rr := 0.08 if k > 0 else 0.0
-		var p := Vector3(cos(a) * rr, sin(a) * rr, 0)
-		mb.push(Transform3D(Basis(Vector3.RIGHT, PI / 2) * Basis(Vector3.UP, r.randf() * TAU), p))
-		mb.cyl(0, -0.2, 0, 0.055, 0.055, 0.4, Color("#c8a878").lerp(Color("#8a6a4a"), r.randf()), 3, true, Color("#d8b884"))
-		mb.pop()
-	for z: float in [-0.12, 0.12]: mb.cyl(0, 0, z, 0.15, 0.15, 0.02, Color("#d8c890"), 14, false)
+	var red := Color("#c0362c"); var dark := Color("#7a1c16")
+	# the sack, lying on its side along x, slightly flattened where it sits
+	mb.sphere(0, 0.13, 0, 0.22, 0.13, 0.15, red, 16, 9)
+	# a couple of split ends pressing the mesh out at the bottom end
+	for k in range(3):
+		var a := -0.6 + k * 0.6
+		mb.box(-0.205, 0.13 + sin(a) * 0.05, cos(a) * 0.06 - 0.03, 0.012, 0.045, 0.045, Color("#c49a62"))
+	# the mesh: a diamond weave of dark strands wrapped round it
+	for k in range(10):
+		var ph := TAU * k / 10.0
+		var prev := Vector3.ZERO
+		for i in range(9):
+			var t := -1.0 + 2.0 * i / 8.0
+			var ang := ph + t * 1.1
+			var rr := sqrt(maxf(0.0, 1.0 - t * t))
+			var q := Vector3(t * 0.222, 0.13 + sin(ang) * 0.132 * rr, cos(ang) * 0.152 * rr)
+			if i > 0: mb.tube(prev, q, 0.0045, 0.0045, dark, 3)
+			prev = q
+	# the gathered neck, the twine tie, and a paper price tag
+	mb.tube(Vector3(0.2, 0.14, 0), Vector3(0.3, 0.16, 0.0), 0.035, 0.016, dark.lerp(red, 0.5), 6)
+	mb.cyl(0.25, 0.105, 0, 0.026, 0.026, 0.035, Color("#e8d890"), 8, false)
+	mb.box(0.31, 0.12, 0.03, 0.005, 0.06, 0.04, Color("#efe6cc"))
 	return mb
 
 func _refresh_rack() -> void:
 	for c in bundles_node.get_children(): c.queue_free()
-	var n := mini(bundles_sold(), 10)
+	var n := mini(bundles_sold(), 12)
 	var bm := _bundle_mesh().commit()
+	var B := Basis(Vector3.UP, rack_yaw)
 	for k in range(n):
 		var mi := MeshInstance3D.new(); mi.mesh = bm; mi.material_override = Mats.vcol
-		var shelf := 0.42 if k < 5 else 0.97
-		var local := Vector3(-0.6 + (k % 5) * 0.3, shelf + 0.15, 0.0)
-		mi.global_transform = Transform3D(Basis(Vector3.UP, rack_yaw) * Basis(Vector3.UP, PI / 2), rack_p + Basis(Vector3.UP, rack_yaw) * local)
+		# the shelf first (four across, two deep), then the deck to the left of the loose splits
+		var local: Vector3
+		if k < 8: local = Vector3(-0.5 + (k % 4) * 0.33, 0.875, -0.12 + (k / 4) * 0.26)
+		else: local = Vector3(-0.5 + (k - 8) % 2 * 0.36, 0.21, -0.12 + ((k - 8) / 2) * 0.28)
+		mi.global_transform = Transform3D(B * Basis(Vector3.UP, 0.12 * ((k % 3) - 1)), rack_p + B * local)
 		bundles_node.add_child(mi)
 
 func _build_ui() -> void:

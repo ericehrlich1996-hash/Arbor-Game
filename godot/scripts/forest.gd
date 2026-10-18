@@ -89,6 +89,7 @@ func _tree(key: String, x: float, z: float, yaw: float, s: float) -> void:
 	_add(key, x, z, yaw, s); _add(key + "_mid", x, z, yaw, s); _add(key + "_far", x, z, yaw, s); _add(key + "_shadow", x, z, yaw, s)
 
 func _add(key: String, x: float, z: float, yaw: float, s: float, tint := Color.WHITE, sink := 0.0) -> void:
+	if w.lake_d(x, z) < 0.6: return          # nothing of the forest floor grows in (or under) the lake
 	var c := Vector2i(floori(x / CELL), floori(z / CELL))
 	if not cells.has(c): cells[c] = {}
 	var cell: Dictionary = cells[c]
@@ -234,8 +235,8 @@ func _place_underbrush() -> void:
 			elif roll < 0.53 and f < 0.6:
 				_add("flower%d" % (rng.randi() % 2), px, pz, yaw, rng.randf_range(0.8, 1.3))
 		x += 1.7
-	# stones and ferns crowding the creek banks
-	var cx := -150.0
+	# stones and ferns crowding the creek banks (if there is a creek)
+	var cx := -150.0 if w.creek_d(0.0, w.creek_z(0.0)) < 1e5 else 1e9
 	while cx < 150.0:
 		cx += rng.randf_range(1.2, 3.0)
 		var side := -1.0 if rng.randf() < 0.5 else 1.0

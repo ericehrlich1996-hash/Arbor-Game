@@ -62,10 +62,11 @@ func build(g) -> void:
 	if bool(Career.load().get("trailer", false)):
 		var tr := Trailer.new(); tr.name = "Trailer"; add_child(tr)
 		tr.build()
+		tr.park_fixed()
 		var tx := Vector3(10.6, 0, -8.6); tx.y = world.H(tx.x, tx.z + 1.0)
 		tr.global_transform = Transform3D(Basis(Vector3.UP, 0.25), tx)
 		tr.set_tarped()
-		spots.trailer = [tr.bed_xf() * Vector3(0, 1.2, -1.7), 2.6]
+		spots.trailer = [tr.bed_xf() * Vector3(0, 1.2, (Trailer.Z0 + Trailer.Z1) / 2.0 + 0.8), 3.0]
 	# you, out by the truck, looking at home
 	player = Player.new(); player.name = "Player"; add_child(player)
 	var sp := Vector3(3.2, 0, -9.0)
@@ -97,6 +98,8 @@ func _build_cabin() -> void:
 	while x < HX + 0.05:
 		mb.box(x + pw / 2, F - 0.05, 0, pw - 0.008, 0.1, 2 * HZ + 0.1, Color("#6b5640").lerp(Color("#857058"), r.randf()))
 		x += pw
+	# a dark subfloor under the boards, so the seams between them never show the grass below
+	mb.box(0, F - 0.13, 0, 2 * HX + 0.2, 0.05, 2 * HZ + 0.1, Color("#2e261e"))
 	# log walls with their openings: [from, to, bottom, top] along the wall, measured up from the floor
 	var front := [[0.8, 1.8, 0.0, 2.05], [-1.6, -0.4, 0.85, 1.8]]
 	var back := [[-1.0, 0.2, 0.9, 1.8], [2.7, 3.4, 1.3, 1.8]]
@@ -106,15 +109,17 @@ func _build_cabin() -> void:
 	_log_wall(mb, r, "x", HZ, HX, back, 0.0)
 	_log_wall(mb, r, "z", -HX, HZ, left, COURSE * 0.5)
 	_log_wall(mb, r, "z", HX, HZ, right, COURSE * 0.5)
-	for o in front.slice(1): _window(mb, "x", -HZ, o)
-	for o in back: _window(mb, "x", HZ, o)
-	for o in left: _window(mb, "z", -HX, o)
-	for o in right: _window(mb, "z", HX, o)
+	for o in front.slice(1): _window(mb, "x", -HZ, _cut_span(o, 0.0))
+	for o in back: _window(mb, "x", HZ, _cut_span(o, 0.0))
+	for o in left: _window(mb, "z", -HX, _cut_span(o, COURSE * 0.5))
+	for o in right: _window(mb, "z", HX, _cut_span(o, COURSE * 0.5))
 	# the door: a plank door standing open inside, in a rough frame
 	var trim := Color("#5a4632")
 	# the jambs sit over the sawn log ends (wider and deeper than a log) so no end pokes through
-	mb.box(0.79, F + 1.05, -HZ, 0.15, 2.12, 0.42, trim); mb.box(1.81, F + 1.05, -HZ, 0.15, 2.12, 0.42, trim)
-	mb.box(1.3, F + 2.12, -HZ, 1.36, 0.14, 0.42, trim)
+	var ds := _cut_span(front[0], 0.0)
+	var dtop: float = F + float(ds[3])
+	mb.box(0.8, (F + dtop) / 2, -HZ, 0.18, dtop - F + 0.02, 0.46, trim); mb.box(1.8, (F + dtop) / 2, -HZ, 0.18, dtop - F + 0.02, 0.46, trim)
+	mb.box(1.3, dtop - 0.06, -HZ, 1.18, 0.14, 0.46, trim)
 	mb.push(Transform3D(Basis(Vector3.UP, -1.75), Vector3(1.72, F, -HZ + 0.12)))
 	for k in range(5): mb.box(-0.1 - k * 0.19, 1.0, 0, 0.18, 2.0, 0.05, Color("#6a5238").lerp(Color("#7d6448"), r.randf()))
 	for yy: float in [0.35, 1.65]: mb.box(-0.5, yy, 0.04, 0.95, 0.12, 0.03, Color("#5a4430"))
@@ -130,19 +135,36 @@ func _build_cabin() -> void:
 	add_child(mi)
 	_cabin_collision()
 
-## logs stacked up a wall, cut round the openings; the ends run past the corners like saddle-notched logs
+## does an opening cut the log course centred h above the floor?
+static func _cuts(o: Array, h: float) -> bool:
+	return h > o[2] - 0.13 and h < o[3] + 0.13
+
+## the opening as the logs actually leave it: from the bottom of the lowest cut course to the top of the
+## highest, so the window frame fills the hole exactly (no daylight above or below it)
+func _cut_span(o: Array, y_off: float) -> Array:
+	var lo := 1e9; var hi := -1e9
+	for k in range(-1, NC):
+		var h := COURSE * 0.5 + k * COURSE + y_off
+		if h < 0.0 or not _cuts(o, h): continue
+		lo = minf(lo, h - COURSE * 0.5); hi = maxf(hi, h + COURSE * 0.5)
+	if lo > hi: return o
+	return [o[0], o[1], lo, hi]
+
+## logs stacked up a wall, cut round the openings; the ends run past the corners like saddle-notched logs.
+## Walls that start half a course up get a sill log at floor level so there's no gap along the floor.
 func _log_wall(mb: MeshBuilder, r: RandomNumberGenerator, axis: String, fixed: float, half: float, openings: Array, y_off: float) -> void:
-	for k in range(NC):
+	for k in range(-1 if y_off > 0.0 else 0, NC):
 		var yc := F + COURSE * 0.5 + k * COURSE + y_off
 		var h := yc - F
 		if yc > TOP + 0.05: continue
 		var segs := [[-half - 0.32, half + 0.32]]
 		var chink := [[-half, half]]
 		for o in openings:
-			if h > o[2] - 0.13 and h < o[3] + 0.13:
+			if h >= 0.0 and _cuts(o, h):
 				segs = _cut(segs, o[0], o[1]); chink = _cut(chink, o[0], o[1])
 		var col := Color("#87725a").lerp(Color("#6e675d"), r.randf()) * r.randf_range(0.85, 1.05)
-		var rr := LOG_R * r.randf_range(0.92, 1.06)
+		# every log at least touches the ones above and below it: no daylight between courses
+		var rr := maxf(LOG_R * r.randf_range(0.92, 1.06), COURSE * 0.5 + 0.012)
 		for sg in segs:
 			var a: Vector3; var b: Vector3
 			if axis == "x": a = Vector3(sg[0], yc, fixed); b = Vector3(sg[1], yc, fixed)
@@ -154,8 +176,9 @@ func _log_wall(mb: MeshBuilder, r: RandomNumberGenerator, axis: String, fixed: f
 				var len: float = sg[1] - sg[0]
 				if len < 0.05: continue
 				var mid: float = (sg[0] + sg[1]) / 2
-				if axis == "x": mb.box(mid, yc + COURSE / 2, fixed, len, 0.07, 0.22, Color("#aaa294"))
-				else: mb.box(fixed, yc + COURSE / 2, mid, 0.22, 0.07, len, Color("#aaa294"))
+				var mortar := Color("#7f776a")
+				if axis == "x": mb.box(mid, yc + COURSE / 2, fixed, len, 0.1, 0.27, mortar)
+				else: mb.box(fixed, yc + COURSE / 2, mid, 0.27, 0.1, len, mortar)
 
 static func _cut(segs: Array, a: float, b: float) -> Array:
 	var out := []
@@ -168,17 +191,20 @@ static func _cut(segs: Array, a: float, b: float) -> Array:
 ## a small four-pane window, grimy, in a weathered frame (both faces of the wall)
 func _window(mb: MeshBuilder, axis: String, fixed: float, o: Array) -> void:
 	var a: float = o[0]; var b: float = o[1]; var lo: float = F + o[2]; var hi: float = F + o[3]
+	var glass_lo := lo + 0.1; var glass_hi := hi - 0.1
 	var c: float = (a + b) / 2; var w := b - a; var hgt := hi - lo
 	var fr := Color("#5f4c38")
 	var bx := func(u: float, y: float, sw: float, sh: float, d: float, col: Color) -> void:
 		if axis == "x": mb.box(u, y, fixed, sw, sh, d, col)
 		else: mb.box(fixed, y, u, d, sh, sw, col)
-	bx.call(c, lo, w + 0.12, 0.08, 0.4, fr); bx.call(c, hi, w + 0.12, 0.08, 0.36, fr)
-	bx.call(a, (lo + hi) / 2, 0.08, hgt, 0.36, fr); bx.call(b, (lo + hi) / 2, 0.08, hgt, 0.36, fr)
+	# sill and head boards close the cut top and bottom; the side boards sit over the sawn log ends.
+	# All of them are deeper than a log (0.44 against ~0.36) so no log pokes out round the frame.
+	bx.call(c, lo + 0.05, w + 0.2, 0.1, 0.46, fr); bx.call(c, hi - 0.05, w + 0.2, 0.1, 0.44, fr)
+	bx.call(a, (lo + hi) / 2, 0.16, hgt, 0.44, fr); bx.call(b, (lo + hi) / 2, 0.16, hgt, 0.44, fr)
 	bx.call(c, (lo + hi) / 2, 0.04, hgt, 0.06, fr); bx.call(c, (lo + hi) / 2, w, 0.04, 0.06, fr)
 	var gm := MeshBuilder.new()
-	if axis == "x": gm.box(c, y0 + (lo + hi) / 2, fixed, w, hgt, 0.01, Color(0.75, 0.72, 0.6))
-	else: gm.box(fixed, y0 + (lo + hi) / 2, c, 0.01, hgt, w, Color(0.75, 0.72, 0.6))
+	if axis == "x": gm.box(c, y0 + (glass_lo + glass_hi) / 2, fixed, w, glass_hi - glass_lo, 0.01, Color(0.75, 0.72, 0.6))
+	else: gm.box(fixed, y0 + (glass_lo + glass_hi) / 2, c, 0.01, glass_hi - glass_lo, w, Color(0.75, 0.72, 0.6))
 	var gi := gm.instance(Mats.truck_glass); gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(gi)
 

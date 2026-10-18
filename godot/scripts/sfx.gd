@@ -1,6 +1,7 @@
 ## Every sound is synthesized at startup (no sound files): one-shot effects are rendered into
 ## AudioStreamWAV samples, engines are seamless loops played back at a pitch that follows the rpm.
-## Machine sounds go through the "Machines" bus, which the ear muffs low-pass and turn down.
+## Machine sounds go through the "Machines" bus, which the ear muffs low-pass and turn down. Ambient sound
+## (wind, birds, rain, thunder, running water) goes through the "Ambient" bus, which the muffs muffle too.
 extends Node
 
 const RATE := 22050
@@ -9,6 +10,8 @@ var pool: Array[AudioStreamPlayer] = []
 var muffs := false
 var _machines_bus := -1
 var _lp: AudioEffectLowPassFilter
+var _amb_bus := -1
+var _amb_lp: AudioEffectLowPassFilter
 
 func _ready() -> void:
 	_machines_bus = AudioServer.bus_count
@@ -17,6 +20,12 @@ func _ready() -> void:
 	AudioServer.set_bus_send(_machines_bus, "Master")
 	_lp = AudioEffectLowPassFilter.new(); _lp.cutoff_hz = 20000
 	AudioServer.add_bus_effect(_machines_bus, _lp)
+	_amb_bus = AudioServer.bus_count
+	AudioServer.add_bus()
+	AudioServer.set_bus_name(_amb_bus, "Ambient")
+	AudioServer.set_bus_send(_amb_bus, "Master")
+	_amb_lp = AudioEffectLowPassFilter.new(); _amb_lp.cutoff_hz = 20000
+	AudioServer.add_bus_effect(_amb_bus, _amb_lp)
 	for i in range(12):
 		var p := AudioStreamPlayer.new(); add_child(p); pool.append(p)
 	_build()
@@ -25,13 +34,15 @@ func set_muffs(on: bool) -> void:
 	muffs = on
 	_lp.cutoff_hz = 650.0 if on else 20000.0
 	AudioServer.set_bus_volume_db(_machines_bus, linear_to_db(0.38) if on else 0.0)
+	_amb_lp.cutoff_hz = 500.0 if on else 20000.0
+	AudioServer.set_bus_volume_db(_amb_bus, linear_to_db(0.4) if on else 0.0)
 	AudioServer.set_bus_volume_db(0, linear_to_db(0.7) if on else 0.0)
 
-func play(name: String, vol := 1.0, pitch := 1.0) -> void:
+func play(name: String, vol := 1.0, pitch := 1.0, bus := "Master") -> void:
 	if not sounds.has(name): return
 	for p in pool:
 		if not p.playing:
-			p.stream = sounds[name]; p.volume_db = linear_to_db(maxf(vol, 0.001)); p.pitch_scale = pitch; p.bus = "Master"; p.play()
+			p.stream = sounds[name]; p.volume_db = linear_to_db(maxf(vol, 0.001)); p.pitch_scale = pitch; p.bus = bus; p.play()
 			return
 
 # ------------------------------------------------------------ synthesis helpers
@@ -234,6 +245,7 @@ func _wind_loop() -> AudioStreamWAV:
 
 # ------------------------------------------------------------ ambience
 var _amb_on := false
+var amb_level := 1.0            # how loud the background is on this map (the lake house is a quieter place)
 var _wind: AudioStreamPlayer
 var _next_bird := 2.0
 var _next_pecker := 25.0
@@ -241,17 +253,22 @@ var _next_pecker := 25.0
 func start_ambience() -> void:
 	if _amb_on: return
 	_amb_on = true
-	_wind = AudioStreamPlayer.new(); _wind.stream = sounds.wind; _wind.volume_db = linear_to_db(0.16); add_child(_wind); _wind.play()
+	_wind = AudioStreamPlayer.new(); _wind.stream = sounds.wind; _wind.volume_db = linear_to_db(0.16); _wind.bus = "Ambient"; add_child(_wind); _wind.play()
+
+## turn the whole background up or down for the current map
+func set_ambient_level(k: float) -> void:
+	amb_level = k
+	if _wind: _wind.volume_db = linear_to_db(0.16 * k)
 
 func _process(dt: float) -> void:
 	if not _amb_on: return
 	_next_bird -= dt; _next_pecker -= dt
 	if _next_bird <= 0:
 		_next_bird = randf_range(2.5, 8.0)
-		play("bird%d" % (randi() % 5), randf_range(0.08, 0.3), randf_range(0.9, 1.15))
+		play("bird%d" % (randi() % 5), randf_range(0.08, 0.3) * amb_level, randf_range(0.9, 1.15), "Ambient")
 	if _next_pecker <= 0:
 		_next_pecker = randf_range(30.0, 70.0)
-		play("woodpecker", 0.18, randf_range(0.9, 1.1))
+		play("woodpecker", 0.18 * amb_level, randf_range(0.9, 1.1), "Ambient")
 
 func _engine_loop(f: float, lfo: float, lp: float) -> AudioStreamWAV:
 	var b := _buf(1.0)

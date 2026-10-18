@@ -25,9 +25,10 @@ func frames(n: int) -> void:
 	for i in range(n): await get_tree().process_frame
 
 func shot(name: String) -> void:
+	if DisplayServer.get_name() == "headless": return      # logic-only runs: nothing to capture
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
-	img.save_png(out_dir + "/" + name + ".png")
+	if img: img.save_png(out_dir + "/" + name + ".png")
 
 func note(k: String, v) -> void:
 	report.append([k, v])
@@ -1778,10 +1779,18 @@ func _hubjobs() -> void:
 	g.hud.pc_tab = "upgrades"; g.hud._render_pc()
 	await wait(0.4)
 	await shot("pc-upgrades")
+	note("hale_open_without_wedges", Jobs.board(1)[1].open)
+	g.start_job(1)
+	await wait(0.3)
+	note("started_without_wedges", g.in_hub)
 	g.buy_upgrade("wedges")
 	await wait(0.3)
 	note("bought_wedges", [Career.load().wedges, Career.load().money])
+	note("hale_open_with_wedges", Jobs.board(1)[1].open)
 	await shot("pc-bought")
+	g.hud.pc_tab = "jobs"; g.hud._render_pc()
+	await wait(0.3)
+	await shot("pc-jobs-after")
 	c = Career.load(); c.jobs = 0; c.money = 0; c.wedges = false; c.rope = false; Career.save(c)
 
 
@@ -1931,3 +1940,255 @@ func _hubchop() -> void:
 	await wait(0.5)
 	await shot("chop-rack")
 	Career.save(c0)
+
+## the cabin close up: door jambs from inside both sides, under the windows, along the floor, the steps
+func _hubcabin() -> void:
+	await wait(1.0)
+	g.hub_begin()
+	await _hview("cl-jamb-left", Vector3(-0.6, 0.5, -2.55), Vector3(0.79, 1.4, -3.25))
+	await _hview("cl-jamb-right", Vector3(3.2, 0.5, -2.55), Vector3(1.81, 1.4, -3.25))
+	await _hview("cl-jamb-out", Vector3(2.6, 0.5, -4.6), Vector3(1.81, 1.4, -3.25))
+	await _hview("cl-win-left", Vector3(-2.4, 0.5, -1.2), Vector3(-4.0, 1.0, -2.4))
+	await _hview("cl-win-front", Vector3(-1.0, 0.5, -1.6), Vector3(-1.0, 0.9, -3.25))
+	await _hview("cl-floor-side", Vector3(2.0, 0.5, 0.5), Vector3(4.0, 0.5, -1.5))
+	await _hview("cl-steps", Vector3(1.3, 0, -8.0), Vector3(1.3, 0.2, -5.3))
+
+
+## the lake house: the rowboat (dry inside), the lake (nothing growing under it), the porch roof, and
+## walking straight up the porch steps
+func _hale_lake() -> void:
+	await wait(1.0)
+	g._start()
+	var w: WorldGen = g.world
+	var dx: float = w._dock_x(); var zs: float = w._shore_z(dx) - 3.0; var ze := zs + 13.0
+	var deck: float = float(w.lake.y) + 0.55
+	var p: Player = g.player
+	# on the dock, looking down into the boat
+	p.teleport(Vector3(dx - 0.4, deck + 0.05, ze - 3.6))
+	look_at_point(Vector3(dx - 1.9, float(w.lake.y), ze - 3.5))
+	await wait(1.0)
+	await shot("lake-boat")
+	# out along the dock, looking over the water
+	p.teleport(Vector3(dx, deck + 0.05, ze - 0.5))
+	look_at_point(Vector3(dx + 6.0, float(w.lake.y) - 1.0, ze + 8.0))
+	await wait(1.0)
+	await shot("lake-water")
+	# the house front and its porch roof
+	var h: Dictionary = w.house
+	var pdx: float = h.x + h.w * 0.18
+	var front: float = h.z - h.d / 2
+	var at := Vector3(pdx, 0, front - 8.0)
+	p.teleport(Vector3(at.x, w.H(at.x, at.z) + 0.05, at.z))
+	look_at_point(Vector3(pdx, w.H(pdx, front) + 2.2, front - 1.0))
+	await wait(1.0)
+	await shot("lake-porch")
+	# walk straight at the porch steps and up them, no jumping
+	at = Vector3(pdx, 0, front - 5.0)
+	p.teleport(Vector3(at.x, w.H(at.x, at.z) + 0.05, at.z))
+	p.yaw = PI; p.pitch = -0.2
+	var y_start := p.global_position.y
+	Input.action_press("move_fwd"); await wait(3.0); Input.action_release("move_fwd")
+	note("porch_climb", [snappedf(p.global_position.y - y_start, 0.01), snappedf(p.global_position.z - front, 0.01)])
+	await shot("lake-porch-up")
+
+## walk straight up the cabin's porch steps from the yard, no jumping
+func _hubsteps() -> void:
+	await wait(1.0)
+	g.hub_begin()
+	var y0: float = g.hub.y0
+	var p: Player = g.player
+	for x: float in [1.3, 0.95, 1.65]:
+		p.teleport(Vector3(x, g.world.H(x, -7.6) + 0.05, -7.6), PI)
+		p.yaw = PI; p.pitch = -0.2
+		await wait(0.4)
+		Input.action_press("move_fwd"); await wait(2.4); Input.action_release("move_fwd")
+		await wait(0.2)
+		note("cabin_steps_x%.2f" % x, [snappedf(p.global_position.y - y0, 0.01), snappedf(p.global_position.z, 0.01)])
+
+## Walter's trailer, towed: load and tarp it, hitch it to the truck, hook the chipper on the back of the
+## trailer, drive off with the lot, then jam the truck into the porch and unstick it
+func _haletow() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	var tr: Trailer = g.trailer
+	var bxf := tr.bed_xf()
+	var mid := (Trailer.Z0 + Trailer.Z1) / 2.0
+	var side := bxf * Vector3(2.6, 0, mid)
+	var rs := _make_rounds(10)
+	await wait(1.5)
+	for r: WoodPiece in rs:
+		g.player.teleport(Vector3(side.x, g.world.H(side.x, side.z) + 0.05, side.z))
+		look_at_point(bxf * Vector3(0, 1.0, mid))
+		await wait(0.2)
+		g.haul.pick_up(r)
+		await wait(0.4)
+		g.haul.throw_one()
+		await wait(1.4)
+	var inn := rs.filter(func(r): return tr.in_bed(r.center_world())).size()
+	note("in_trailer", [inn, rs.size()])
+	g.objs.felled = true
+	g.update_objectives()
+	g.tarp_trailer()
+	await wait(2.2)
+	var vp := bxf * Vector3(3.6, 0, mid - 3.5)
+	g.player.teleport(Vector3(vp.x, g.world.H(vp.x, vp.z) + 0.05, vp.z))
+	look_at_point(bxf * Vector3(0, 1.2, mid))
+	await wait(0.8)
+	await shot("tow-tarped")
+	# the chipper comes off the truck; the truck backs up to the trailer's tongue
+	g.chipper.unhitch()
+	await wait(0.5)
+	var tb := tr.global_transform.basis
+	var tp: Vector3 = tr.coupler_world() - tb * Models.HITCH + tb.z * 1.2
+	g.truck.global_transform = Transform3D(tb, Vector3(tp.x, g.world.H(tp.x, tp.z) + 0.3, tp.z))
+	await wait(1.5)
+	var cp := tr.coupler_world() + tb.x * 1.4
+	g.player.teleport(Vector3(cp.x, g.world.H(cp.x, cp.z) + 0.05, cp.z))
+	look_at_point(tr.coupler_world())
+	await wait(0.3)
+	g.aim = g.compute_aim()
+	note("coupler_aim", [g.aim.get("kind", ""), g.hud.prompt.text])
+	g.trailer_hitch_action()
+	await wait(0.6)
+	note("trailer_mode", tr.mode)
+	# walk the chipper's tongue round to the ball on the back of the trailer and drop it on
+	var ch: Chipper = g.chipper
+	var ball := tr.hitch_world()
+	# pick up the tongue, then walk round behind the trailer with it, facing the ball
+	var cpw := ch.coupler_world() + Vector3(0.0, 0, 1.0)
+	g.player.teleport(Vector3(cpw.x, g.world.H(cpw.x, cpw.z) + 0.05, cpw.z))
+	look_at_point(ch.coupler_world())
+	await wait(0.2)
+	g.aim = g.compute_aim()
+	g.hitch_action()
+	for k in range(60):
+		ball = tr.hitch_world()
+		var back_dir: Vector3 = -(tr.global_transform.basis.z); back_dir.y = 0; back_dir = back_dir.normalized()
+		var stand := ball + back_dir * 0.9
+		g.player.teleport(Vector3(stand.x, g.world.H(stand.x, stand.z) + 0.05, stand.z))
+		g.player.yaw = atan2(back_dir.x, back_dir.z)
+		await wait(0.25)
+		if ch.nearest_hitch() == tr: break
+	ball = tr.hitch_world()
+	note("tongue", [ch.mode, snappedf(ch.coupler_world().distance_to(ball), 0.01)])
+	note("chipper_nearest", ch.nearest_hitch() == tr)
+	if ch.nearest_hitch() == tr: g.interact()
+	else: ch.hitch_now(tr)
+	await wait(1.0)
+	var rv := tr.global_transform * Vector3(-7.0, 0, Trailer.Z0 - 2.0)
+	g.player.teleport(Vector3(rv.x, g.world.H(rv.x, rv.z) + 0.05, rv.z))
+	look_at_point(tr.global_transform * Vector3(0, 1.0, Trailer.Z0))
+	await wait(0.8)
+	await shot("tow-hitched")
+	# drive off with the lot
+	note("before_drive", [ch.mode, ch.freeze, ch.brake, ch.jack_shape.disabled, tr.mode, tr.jack_shape.disabled, tr.freeze, ch.tow == tr, g.truck.freeze])
+	var start: Vector3 = g.truck.global_position
+	g.enter_truck()
+	await wait(0.4)
+	Input.action_press("move_fwd")
+	var top_speed := 0.0
+	for k in range(16):
+		await wait(0.25); top_speed = maxf(top_speed, g.truck.speed_mph())
+	Input.action_release("move_fwd")
+	note("top_mph", snappedf(top_speed, 0.1))
+	Input.action_press("jump"); await wait(1.5); Input.action_release("jump")
+	note("towed", [snappedf(g.truck.global_position.distance_to(start), 0.1),
+		snappedf(tr.coupler_world().distance_to(g.truck.hitch_world()), 0.01),
+		snappedf(ch.coupler_world().distance_to(tr.hitch_world()), 0.01),
+		rs.filter(func(r): return tr.in_bed(r.center_world())).size()])
+	g.truck.chase = true; g.truck._set_cam()
+	await wait(0.6)
+	await shot("tow-driving")
+	g.truck.chase = false
+	g.exit_truck()
+	await wait(0.5)
+	# jam it into the porch, then unstick it
+	var h: Dictionary = g.world.house
+	var porch := Vector3(h.x + h.w * 0.18, 0, h.z - h.d / 2 - 1.2)
+	g.truck.freeze = false
+	g.truck.global_transform = Transform3D(Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, -0.25), Vector3(porch.x, g.world.H(porch.x, porch.z) + 0.9, porch.z))
+	await wait(1.0)
+	g.unstick_truck()
+	await wait(2.0)
+	note("unstuck", [snappedf(g.truck.global_transform.basis.y.y, 0.01), snappedf(Vector2(g.truck.global_position.x - porch.x, g.truck.global_position.z - porch.z).length(), 0.1),
+		snappedf(tr.coupler_world().distance_to(g.truck.hitch_world()), 0.01), rs.filter(func(r): return tr.in_bed(r.center_world())).size()])
+	var uv: Vector3 = g.truck.global_position + Vector3(8, 0, 6)
+	g.player.teleport(Vector3(uv.x, g.world.H(uv.x, uv.z) + 0.05, uv.z))
+	look_at_point(g.truck.global_position + Vector3(0, 1, 0))
+	await wait(0.6)
+	await shot("tow-unstuck")
+
+## two cuts from the top and from underneath, in the same spot, that don't quite meet: a kick snaps it
+func _kicksplit() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	await _fell_tree_quick()
+	var st: WoodPiece = g.tree.stem
+	var yy := lerpf(st.y0, st.y1, 0.25)
+	var R := Wood.r_at(st.T, yy)
+	var up: Vector3 = st.global_transform.basis.inverse() * Vector3.UP; up.y = 0; up = up.normalized()
+	var top = g.saw._start_cut({kind = "piece", piece = st, part = {trunk = true}, p = st.to_world(Vector3(0, yy, 0) + up * (R + 0.05)), fl = -up, nl = Vector3.UP})
+	top.s = top.exit * 0.5; Wood.update_kerf(top.node, top)
+	var bot = g.saw._start_cut({kind = "piece", piece = st, part = {trunk = true}, p = st.to_world(Vector3(0, yy, 0) - up * (R + 0.05)), fl = up, nl = Vector3.UP})
+	bot.s = bot.exit * 0.38; Wood.update_kerf(bot.node, bot)
+	var before: int = g.pieces().size()
+	note("cuts", [top != null, bot != null, snappedf(top.exit, 0.01) if top else -1.0, snappedf(bot.exit, 0.01) if bot else -1.0, st.ops.filter(func(o): return o.type == "kerf").size()])
+	var at := st.to_world(Vector3(0, yy, 0))
+	var side: Vector3 = (st.global_transform.basis * Vector3(1, 0, 0)).normalized()
+	if absf(side.y) > 0.7: side = (st.global_transform.basis * Vector3(0, 0, 1)).normalized()
+	side.y = 0; side = side.normalized()
+	var stand := at + side * 1.0
+	g.player.teleport(Vector3(stand.x, g.world.H(stand.x, stand.z) + 0.05, stand.z))
+	look_at_point(at)
+	await wait(0.4)
+	await shot("kick-before")
+	var e: Vector3 = g.player.eye(); var d: Vector3 = g.player.aim_dir()
+	if d.y > -0.15: d = Vector3(d.x, -0.15, d.z).normalized()
+	var rq := PhysicsRayQueryParameters3D.create(e, e + d * 1.9); rq.collision_mask = 8 | 64
+	var hit: Dictionary = g.get_world_3d().direct_space_state.intersect_ray(rq)
+	note("kick_ray", [not hit.is_empty(), hit.get("collider") == st if not hit.is_empty() else false])
+	g.haul.kick()
+	await wait(1.0)
+	note("kick_split", [before, g.pieces().size()])
+	await shot("kick-after")
+
+## the sledge swing: frames through one blow onto a wedge in the back cut
+func _hale_hammer() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	var tr: AshTree = g.tree
+	var c := await _hale_cuts(0.05)
+	var back: Vector3 = tr.global_position - c.away * 1.15
+	g.player.teleport(Vector3(back.x, g.world.H(back.x, back.z) + 0.05, back.z))
+	g.player.tool = "wedge"
+	look_at_point(tr.to_world(c.bc.e))
+	await wait(0.5)
+	g.rig.use()
+	await wait(0.6)
+	g.rig.use()
+	for k in range(5):
+		await wait(0.055)
+		await shot("hammer-%d" % k)
+
+## the firewood stand by the track, with a few bundles on it
+func _hubstand() -> void:
+	await wait(1.0)
+	var c := Career.load(); var b0 := int(c.get("bundles", 0)); c.bundles = 7; Career.save(c)
+	g.hub_begin()
+	g.hub.split._refresh_rack()
+	var rk := Vector3(8.6, 0, -27.0)
+	var B := Basis(Vector3.UP, PI / 2)
+	var front := rk + B * Vector3(0.6, 0, -3.2)
+	g.player.teleport(Vector3(front.x, g.world.H(front.x, front.z) + 0.05, front.z))
+	look_at_point(Vector3(rk.x, g.world.H(rk.x, rk.z) + 0.9, rk.z))
+	await wait(1.2)
+	await shot("stand-front")
+	var near := rk + B * Vector3(-0.3, 0, -1.5)
+	g.player.teleport(Vector3(near.x, g.world.H(near.x, near.z) + 0.05, near.z))
+	look_at_point(Vector3(rk.x, g.world.H(rk.x, rk.z) + 0.75, rk.z))
+	await wait(0.8)
+	await shot("stand-close")
+	c = Career.load(); c.bundles = b0; Career.save(c)

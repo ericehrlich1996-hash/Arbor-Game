@@ -33,7 +33,7 @@ const EARL := {
 }
 
 const HALE := {
-	id = "hale", n = 2, title = "Widow Hale's leaning maple", pay = 650, unlock = 1, look = "hale", who = "Mrs. Hale",
+	id = "hale", n = 2, title = "Widow Hale's leaning maple", pay = 650, unlock = 1, needs = "wedges", look = "hale", who = "Mrs. Hale",
 	text = "Mrs. Hale on Cedar Ln (Earl's buddy, sort of). Dead sugar maple leaning hard at her garage. It has to go the other way. Load the rounds in Walter's old utility trailer and tarp it. She says you can keep the trailer, and the firewood. Bring wedges. A pull rope wouldn't hurt.",
 	tree_word = "dead maple", bark_tint = Color(0.93, 0.82, 0.72),
 	talk = [
@@ -68,9 +68,15 @@ const LIST := [EARL, HALE]
 ## the job list for the computer, open or locked by how many jobs you've done
 static func board(jobs_done: int) -> Array:
 	var out := []
+	var c := Career.load()
 	for j in LIST:
 		var open: bool = jobs_done >= int(j.unlock)
-		out.append({title = j.title, pay = j.pay, open = open,
-			text = j.text if open else "Finish %d job%s first. Word gets around." % [j.unlock, "" if j.unlock == 1 else "s"]})
+		var text: String = j.text if open else "Finish %d job%s first. Word gets around." % [j.unlock, "" if j.unlock == 1 else "s"]
+		# some jobs need gear you have to buy first
+		var need: String = j.get("needs", "")
+		if open and need != "" and not bool(c.get(need, false)):
+			open = false
+			text = j.text + "  >> BUY THE FELLING WEDGES (UPGRADES TAB) BEFORE YOU TAKE THIS ONE."
+		out.append({title = j.title, pay = j.pay, open = open, text = text})
 	out.append({title = "-- nothing else yet --", pay = 0, open = false, text = "Check back after a job or two."})
 	return out

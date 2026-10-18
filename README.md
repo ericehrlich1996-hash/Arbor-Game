@@ -10,7 +10,9 @@ A physics arborist game, built with **Godot 4.7**. You start with a chainsaw, a 
 - **Felling wedges + sledge** ($60): tap wedges into the back cut behind the bar. Each tight wedge lifts the tree a little.
 - **Bull rope** ($120): tie it high on the trunk, hook it on the truck's hitch, and ease the truck away until it's bar-tight. Pull too hard and it snaps.
 
-Drop it on the garage and the roof caves in, and the damage comes out of your pay.
+Drop it on the garage and the roof caves in, and the damage comes out of your pay. You need to buy the wedges before Mrs. Hale's job opens up.
+
+**Walter's trailer.** The rounds go in Mrs. Hale's long utility trailer, tarped over the top. Back the truck up to its tongue and press E to hitch it (the load comes along), and walk the chipper's tongue to the ball on the trailer's back bumper to tow both: truck, trailer, chipper.
 
 ## Play it
 
@@ -29,6 +31,7 @@ Drop it on the garage and the roof caves in, and the damage comes out of your pa
 | E | talk, pick up (several pieces at once), use, drive, hitch/unhitch, hop in the truck bed |
 | 1 / 2 / 3 | hands / chainsaw / ear muffs |
 | 4 / 5 | felling wedges / pull rope (once bought); left click to set or drive a wedge, tie or hook the rope |
+| U | unstick the truck: lifts it onto its wheels at the nearest clear spot (whatever's hitched comes along) |
 | R | pull-start or stop the saw |
 | Right mouse | rev and cut |
 | Mouse wheel | roll the saw (turns the cut plane) |

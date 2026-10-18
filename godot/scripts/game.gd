@@ -85,6 +85,7 @@ func enter_hub() -> void:
 	player = hub.player
 	weather = Weather.new(); weather.name = "Weather"; level_root.add_child(weather)
 	weather.setup(self, randi() % 100000)
+	Sfx.set_ambient_level(1.0)
 	ambient = Ambient.new(); ambient.name = "Ambient"; level_root.add_child(ambient)
 	ambient.setup(Vector3(0, world.H(0, 0), 0))
 	saw = Saw.new(); saw.name = "Saw"; player.hands.add_child(saw)
@@ -158,6 +159,8 @@ func _close_computer() -> void:
 
 func start_job(idx: int) -> void:
 	if idx < 0 or idx >= Jobs.LIST.size(): return
+	var need: String = Jobs.LIST[idx].get("needs", "")
+	if need != "" and not bool(Career.load().get(need, false)): return
 	job = Jobs.LIST[idx]
 	Sfx.play("ding")
 	var tw := create_tween()
@@ -193,7 +196,7 @@ func _setup_input() -> void:
 	var keys := {
 		move_fwd = [KEY_W, KEY_UP], move_back = [KEY_S, KEY_DOWN], move_left = [KEY_A, KEY_LEFT], move_right = [KEY_D, KEY_RIGHT],
 		jump = [KEY_SPACE], run = [KEY_SHIFT], crouch = [KEY_C, KEY_CTRL], interact = [KEY_E], drop = [KEY_Q], kick = [KEY_F],
-		throw = [KEY_G], drag = [KEY_T], tool1 = [KEY_1], tool2 = [KEY_2], tool3 = [KEY_3], tool4 = [KEY_4], tool5 = [KEY_5], saw_start = [KEY_R], help = [KEY_H], camera = [KEY_V],
+		throw = [KEY_G], drag = [KEY_T], tool1 = [KEY_1], tool2 = [KEY_2], tool3 = [KEY_3], tool4 = [KEY_4], tool5 = [KEY_5], unstick = [KEY_U], saw_start = [KEY_R], help = [KEY_H], camera = [KEY_V],
 	}
 	for act in keys:
 		if not InputMap.has_action(act): InputMap.add_action(act)
@@ -332,6 +335,7 @@ func new_level(sd: int) -> void:
 	ambient = Ambient.new(); ambient.name = "Ambient"; level_root.add_child(ambient)
 	weather = Weather.new(); weather.name = "Weather"; level_root.add_child(weather)
 	weather.setup(self, sd)
+	Sfx.set_ambient_level(0.6 if job.id == "hale" else 1.0)     # the lake house is a quiet spot
 	ambient.setup(Vector3(0, world.H(0, 0), 0))
 	var rng := RandomNumberGenerator.new(); rng.seed = sd + 99
 	truck = Truck.new(); truck.name = "Truck"
@@ -370,6 +374,7 @@ func new_level(sd: int) -> void:
 		var tw: Dictionary = world.trailer
 		var gy := world.H(tw.x, tw.z + 1.0)
 		trailer.global_transform = Transform3D(Basis(Vector3.UP, tw.yaw), Vector3(tw.x, gy, tw.z))
+		chipper.trailer = trailer
 	hud.obj_title.text = "Job %d · %s" % [job.n, job.title]
 	hud.set_owned(Rigging.owned("wedges"), Rigging.owned("rope"))
 	title_cam = Camera3D.new(); title_cam.fov = 60; level_root.add_child(title_cam); title_cam.make_current()
@@ -564,6 +569,7 @@ func _unhandled_input(ev: InputEvent) -> void:
 	if player.in_truck:
 		if ev.is_action_pressed("interact"): exit_truck()
 		elif ev.is_action_pressed("camera"): truck.toggle_cam()
+		elif ev.is_action_pressed("unstick"): unstick_truck()
 		return
 	if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT and (player.tool == "wedge" or player.tool == "rope") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		if rig.use(): return
@@ -587,6 +593,9 @@ func _unhandled_input(ev: InputEvent) -> void:
 	elif ev.is_action_pressed("tool4"): _equip_owned("wedge", "wedges", "felling wedges")
 	elif ev.is_action_pressed("tool5"): _equip_owned("rope", "rope", "a pull rope")
 	elif ev.is_action_pressed("crouch"): player.crouch = not player.crouch
+	elif ev.is_action_pressed("unstick"):
+		if player.global_position.distance_to(truck.global_position) < 12.0: unstick_truck()
+		else: hud.toast("Walk over to the truck to unstick it.", 2.0)
 	elif ev.is_action_pressed("saw_start") and player.tool == "saw": saw.pull_start()
 
 func equip(t: String) -> void:
@@ -653,7 +662,8 @@ func compute_aim() -> Dictionary:
 		["chipper", chipper.engine_world(), 2.4, 0.82],
 	]
 	if player.tool == "saw" or saw.racked: cand.append(["rack", chipper.rack_world(), 2.0, 0.85])
-	if trailer and objs.stacked and not objs.tarped: cand.append(["trailer", trailer.bed_xf() * Vector3(0, 1.1, -1.7), 3.2, 0.6])
+	if trailer and objs.stacked and not objs.tarped: cand.append(["trailer", trailer.bed_mid(), 3.6, 0.55])
+	if trailer: cand.append(["coupler", trailer.coupler_world(), 2.2, 0.7])
 	for c in cand:
 		var d := _near(c[1], c[2], c[3])
 		if d >= 0 and (best.is_empty() or (best.kind != "piece" and d > best.t) or (best.kind == "piece" and d > 0.97)):
@@ -740,6 +750,52 @@ func _guide_tilt() -> float:
 	return rad_to_deg(atan2(-f.y, Vector2(f.x, f.z).length()))
 
 ## the truck or chipper lying on its side or roof within reach: "truck", "chipper" or ""
+## the truck's hung up (on a porch, a stump, a log): lift it out and set it down on its wheels at the
+## nearest clear spot, facing the way it was, with whatever's hitched brought along behind it
+func unstick_truck() -> void:
+	var fwd := truck.global_transform.basis.z; fwd.y = 0
+	if fwd.length() < 0.1: fwd = Vector3.BACK
+	fwd = fwd.normalized()
+	var b := Basis(Vector3.UP, atan2(fwd.x, fwd.z))
+	var space := get_world_3d().direct_space_state
+	var q := PhysicsShapeQueryParameters3D.new()
+	var box := BoxShape3D.new(); box.size = Vector3(2.4, 1.3, 6.0)     # the body, from knee height up (the ground under it doesn't count)
+	q.shape = box
+	q.collision_mask = 1 | 4 | 8
+	var ex: Array[RID] = [truck.get_rid(), chipper.get_rid(), player.get_rid()]
+	if trailer: ex.append(trailer.get_rid())
+	var gnd := level_root.find_child("Ground", true, false) as CollisionObject3D
+	if gnd: ex.append(gnd.get_rid())
+	q.exclude = ex
+	var p0 := truck.global_position
+	var spot = null
+	for r: float in [0.0, 1.5, 3.0, 4.5, 6.0, 8.0, 10.0, 13.0, 16.0]:
+		var n := 1 if r == 0.0 else 16
+		for k in range(n):
+			# try behind it first (backing out the way it came in), then round about
+			var a := PI + (k / 2) * (TAU / n) * (1 if k % 2 == 0 else -1)
+			var p := p0 + b * Vector3(sin(a) * r, 0, cos(a) * r)
+			p.y = world.H(p.x, p.z)
+			# lift the test box clear of the ground's own slope across the truck's length
+			var lo := minf(world.H(p.x + fwd.x * 3.0, p.z + fwd.z * 3.0), world.H(p.x - fwd.x * 3.0, p.z - fwd.z * 3.0))
+			var hi := maxf(world.H(p.x + fwd.x * 3.0, p.z + fwd.z * 3.0), world.H(p.x - fwd.x * 3.0, p.z - fwd.z * 3.0))
+			if hi - lo > 1.2: continue                                    # too steep to park on
+			q.transform = Transform3D(b, Vector3(p.x, hi + 0.75, p.z) + b * Vector3(0, 0, -0.3))
+			if space.intersect_shape(q, 1).is_empty():
+				spot = p; break
+		if spot != null: break
+	if spot == null: spot = Vector3(world.park.x, world.H(world.park.x, world.park.z), world.park.z)
+	var cargo := trailer_cargo()
+	var xf := Transform3D(b, spot + Vector3(0, 0.35, 0))
+	truck.freeze = false
+	truck.global_transform = xf
+	PhysicsServer3D.body_set_state(truck.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, xf)
+	truck.linear_velocity = Vector3.ZERO; truck.angular_velocity = Vector3.ZERO
+	if trailer and trailer.mode == "truck": trailer.follow_truck(cargo)
+	if chipper.mode == "truck": chipper.hitch_now(chipper.tow)
+	Sfx.play("thud", 0.8); Sfx.play("clank", 0.5)
+	hud.toast("Truck's unstuck.", 2.0)
+
 func _tipped_near() -> String:
 	if player.in_truck or chipper.mode == "hand": return ""
 	for pair in [["truck", truck], ["chipper", chipper]]:
@@ -756,8 +812,9 @@ func interact() -> void:
 		Sfx.play("thud"); hud.toast("Back on its wheels.", 1.6)
 		return
 	if chipper.mode == "hand":
-		if chipper.near_hitch():
-			chipper.hitch_now(); Sfx.play("clank"); hud.toast("Hitched.", 1.5)
+		var to := chipper.nearest_hitch()
+		if to != null:
+			chipper.hitch_now(to); Sfx.play("clank"); hud.toast("Hitched to the back of the trailer." if to == trailer else "Hitched.", 1.8)
 		else:
 			chipper.set_down(); Sfx.play("drop")
 		player.speed_mult = 1.0
@@ -778,6 +835,7 @@ func interact() -> void:
 		"chipper": toggle_chipper()
 		"rack": rack_action()
 		"trailer": tarp_trailer()
+		"coupler": trailer_hitch_action()
 		"piece":
 			var b: WoodPiece = aim.piece
 			if player.tool == "saw":
@@ -787,6 +845,27 @@ func interact() -> void:
 			if b.mass > Wood.LIFT_MAX:
 				hud.toast(("Too heavy to lift (%s). T to drag it." if haul.can_drag(b) else "Too heavy to lift (%s). Buck it smaller.") % lb(b.mass)); return
 			haul.pick_up(b)
+
+## the trailer's tongue: hitch it to the truck (back up close first), or drop it on its jack
+func trailer_hitch_action() -> void:
+	if trailer == null: return
+	if trailer.mode == "truck":
+		trailer.unhitch(); Sfx.play("clank"); hud.toast("Trailer unhitched. The jack's down.", 2.0)
+		return
+	if chipper.mode == "truck" and chipper.tow == truck:
+		hud.toast("The chipper's on the truck's ball. Unhitch it, hitch the trailer, then hook the chipper on the back of the trailer.", 5.0)
+		return
+	if truck.hitch_world().distance_to(trailer.coupler_world()) > 3.5:
+		hud.toast("Back the truck up to the trailer's tongue first.", 2.5)
+		return
+	trailer.hitch_to(truck, trailer_cargo())
+	if chipper.mode == "truck" and chipper.tow == trailer: chipper.hitch_now(trailer)
+	Sfx.play("clank"); hud.toast("Trailer hitched. The chipper can go on the ball on its back bumper.", 3.5)
+
+## the rounds in the trailer right now
+func trailer_cargo() -> Array:
+	if trailer == null: return []
+	return pieces().filter(func(b): return (b.mode == "dyn") and trailer.in_bed(b.center_world()))
 
 func hitch_action() -> void:
 	if chipper.mode == "truck":
@@ -913,14 +992,16 @@ func talk_to_earl() -> void:
 func tarp_trailer() -> void:
 	if trailer == null or trailer.tarped: return
 	Sfx.play("pick"); Sfx.play("crunch", 0.4, 1.6)
+	var cargo := []
 	for b in pieces():
 		if b.mode == "dyn" and trailer.in_bed(b.center_world()):
 			b.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC; b.freeze = true
+			cargo.append(b)
 	trailer.tarp_it(func():
 		for k in range(4): get_tree().create_timer(0.15 * k).timeout.connect(func(): Sfx.play("clank", 0.35, 1.5 + randf() * 0.4))
 		objs.tarped = true
 		hud.toast("Tarped and strapped down.", 2.0)
-		update_objectives())
+		update_objectives(), cargo)
 
 ## the heavy leaner sat back on its hinge: the client has an opinion
 func customer_sits_back() -> void:
@@ -1094,7 +1175,7 @@ func _update_hud() -> void:
 	else:
 		hud.tilt.text = "Bar roll %d°" % int(rad_to_deg(saw.roll))
 	if player.in_truck:
-		hud.drive_lbl.text = "[b]W/S[/b] drive · [b]A/D[/b] steer · [b]Space[/b] brake · [b]V[/b] camera · [b]E[/b] get out      [b]%d mph[/b]" % int(truck.speed_mph())
+		hud.drive_lbl.text = "[b]W/S[/b] drive · [b]A/D[/b] steer · [b]Space[/b] brake · [b]V[/b] camera · [b]U[/b] unstick · [b]E[/b] get out    [b]%d mph[/b]" % int(truck.speed_mph())
 		if rig.rope == "rigged":
 			var tx := rig._tension_txt().substr(3)
 			var col := "#ff6a4a" if rig.rope_stretch > Rigging.ROPE_SNAP * 0.7 else ("#9be36b" if rig.rope_stretch >= Rigging.ROPE_TIGHT else "#ffd27a")
@@ -1109,7 +1190,8 @@ func _update_hud() -> void:
 	if dlg != null: t = ""
 	elif tipped != "": t = "[b]E[/b] Flip the %s back over" % tipped
 	elif chipper.mode == "hand":
-		t = "[b]E[/b] Hitch it to the truck" if chipper.near_hitch() else "[b]E[/b] Set the tongue down"
+		var nh := chipper.nearest_hitch()
+		t = ("[b]E[/b] Hitch it to the trailer" if nh == trailer else "[b]E[/b] Hitch it to the truck") if nh != null else "[b]E[/b] Set the tongue down"
 	elif haul.drag != null:
 		t = "Dragging · %s · [b]T[/b] let go" % lb(haul.drag.b.mass)
 	elif haul.carrying():
@@ -1129,6 +1211,10 @@ func _update_hud() -> void:
 			"truck": t = "[b]E[/b] Get in the truck"
 			"tailgate": t = "[b]E[/b] Hop down" if on_bed else "[b]E[/b] Hop in the back"
 			"hitch": t = "[b]E[/b] Unhitch the chipper" if chipper.mode == "truck" else "[b]E[/b] Grab the tongue"
+			"coupler":
+				if trailer.mode == "truck": t = "[b]E[/b] Unhitch the trailer"
+				elif truck.hitch_world().distance_to(trailer.coupler_world()) <= 3.5: t = "[b]E[/b] Hitch the trailer to the truck"
+				else: t = "Trailer tongue · back the truck up to it to hitch"
 			"chipper": t = "[b]E[/b] %s the chipper" % ("Stop" if chipper.running else "Start")
 			"trailer": t = "[b]E[/b] Tarp the trailer"
 			"rack": t = "[b]E[/b] Take the saw" if saw.racked else "[b]E[/b] Hang the saw on the rack"

@@ -7,6 +7,8 @@ var mode := "truck"      # "truck" (on the ball), "free" (on its jack), "hand" (
 var running := false
 var engine_snd = null
 var truck: Truck
+var tow: Node3D                 # what it's hitched to: the truck, or the back of Walter's trailer
+var trailer = null              # Walter's trailer, on the job that has one
 var world: WorldGen
 var joint: PinJoint3D
 var anchor: AnimatableBody3D
@@ -18,6 +20,7 @@ var feeding = null
 
 func setup(t: Truck) -> void:
 	truck = t
+	tow = t
 	add_collision_exception_with(t)     # the coupler sits on the ball; the joint keeps them apart
 	collision_layer = 4
 	collision_mask = 1 | 4 | 8 | 64
@@ -91,19 +94,22 @@ func rack_world() -> Vector3:
 func engine_world() -> Vector3:
 	return global_transform * Vector3(0, 0.6, -1.6)
 
-## put the coupler on the hitch ball and connect it
-func hitch_now() -> void:
+## put the coupler on a hitch ball (the truck's, or the one on the back of the trailer) and connect it
+func hitch_now(target: Node3D = null) -> void:
 	_clear_joint()
 	if freeze and mode == "hand": follow_kinematic(false)
-	var hp := truck.hitch_world()
-	var tb := truck.global_transform.basis
+	if target == null: target = tow if tow != null else truck
+	tow = target
+	add_collision_exception_with(tow)
+	var hp: Vector3 = tow.hitch_world()
+	var tb := tow.global_transform.basis
 	global_transform = Transform3D(tb, hp)
-	linear_velocity = truck.linear_velocity; angular_velocity = Vector3.ZERO
+	linear_velocity = (tow as RigidBody3D).linear_velocity; angular_velocity = Vector3.ZERO
 	joint = PinJoint3D.new()
 	joint.position = Vector3.ZERO
 	add_child(joint)
 	joint.global_position = hp
-	joint.node_a = truck.get_path()
+	joint.node_a = tow.get_path()
 	joint.node_b = get_path()
 	mode = "truck"
 	_set_jack(false)
@@ -176,7 +182,7 @@ func follow_kinematic(on: bool) -> void:
 		linear_velocity = Vector3.ZERO; angular_velocity = Vector3.ZERO
 
 func trail(_dt: float) -> void:
-	_trail_to(truck.hitch_world())
+	_trail_to(tow.hitch_world() if tow != null else truck.hitch_world())
 
 func _trail_to(hp: Vector3) -> void:
 	var head := hp - _axle_prev; head.y = 0
@@ -189,7 +195,20 @@ func _trail_to(hp: Vector3) -> void:
 	global_transform = Transform3D(Basis(Vector3.UP, atan2(head.x, head.z)) * Basis(Vector3.RIGHT, pitch), hp)
 
 func near_hitch() -> bool:
-	return global_position.distance_to(truck.hitch_world()) < 0.8
+	return nearest_hitch() != null
+
+## the hitch ball the coupler's over, if any: the truck's (unless the trailer's already on it) or the
+## ball on the back of the trailer
+func nearest_hitch() -> Node3D:
+	var best: Node3D = null; var bd := 1.0
+	var cands: Array = []
+	if not (trailer != null and trailer.mode == "truck"): cands.append(truck)
+	if trailer != null: cands.append(trailer)
+	for c: Node3D in cands:
+		var hp: Vector3 = c.hitch_world()
+		var d := Vector2(global_position.x - hp.x, global_position.z - hp.z).length()      # over the ball (height doesn't matter much)
+		if d < bd and absf(global_position.y - hp.y) < 0.6: bd = d; best = c
+	return best
 
 func _physics_process(_dt: float) -> void:
 	if mode == "free":

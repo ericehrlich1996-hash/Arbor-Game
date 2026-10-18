@@ -71,13 +71,15 @@ func _wedge_mb() -> MeshBuilder:
 	for k in range(3): mb.box(0, back / 2 - k * 0.004, 0.03 + k * 0.035, w * 0.9, 0.004, 0.006, MeshBuilder.shade(c, 0.75))
 	return mb
 
-## a short-handled sledge: steel head, hickory handle with a rubber grip. Handle along -y from the head.
+## a short-handled sledge, held at the grip (the origin): hickory handle up +y with a rubber grip, and
+## the steel head across the top lying along z, so as the handle swings forward (about x) the striking
+## face on the head's -z end is what leads into the wedge
 func _hammer_mb() -> MeshBuilder:
 	var mb := MeshBuilder.new()
-	mb.tube(Vector3(0, -0.02, 0), Vector3(0, 0.3, 0), 0.016, 0.014, Color("#b48a52"), 8, true)
-	mb.tube(Vector3(0, -0.04, 0), Vector3(0, 0.08, 0), 0.02, 0.02, Color("#2a2a28"), 8, true)
-	mb.bevel_box(0, 0.33, 0, 0.13, 0.055, 0.055, Color("#5a5e64"), 0.008)
-	for sx: float in [-1.0, 1.0]: mb.box(sx * 0.068, 0.33, 0, 0.01, 0.06, 0.06, Color("#8a8e92"))
+	mb.tube(Vector3(0, -0.06, 0), Vector3(0, 0.34, 0), 0.016, 0.014, Color("#b48a52"), 8, true)
+	mb.tube(Vector3(0, -0.07, 0), Vector3(0, 0.05, 0), 0.021, 0.021, Color("#2a2a28"), 8, true)
+	mb.bevel_box(0, 0.36, 0, 0.055, 0.058, 0.15, Color("#5a5e64"), 0.008)
+	for sz: float in [-1.0, 1.0]: mb.box(0, 0.36, sz * 0.077, 0.062, 0.064, 0.012, Color("#8a8e92"))   # the two faces
 	return mb
 
 ## a coil of yellow bull rope
@@ -100,8 +102,17 @@ func pose(dt: float) -> void:
 	coil.visible = walking and tool == "rope"
 	swing = maxf(0.0, swing - dt)
 	if hammer.visible:
-		var k := sin(clampf(1.0 - swing / 0.28, 0, 1) * PI) if swing > 0 else 0.0
-		hammer.transform = Transform3D(Basis(Vector3.RIGHT, -0.35 - k * 1.3) * Basis(Vector3.BACK, 0.25), Vector3(0.25, -0.27 + k * 0.05, -0.52 - k * 0.12))
+		# a short chop: cock it back, swing the head down and forward onto the wedge, bounce back up.
+		# The handle pivots at your hand; the angle is how far the handle's tipped forward from upright.
+		var rest := 0.45
+		var ang := rest
+		if swing > 0:
+			var p := clampf(1.0 - swing / 0.28, 0, 1)
+			if p < 0.3: ang = lerpf(rest, 0.05, p / 0.3)                               # wind up
+			elif p < 0.62: ang = lerpf(0.05, 1.45, ease((p - 0.3) / 0.32, 0.4))       # strike
+			else: ang = lerpf(1.45, rest, (p - 0.62) / 0.38)                          # recover
+		var reach := clampf((ang - rest) / (1.45 - rest), 0, 1)
+		hammer.transform = Transform3D(Basis(Vector3.RIGHT, -ang) * Basis(Vector3.BACK, 0.12), Vector3(0.2 - reach * 0.08, -0.3 + reach * 0.04, -0.42 - reach * 0.12))
 		held_wedge.transform = Transform3D(Basis(Vector3.RIGHT, -0.25) * Basis(Vector3.UP, PI * 0.1), Vector3(-0.23, -0.23, -0.6))
 	if coil.visible:
 		coil.transform = Transform3D(Basis(Vector3.UP, 0.5).scaled(Vector3(0.55, 0.55, 0.55)), Vector3(-0.3, -0.3, -0.62))
