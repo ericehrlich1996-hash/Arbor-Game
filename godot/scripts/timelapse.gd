@@ -105,5 +105,20 @@ func step(dt: float) -> void:
 	_t += dt
 	if _t >= interval:
 		_t = 0.0
+		_clear_air()
 		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 		_grab = true          # the picture's ready next frame
+
+## the camera's high up: through fog or rain haze you'd see nothing but grey, so it gets today's sky and
+## light with the fog taken out (you can still tell it was a foggy morning from the colour of it)
+func _clear_air() -> void:
+	var we := game.find_child("WorldEnvironment", true, false) as WorldEnvironment
+	var src: Environment = we.environment if we else null
+	if src == null:
+		for c in game.get_children():
+			if c is WorldEnvironment: src = (c as WorldEnvironment).environment; break
+	if src == null: return
+	var e := src.duplicate() as Environment
+	e.fog_enabled = false
+	e.volumetric_fog_enabled = false
+	cam.environment = e

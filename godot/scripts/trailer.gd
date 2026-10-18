@@ -216,14 +216,12 @@ func _build_tarp(load: Array = []) -> void:
 	var rail := 1.4
 	var hw := 1.02                                   # half width over the rails
 	# the height of the load over each point of the bed, with a little slack over the top
+	# a full load under a tarp: a low, even mound, highest down the middle, easing off at the ends
 	var top_at := func(px: float, pz: float) -> float:
-		var hgt := rail + 0.06
-		for s in load:
-			var c: Vector3 = s[0]; var rr: float = s[1] + 0.12
-			var dx := px - c.x; var dz := pz - c.z
-			var d2 := dx * dx + dz * dz
-			if d2 < rr * rr: hgt = maxf(hgt, c.y + sqrt(rr * rr - d2) + 0.03)
-		return hgt
+		var u := px / hw
+		var v := (z1 - pz) / L
+		var ends := smoothstep(0.0, 0.12, v) * smoothstep(1.0, 0.88, v)
+		return rail + 0.08 + 0.42 * (1.0 - u * u) * (0.55 + 0.45 * ends)
 	var ids := []
 	var peak := rail
 	for j in range(nz + 1):
@@ -246,7 +244,7 @@ func _build_tarp(load: Array = []) -> void:
 			mb.quad(ids[j][i], ids[j + 1][i], ids[j + 1][i + 1], ids[j][i + 1])
 			mb.quad(ids[j][i], ids[j][i + 1], ids[j + 1][i + 1], ids[j + 1][i])
 	# down over the front and back boards, from the top of the load
-	var fh := (peak - (rail - 0.4))
+	var fh: float = float(top_at.call(0.0, z1 - 0.05)) - (rail - 0.4)      # the end flaps come up to the tarp's end, no higher
 	for zz: float in [0.06, -(L + 0.12)]:
 		mb.box(0, rail - 0.4 + fh / 2, zz, 2.06, fh, 0.01, blue2)
 	# grommets and bungees down to the stake pockets
@@ -288,6 +286,10 @@ func tarp_it(on_done: Callable = Callable(), cargo: Array = []) -> void:
 	tarp.scale = Vector3(1, 1, 0.02)
 	var tw := create_tween()
 	tw.tween_property(tarp, "scale", Vector3(1, 1, 1), 1.4).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	# once it's over them, the logs are under the tarp: you see the tarp, not logs poking through it
+	tw.tween_callback(func():
+		for st in strapped:
+			if is_instance_valid(st[0]): (st[0] as Node3D).visible = false)
 	if on_done.is_valid(): tw.tween_callback(on_done)
 
 ## already tarped (at home, or the moment you load in): a full load, mounded up
