@@ -2787,3 +2787,26 @@ func _refsheet() -> void:
 func _act(a: String) -> InputEventAction:
 	var e := InputEventAction.new(); e.action = a; e.pressed = true
 	return e
+
+## character turnaround in the game itself: the client from the front, 3/4, side and back, and the head
+func _turnaround() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(0.5)
+	g.hud.visible = false
+	var e = g.earl
+	var w = g.world
+	e.walk_to = null
+	e.position = Vector3(w.park.x + w.s * 3.0, 0, w.park.z + 14.0)
+	e.position.y = w.H(e.position.x, e.position.z)
+	var cam := Camera3D.new(); cam.fov = 30; g.level_root.add_child(cam); cam.make_current()
+	for v in [["front", 0.0, 4.6, 0.95], ["34", 0.75, 4.6, 0.95], ["side", PI / 2, 4.6, 0.95], ["back", PI, 4.6, 0.95], ["head", 0.35, 1.5, 1.62], ["game", 0.5, 8.0, 1.0]]:
+		e.state = "idle"; e.talking = false
+		await frames(2)
+		var b: Basis = e.global_transform.basis
+		var fwd: Vector3 = (b.z * cos(v[1]) + b.x * sin(v[1])).normalized()
+		var tgt: Vector3 = e.global_position + Vector3(0, v[3], 0)
+		cam.global_position = tgt + fwd * v[2] + Vector3(0, 0.06 if v[0] != "game" else 0.9, 0)
+		cam.look_at(tgt)
+		await wait(0.4)
+		await shot("earl-" + v[0])

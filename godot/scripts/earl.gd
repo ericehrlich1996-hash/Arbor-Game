@@ -35,6 +35,9 @@ func setup(w: WorldGen, at: Vector2, look := "earl") -> void:
 	world = w
 	position = Vector3(at.x, w.H(at.x, at.y), at.y)
 	var P := Models.old_lady() if look == "hale" else Models.old_man(look)
+	if look == "earl":
+		var M := modeled("res://models/earl.glb")        # the Blender model (art/earl.py), if it's there
+		if not M.is_empty(): P = M
 	n_hip = Node3D.new(); add_child(n_hip)
 	n_torso = _part(P.torso, n_hip)
 	var neck := Node3D.new(); neck.position = Vector3(0, 0.58, 0); n_torso.add_child(neck)
@@ -65,8 +68,37 @@ func setup(w: WorldGen, at: Vector2, look := "earl") -> void:
 	bubble.visible = false
 	add_child(bubble)
 
-func _part(mb: MeshBuilder, parent: Node3D) -> Node3D:
-	var mi := mb.instance(); parent.add_child(mi); return mi
+func _part(src, parent: Node3D) -> Node3D:
+	var mi: MeshInstance3D
+	if src is MeshBuilder: mi = (src as MeshBuilder).instance()
+	else: mi = MeshInstance3D.new(); mi.mesh = src
+	parent.add_child(mi); return mi
+
+## a character modelled in Blender: the .glb holds one mesh per posable part (torso, head, upper, fore,
+## leg, cane), each with its origin at the joint it turns about, so they drop straight into the rig above
+static var _models := {}
+static func modeled(path: String) -> Dictionary:
+	if _models.has(path): return _models[path]
+	var out := {}
+	if ResourceLoader.exists(path):
+		var root: Node = (load(path) as PackedScene).instantiate()
+		for k in ["torso", "head", "upper", "fore", "leg", "cane"]:
+			var n := root.find_child(k, true, false)
+			if n is MeshInstance3D:
+				var m: Mesh = (n as MeshInstance3D).mesh
+				for si in m.get_surface_count():
+					var mat := m.surface_get_material(si)
+					if mat is BaseMaterial3D:
+						var bm := (mat as BaseMaterial3D)
+						# the palette atlas is flat swatches: sample it exactly (no blending between swatches)
+						if bm.albedo_texture and bm.albedo_texture.get_width() <= 64:
+							bm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+						bm.roughness = 0.9; bm.metallic_specular = 0.25
+				out[k] = m
+		root.free()
+		if out.size() < 6: out = {}
+	_models[path] = out
+	return out
 
 func bark(text: String, secs := 3.0) -> void:
 	bubble.text = text
