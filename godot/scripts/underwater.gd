@@ -353,7 +353,7 @@ func _new_fish(f: Dictionary) -> void:
 	if fish_node: fish_node.queue_free()
 	fish_uid = int(f.get("uid", -2))
 	fish_fresh = true
-	var mi: MeshInstance3D = fishing._fish_model(f.name, float(f.len)).instance()
+	var mi: MeshInstance3D = fishing.fish_mesh(f.name, float(f.len))
 	_layer(mi)
 	mi.rotation.x = 0.0
 	fish_node = Node3D.new(); fish_node.top_level = true

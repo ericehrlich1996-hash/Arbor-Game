@@ -2487,7 +2487,7 @@ func _dock_models() -> void:
 	look_at_point(g.player.global_position + Vector3(0, 1.6, 10))
 	await wait(0.3)
 	for n in ["Walleye", "Largemouth bass", "Yellow perch", "Northern pike", "Bluegill", "Brook trout"]:
-		var m: MeshInstance3D = g.fishing._fish_model(n, {"Northern pike": 80.0, "Bluegill": 20.0, "Brook trout": 30.0, "Yellow perch": 28.0}.get(n, 55.0)).instance()
+		var m: MeshInstance3D = g.fishing.fish_mesh(n, {"Northern pike": 80.0, "Bluegill": 20.0, "Brook trout": 30.0, "Yellow perch": 28.0}.get(n, 55.0))
 		g.player.cam.add_child(m)
 		m.position = Vector3(0.0, -0.05, -0.75 if n != "Northern pike" else -1.1)
 		m.rotation = Vector3(0.0, 0.0, 0.0)
@@ -2775,7 +2775,7 @@ func _refsheet() -> void:
 	for n in Fishing.SPECIES:
 		var sp: Dictionary = Fishing.SPECIES[n]
 		var cm: float = (sp.len[0] + sp.len[1]) * 0.5
-		var mi: MeshInstance3D = fsh._fish_model(n, cm).instance()
+		var mi: MeshInstance3D = fsh.fish_mesh(n, cm)
 		stage.add_child(mi)
 		var L: float = clampf(cm / 100.0, 0.12, 1.3)
 		mi.scale = Vector3.ONE * (1.0 / L)
@@ -2841,7 +2841,7 @@ func _fish_sheet() -> void:
 	var nodes := []
 	for i in range(names.size()):
 		var nm: String = names[i]
-		var mi: MeshInstance3D = fish._fish_model(nm, 100.0).instance()
+		var mi: MeshInstance3D = fish.fish_mesh(nm, 100.0)
 		var cell := Node3D.new(); stage.add_child(cell)
 		cell.position = Vector3((i % cols - 1.5) * 1.45, -(i / cols - 1) * 0.95, 0)
 		cell.add_child(mi); nodes.append(mi)

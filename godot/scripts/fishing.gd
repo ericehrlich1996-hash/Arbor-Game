@@ -428,7 +428,7 @@ func _landed() -> void:
 	Sfx.play("thud", 0.4, 1.6); Sfx.play("ding", 0.4, 1.3)
 	shadow.visible = false; bobber.visible = false
 	var sp: Dictionary = SPECIES[fish.name]
-	caught = _fish_model(fish.name, float(fish.len)).instance()
+	caught = fish_mesh(fish.name, float(fish.len))
 	game.player.cam.add_child(caught)
 	# held up in the middle of the screen, side on, far enough off that the whole fish fits
 	var d := clampf(float(fish.len) / 100.0 * 1.3, 0.38, 1.7)
@@ -651,6 +651,26 @@ func _rod_mb() -> MeshBuilder:
 	return mb
 
 ## a fish to hold up: body, tail, fins, an eye, coloured dark on top and pale underneath
+## the fish as a ready-to-place mesh, its real length: a modelled one from models/fish/<species>.glb when
+## there is one (built 1 m long, nose along +x), otherwise the one put together in code below
+static var _fish_meshes := {}
+func fish_mesh(name: String, cm: float) -> MeshInstance3D:
+	var key := name.to_lower().replace(" ", "_")
+	if not _fish_meshes.has(key):
+		var m: Mesh = null
+		var path := "res://models/fish/%s.glb" % key
+		if ResourceLoader.exists(path):
+			var inst: Node = (load(path) as PackedScene).instantiate()
+			var found := inst.find_children("*", "MeshInstance3D", true, false)
+			if not found.is_empty(): m = (found[0] as MeshInstance3D).mesh
+			inst.free()
+		_fish_meshes[key] = m
+	var mesh: Mesh = _fish_meshes[key]
+	if mesh == null: return _fish_model(name, cm).instance()
+	var mi := MeshInstance3D.new(); mi.mesh = mesh
+	mi.scale = Vector3.ONE * clampf(cm / 100.0, 0.12, 1.3)
+	return mi
+
 func _fish_model(name: String, cm: float) -> MeshBuilder:
 	var sp: Dictionary = SPECIES[name]
 	if name == "Gerald": name = "Largemouth bass"
