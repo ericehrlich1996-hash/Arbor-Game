@@ -41,7 +41,7 @@ func _capture() -> void:
 
 func _mobile_scale() -> void:
 	var w := float(get_viewport().get_visible_rect().size.x)
-	get_viewport().scaling_3d_scale = clampf(1280.0 / maxf(w, 1.0), 0.5, 1.0)
+	get_viewport().scaling_3d_scale = clampf(1100.0 / maxf(w, 1.0), 0.4, 1.0)
 var tests = null
 var force_rev := false         # scripted tests hold the throttle without a captured mouse
 var on_bed := false
@@ -68,7 +68,11 @@ func _ready() -> void:
 		touch = TouchControls.new(); touch.name = "Touch"; add_child(touch)
 		touch.setup(self)
 		Input.emulate_mouse_from_touch = true
-		# phones: lighter detail, and render the 3D at about 1280 across however sharp the screen is
+		# phones run hot: 30 frames a second is plenty for this game and halves the work (or more on
+		# 90/120 Hz screens, which would otherwise draw every refresh), and no MSAA (costly on phone GPUs)
+		Engine.max_fps = 30
+		get_viewport().msaa_3d = Viewport.MSAA_DISABLED
+		# phones: lighter detail, and render the 3D at about 1100 across however sharp the screen is
 		get_tree().create_timer(0.5).timeout.connect(func(): set_detail(0); _mobile_scale())
 		get_viewport().size_changed.connect(_mobile_scale)
 	get_tree().create_timer(3.0).timeout.connect(Ach.retro)

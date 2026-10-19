@@ -43,10 +43,10 @@ func _models() -> void:
 		_lods("oak%d" % i, func(l: int) -> ArrayMesh: return Nature.broadleaf(200 + i, l))
 	for i in range(2):
 		_lods("birch%d" % i, func(l: int) -> ArrayMesh: return Nature.broadleaf(300 + i, l, true))
-		models["snag%d" % i] = {mesh = Nature.snag(400 + i), end = 300.0, shadow = true}
+		models["snag%d" % i] = {mesh = Nature.snag(400 + i), end = 300.0 + FAR_CELL * 0.71, shadow = true, big = true}
 	for i in range(3):
 		models["fern%d" % i] = {mesh = Nature.fern(500 + i), end = 55.0, shadow = false}
-		models["rock%d" % i] = {mesh = Nature.rock(600 + i), end = 160.0, shadow = true}
+		models["rock%d" % i] = {mesh = Nature.rock(600 + i), end = 160.0 + FAR_CELL * 0.71, shadow = true, big = true}
 		models["log%d" % i] = {mesh = Nature.fallen_log(700 + i), end = 120.0, shadow = true}
 	models.bush0 = {mesh = Nature.bush(800, Color(0.5, 0.66, 0.32)), end = 80.0, shadow = false}
 	models.bush1 = {mesh = Nature.bush(801, Color(0.82, 0.5, 0.2)), end = 80.0, shadow = false}
@@ -63,18 +63,21 @@ func _models() -> void:
 const NEAR := 38.0
 const MID := 78.0
 const FAR := 280.0              # past this the fog and the painted treeline take over
+const FAR_CELL := 120.0         # far trees are batched in patches this big (3 x 3 cells)
 
 ## the three models cross-fade (a dithered blend in the foliage shader) instead of popping
 func _lods(key: String, make: Callable) -> void:
 	var near: ArrayMesh = make.call(0); var mid: ArrayMesh = make.call(1); var far: ArrayMesh = make.call(2)
 	_fade(near, Vector4(-2, -1, NEAR - 7.0, NEAR), false)
 	_fade(mid, Vector4(NEAR - 7.0, NEAR, MID - 9.0, MID), true)
-	_fade(far, Vector4(MID - 9.0, MID, 1e5, 1e5 + 1.0), true)
+	_fade(far, Vector4(MID - 9.0, MID, FAR - 25.0, FAR), true)
 	# up close the detailed tree is drawn, but its shadow comes from the lighter model (a fraction of the cost)
 	models[key] = {mesh = near, end = NEAR + 1.0, shadow = false}
 	models[key + "_shadow"] = {mesh = make.call(1), end = 60.0, shadow = true, shadow_only = true}
 	models[key + "_mid"] = {mesh = mid, begin = NEAR - 8.0, end = MID + 1.0, shadow = false}
-	models[key + "_far"] = {mesh = far, begin = MID - 10.0, end = FAR, shadow = false}
+	# the far models go out in big patches (FAR_CELL) to keep draw calls down; the shader does the
+	# per-tree cut-off at both ends, so the patch only needs culling once it's wholly out of range
+	models[key + "_far"] = {mesh = far, end = FAR + FAR_CELL * 0.71, shadow = false, big = true}
 
 static func _fade(m: ArrayMesh, f: Vector4, inv: bool) -> void:
 	for i in range(m.get_surface_count()):
@@ -264,10 +267,20 @@ func _place_underbrush() -> void:
 		if rng.randf() < 0.08: _add("flower%d" % (rng.randi() % 2), px + 0.4, pz, rng.randf() * TAU, 1.0)
 
 func _emit() -> void:
+	# regroup the "big" models (far trees) from 40 m cells into FAR_CELL patches
+	var groups := {}
+	var per := int(round(FAR_CELL / CELL))
 	for c in cells:
 		var cell: Dictionary = cells[c]
 		for key in cell:
-			var list: Array = cell[key]
+			var big: bool = models[key].get("big", false)
+			var gk = [Vector2i(floori(float(c.x) / per), floori(float(c.y) / per)) if big else c, key]
+			if not groups.has(gk): groups[gk] = []
+			groups[gk].append_array(cell[key])
+	for gk in groups:
+		if true:
+			var key: String = gk[1]
+			var list: Array = groups[gk]
 			var md: Dictionary = models[key]
 			var mm := MultiMesh.new()
 			mm.transform_format = MultiMesh.TRANSFORM_3D

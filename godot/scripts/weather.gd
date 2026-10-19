@@ -132,6 +132,7 @@ func step(dt: float, eye: Vector3) -> void:
 	rain_fx.emitting = r > 0.03 and not in_cab and not indoors
 	# changing the count restarts the particles, so only step it in coarse notches
 	var want := maxi(200, int(round(r * 8.0)) * 200)
+	if game.touch != null: want = mini(want, 600)      # phones: fewer drops (the near ones are what you see)
 	if rain_fx.amount != want: rain_fx.amount = want
 	var cam: Camera3D = game.get_viewport().get_camera_3d()
 	var ahead := Vector3.ZERO

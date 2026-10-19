@@ -266,6 +266,8 @@ void vertex() {
 	VERTEX.x += (sin(t * 1.3 + wp.x * 0.21 + wp.z * 0.13) * 0.7 + sin(t * 3.9 + wp.y * 0.9 + wp.x) * 0.3) * 0.07 * w * gust;
 	VERTEX.z += (cos(t * 1.1 + wp.z * 0.19 - wp.x * 0.1) * 0.7 + sin(t * 4.3 + wp.y * 0.8) * 0.3) * 0.07 * w * gust;
 	VERTEX.y += sin(t * 2.7 + wp.x * 0.5 + wp.z * 0.4) * 0.025 * w;
+	// fully faded out (another level of detail is showing): collapse it so it costs no pixels at all
+	if (vfade <= 0.0) VERTEX = vec3(0.0);
 }
 void fragment() {
 	if (vfade < 0.999) {

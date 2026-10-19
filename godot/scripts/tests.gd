@@ -2597,3 +2597,28 @@ func _tp(i: int, p: Vector2, down: bool) -> void:
 func _td(i: int, p: Vector2) -> void:
 	var e := InputEventScreenDrag.new(); e.index = i; e.position = p
 	Input.parse_input_event(e)
+
+## phone performance: sit in the hub or on a job for a few seconds, turning slowly, and report the cost
+## per frame (frame time, script and physics time, draw calls, triangles). --test=hub_perf for the hub.
+func _hub_perf() -> void:
+	await _mobile_perf()
+
+func _mobile_perf() -> void:
+	await wait(1.0)
+	var scene := "hub" if g.in_hub else "job"
+	if scene == "hub": g.hub_begin()
+	else: g._start()
+	await wait(3.0)                     # let the detail settle and the first-frame lumps pass
+	var n := 0; var tot := 0.0; var worst := 0.0; var proc := 0.0; var phys := 0.0; var dc := 0.0; var tri := 0.0
+	var t_end := Time.get_ticks_msec() + 6000
+	var last := Time.get_ticks_usec()
+	while Time.get_ticks_msec() < t_end:
+		await get_tree().process_frame
+		var now := Time.get_ticks_usec(); var ms := (now - last) / 1000.0; last = now
+		n += 1; tot += ms; worst = maxf(worst, ms)
+		proc += Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+		phys += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+		dc += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+		tri += Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
+		if g.player: g.player.look(0.004, 0.0)
+	note("perf " + scene, {frames = n, fps = snappedf(n / 6.0, 0.1), avg_ms = snappedf(tot / n, 0.1), worst_ms = snappedf(worst, 0.1), script_ms = snappedf(proc / n, 0.01), physics_ms = snappedf(phys / n, 0.01), draw_calls = int(dc / n), triangles_k = int(tri / n / 1000.0), physics_tps = Engine.physics_ticks_per_second, max_fps = Engine.max_fps, msaa = get_viewport().msaa_3d, scale = snappedf(get_viewport().scaling_3d_scale, 0.01), detail = g.detail})
