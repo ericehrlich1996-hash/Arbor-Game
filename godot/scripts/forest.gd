@@ -270,10 +270,10 @@ const FINE_CELL := 20.0         # close-up tree models and small plants: small p
 ## how big a patch each model is batched in: far things in big patches (few draw calls), the detailed
 ## close-up trees and the small plants in small ones, so widening each patch's range to cover its corners
 ## (see below) switches on as few expensive plants as possible
-func _patch(key: String) -> float:
+func _patch_size(key: String) -> float:
 	var md: Dictionary = models[key]
 	if md.get("big", false): return FAR_CELL
-	if key.ends_with("_mid") or key.ends_with("_shadow"): return CELL
+	if key.ends_with("_shadow"): return CELL
 	for k in ["rock", "log", "stump", "snag"]:
 		if key.begins_with(k): return CELL
 	return FINE_CELL
@@ -283,7 +283,7 @@ func _emit() -> void:
 	for c in cells:
 		var cell: Dictionary = cells[c]
 		for key in cell:
-			var size := _patch(key)
+			var size := _patch_size(key)
 			for e in cell[key]:
 				var o: Vector3 = (e[0] as Transform3D).origin
 				var gk = [Vector2i(floori(o.x / size), floori(o.z / size)), key]
@@ -313,7 +313,7 @@ func _emit() -> void:
 			# Godot measures a visibility range to the middle of the whole patch, but plants are anywhere
 			# in it: so each patch's range is widened by half its diagonal ("vm"), and the shaders fade
 			# every plant at its own distance. Without this a patch near you could switch on or off at once.
-			var margin := _patch(key) * 0.71
+			var margin := _patch_size(key) * 0.71
 			mi.set_meta("vr", Vector2(md.get("begin", 0.0), md.end))
 			mi.set_meta("vm", margin)
 			mi.visibility_range_begin = maxf(0.0, md.get("begin", 0.0) - margin) if md.has("begin") else 0.0
