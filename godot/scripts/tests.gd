@@ -2797,7 +2797,17 @@ func _turnaround() -> void:
 	var e = g.earl
 	var w = g.world
 	e.walk_to = null
-	e.position = Vector3(w.park.x + w.s * 3.0, 0, w.park.z + 14.0)
+	# an open bit of lawn: well clear of the house, shed, garage and the job tree, with room for the camera
+	var best := Vector3(w.park.x + w.s * 3.0, 0, w.park.z + 14.0); var best_d := -1.0
+	for i in range(400):
+		var p := Vector3(randf_range(-36, 36), 0, randf_range(-20, 40))
+		var d: float = minf(w._box_dist(p.x, p.z, w.house), w._box_dist(p.x, p.z, w.shed))
+		if w.get("garage") and not w.garage.is_empty(): d = minf(d, w._box_dist(p.x, p.z, w.garage))
+		d = minf(d, Vector2(p.x, p.z).distance_to(Vector2(w.tree.x, w.tree.z)) - 3.0)
+		d = minf(d, Vector2(p.x, p.z).distance_to(Vector2(w.park.x, w.park.z)) - 4.0)
+		if w.get("lake") and not w.lake.is_empty(): d = minf(d, w.lake_d(p.x, p.z) - 6.0)
+		if d > best_d: best_d = d; best = p
+	e.position = best
 	e.position.y = w.H(e.position.x, e.position.z)
 	var cam := Camera3D.new(); cam.fov = 30; g.level_root.add_child(cam); cam.make_current()
 	for v in [["front", 0.0, 4.6, 0.95], ["34", 0.75, 4.6, 0.95], ["side", PI / 2, 4.6, 0.95], ["back", PI, 4.6, 0.95], ["head", 0.35, 1.5, 1.62], ["game", 0.5, 8.0, 1.0]]:
@@ -2810,3 +2820,6 @@ func _turnaround() -> void:
 		cam.look_at(tgt)
 		await wait(0.4)
 		await shot("earl-" + v[0])
+
+func _hale_turnaround() -> void:
+	await _turnaround()

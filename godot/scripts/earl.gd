@@ -35,9 +35,8 @@ func setup(w: WorldGen, at: Vector2, look := "earl") -> void:
 	world = w
 	position = Vector3(at.x, w.H(at.x, at.y), at.y)
 	var P := Models.old_lady() if look == "hale" else Models.old_man(look)
-	if look == "earl":
-		var M := modeled("res://models/earl.glb")        # the Blender model (art/earl.py), if it's there
-		if not M.is_empty(): P = M
+	var M := modeled("res://models/%s.glb" % look)       # the Blender model (art/<look>.py), if there is one
+	if not M.is_empty(): P = M
 	n_hip = Node3D.new(); add_child(n_hip)
 	n_torso = _part(P.torso, n_hip)
 	var neck := Node3D.new(); neck.position = Vector3(0, 0.58, 0); n_torso.add_child(neck)
