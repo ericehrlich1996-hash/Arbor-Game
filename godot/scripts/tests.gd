@@ -2622,3 +2622,43 @@ func _mobile_perf() -> void:
 		tri += Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
 		if g.player: g.player.look(0.004, 0.0)
 	note("perf " + scene, {frames = n, fps = snappedf(n / 6.0, 0.1), avg_ms = snappedf(tot / n, 0.1), worst_ms = snappedf(worst, 0.1), script_ms = snappedf(proc / n, 0.01), physics_ms = snappedf(phys / n, 0.01), draw_calls = int(dc / n), triangles_k = int(tri / n / 1000.0), physics_tps = Engine.physics_ticks_per_second, max_fps = Engine.max_fps, msaa = get_viewport().msaa_3d, scale = snappedf(get_viewport().scaling_3d_scale, 0.01), detail = g.detail})
+
+## the pause menu: opens (Esc / the touch MENU button), stops the world, settings apply and save
+func _pause_menu() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(1.5)
+	var p0: Vector3 = g.player.global_position
+	if g.touch: g.touch._press("menu", true); g.touch._press("menu", false)
+	else:
+		var k := InputEventKey.new(); k.physical_keycode = KEY_ESCAPE; k.pressed = true
+		g._unhandled_input(k)
+	await wait(0.3)
+	note("open+paused", [g.pause.is_open(), get_tree().paused, AudioServer.is_bus_mute(0)])
+	await shot("pause-settings")
+	Input.action_press("move_fwd")
+	await wait(0.6)
+	note("frozen while paused", snappedf(g.player.global_position.distance_to(p0), 0.01))
+	Input.action_release("move_fwd")
+	g.pause._change("fov", 85.0)
+	g.pause._change("fps", 60)
+	g.pause._change("res", 0.7)
+	g.pause._change("look_sens", 1.6)
+	g.pause._change("detail", 1)
+	g.pause._change("volume", 0.5)
+	if g.touch: g.pause._change("btn_size", 1.25)
+	await wait(0.2)
+	note("applied", {fov = g.player.cam.fov, max_fps = Engine.max_fps, scale = snappedf(g.get_viewport().scaling_3d_scale, 0.01), detail = g.detail, master_db = snappedf(AudioServer.get_bus_volume_db(0), 0.1)})
+	var c := ConfigFile.new(); c.load(Settings.PATH)
+	note("saved", [c.get_value("s", "fov"), c.get_value("s", "fps"), c.get_value("s", "res"), c.get_value("s", "look_sens")])
+	g.pause.showing_help = true; g.pause._build()
+	await wait(0.2)
+	await shot("pause-controls")
+	g.pause.showing_help = false; g.pause._build()
+	g.pause.close()
+	await wait(0.5)
+	note("closed+running", [g.pause.is_open(), get_tree().paused, AudioServer.is_bus_mute(0)])
+	Input.action_press("move_fwd"); await wait(0.6); Input.action_release("move_fwd")
+	note("moves again", snappedf(g.player.global_position.distance_to(p0), 0.01) > 0.5)
+	await shot("pause-after")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(Settings.PATH))     # leave no settings behind

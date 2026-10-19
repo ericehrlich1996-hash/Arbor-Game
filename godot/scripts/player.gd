@@ -30,7 +30,7 @@ func _ready() -> void:
 	col_shape.shape = cap; col_shape.position = Vector3(0, 0.875, 0)
 	add_child(col_shape)
 	head = Node3D.new(); head.position = Vector3(0, eye_h, 0); add_child(head)
-	cam = Camera3D.new(); cam.fov = 70; cam.near = 0.03; cam.far = 700
+	cam = Camera3D.new(); cam.fov = Settings.fov; cam.near = 0.03; cam.far = 700
 	head.add_child(cam)
 	hands = Node3D.new(); cam.add_child(hands)
 	collision_layer = 2

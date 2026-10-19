@@ -39,9 +39,26 @@ func cap() -> bool:
 func _capture() -> void:
 	if touch == null and tests == null: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
-func _mobile_scale() -> void:
+## 3D resolution: phones render at about 1100 across however sharp the screen is; the Resolution
+## setting scales that (or the full resolution on a computer) down further
+func apply_render_scale() -> void:
 	var w := float(get_viewport().get_visible_rect().size.x)
-	get_viewport().scaling_3d_scale = clampf(1100.0 / maxf(w, 1.0), 0.4, 1.0)
+	var base := clampf(1100.0 / maxf(w, 1.0), 0.4, 1.0) if touch else 1.0
+	get_viewport().scaling_3d_scale = clampf(base * Settings.res, 0.3, 1.0)
+
+var pause: PauseMenu
+
+## can the pause menu come up now? (not over the title, the computer, a payday card or the intro drive)
+func can_pause() -> bool:
+	if phase != "play" and phase != "hub": return false
+	if hud.pc_screen.visible: return false
+	if hud.get("summary") and hud.summary.visible: return false
+	if hud.get("title") and hud.title.visible: return false
+	return true
+
+func _notification(what: int) -> void:
+	# switching apps or tabs: stop the world rather than let it run on unattended
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and pause and tests == null and can_pause(): pause.open()
 var tests = null
 var force_rev := false         # scripted tests hold the throttle without a captured mouse
 var on_bed := false
@@ -68,13 +85,15 @@ func _ready() -> void:
 		touch = TouchControls.new(); touch.name = "Touch"; add_child(touch)
 		touch.setup(self)
 		Input.emulate_mouse_from_touch = true
-		# phones run hot: 30 frames a second is plenty for this game and halves the work (or more on
-		# 90/120 Hz screens, which would otherwise draw every refresh), and no MSAA (costly on phone GPUs)
-		Engine.max_fps = 30
+		# phones run hot: no MSAA (costly on phone GPUs); Settings.apply caps them at 30 fps by default
+		# (90/120 Hz screens would otherwise draw every refresh) and picks low detail
 		get_viewport().msaa_3d = Viewport.MSAA_DISABLED
-		# phones: lighter detail, and render the 3D at about 1100 across however sharp the screen is
-		get_tree().create_timer(0.5).timeout.connect(func(): set_detail(0); _mobile_scale())
-		get_viewport().size_changed.connect(_mobile_scale)
+		get_tree().create_timer(0.5).timeout.connect(func():
+			if Settings.detail == -1: set_detail(0)
+			Settings.apply(self))
+	Settings.load_all()
+	get_viewport().size_changed.connect(apply_render_scale)
+	pause = PauseMenu.new(); pause.name = "Pause"; add_child(pause); pause.setup(self)
 	get_tree().create_timer(3.0).timeout.connect(Ach.retro)
 	hud.start_pressed.connect(_on_start)
 	hud.next_job_pressed.connect(func(): Hub.come_home = true; get_tree().reload_current_scene())
@@ -95,6 +114,7 @@ func _ready() -> void:
 	Sfx.start_ambience()
 	_prewarm_shaders()
 	if OS.get_environment("ARBOR_LOW") != "": set_detail(0)
+	Settings.apply(self)
 	if test_name != "":
 		tests = load("res://scripts/tests.gd").new()
 		add_child(tests)
@@ -210,7 +230,7 @@ func _hub_input(ev: InputEvent) -> void:
 	if ev is InputEventMouseButton and ev.pressed and not cap():
 		_capture(); return
 	if ev is InputEventKey and ev.pressed and ev.physical_keycode == KEY_ESCAPE:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE; return
+		pause.open(); return
 	if ev.is_action_pressed("help"): hud.help.visible = not hud.help.visible; return
 	var ws: WoodSplit = hub.split
 	if ws and ws.active:
@@ -343,7 +363,7 @@ func set_detail(d: int) -> void:
 ## watch the frame rate from the start of the drive in: if it's struggling, drop to low detail early
 ## (rather than after you're already playing), once, and say so
 func _watch_fps(dt: float) -> void:
-	if _fps_checked or (phase != "play" and phase != "intro" and phase != "hub") or tests != null: return
+	if _fps_checked or (phase != "play" and phase != "intro" and phase != "hub") or tests != null or Settings.detail != -1: return
 	_fps_t += dt
 	if _fps_t < 1.0: return              # the first moment is always lumpy
 	_fps_frames += 1
@@ -563,14 +583,15 @@ func _input(ev: InputEvent) -> void:
 	# on a touchscreen the browser fakes mouse movement from the first finger down (often the move
 	# thumb), so mouse look is for computers only; touch looking is the right-thumb swipe in touch.gd
 	if touch == null and (phase == "play" or phase == "hub") and ev is InputEventMouseMotion and cap() and dlg == null:
-		var k := 0.0022
-		if player.in_truck: truck.look(ev.relative.x * k, ev.relative.y * k)
-		else: player.look(ev.relative.x * k, ev.relative.y * k)
+		var k := 0.0022 * Settings.look_sens; var ky := k * (-1.0 if Settings.invert_y else 1.0)
+		if player.in_truck: truck.look(ev.relative.x * k, ev.relative.y * ky)
+		else: player.look(ev.relative.x * k, ev.relative.y * ky)
 		get_viewport().set_input_as_handled()
 
 func _unhandled_input(ev: InputEvent) -> void:
 	if ev is InputEventKey and ev.pressed and not ev.echo and ev.physical_keycode == KEY_F3:
 		set_detail(1 - detail)
+		Settings.detail = detail; Settings.save()
 		hud.toast("Graphics: " + ("high detail" if detail == 1 else "low detail (faster)") + "  ·  F3 to switch", 2.5)
 		return
 	if in_hub: _hub_input(ev); return
@@ -583,9 +604,9 @@ func _unhandled_input(ev: InputEvent) -> void:
 		return
 	if ev is InputEventMouseMotion and cap():
 		if touch != null: return
-		var k := 0.0022
-		if player.in_truck: truck.look(ev.relative.x * k, ev.relative.y * k)
-		else: player.look(ev.relative.x * k, ev.relative.y * k)
+		var k := 0.0022 * Settings.look_sens; var ky := k * (-1.0 if Settings.invert_y else 1.0)
+		if player.in_truck: truck.look(ev.relative.x * k, ev.relative.y * ky)
+		else: player.look(ev.relative.x * k, ev.relative.y * ky)
 		return
 	if ev is InputEventMouseButton and ev.pressed and (ev.button_index == MOUSE_BUTTON_WHEEL_UP or ev.button_index == MOUSE_BUTTON_WHEEL_DOWN):
 		if player.tool == "rod" and not player.in_truck and ev.button_index == MOUSE_BUTTON_WHEEL_DOWN and dlg == null:
@@ -598,7 +619,7 @@ func _unhandled_input(ev: InputEvent) -> void:
 				saw.roll = wrapf(saw.roll + (0.08 if ev.button_index == MOUSE_BUTTON_WHEEL_UP else -0.08), -PI, PI)
 		return
 	if ev is InputEventKey and ev.pressed and ev.physical_keycode == KEY_ESCAPE:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		pause.open()
 		return
 	if dlg != null:
 		if ev.is_action_pressed("interact") or ev.is_action_pressed("jump") or (ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT):
@@ -1375,8 +1396,14 @@ func _physics_process(dt: float) -> void:
 	if phase == "play": _water_step(dt)
 	if haul: haul.step_drag(dt)
 
+var _was_captured := false
 func _process(dt: float) -> void:
 	clock += dt
+	# a browser swallows Esc and drops the pointer lock on its own: if the mouse got loose mid-game, pause
+	var capd := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	if _was_captured and not capd and touch == null and tests == null and not pause.is_open() and can_pause() and dlg == null:
+		pause.open()
+	_was_captured = capd
 	_watch_fps(dt)
 	var cam := get_viewport().get_camera_3d()
 	if ambient and cam: ambient.step(dt, cam.global_position)

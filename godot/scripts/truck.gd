@@ -83,7 +83,7 @@ func setup(rng: RandomNumberGenerator) -> void:
 	cab_cam = Camera3D.new(); cab_cam.name = "CabCam"
 	cab_cam.position = Models.EYE
 	cab_cam.rotation = Vector3(0, PI, 0)
-	cab_cam.fov = 72; cab_cam.near = 0.03
+	cab_cam.fov = Settings.fov + 2.0; cab_cam.near = 0.03
 	add_child(cab_cam)
 	chase_cam = Camera3D.new(); chase_cam.name = "ChaseCam"; chase_cam.fov = 65
 	chase_cam.top_level = true

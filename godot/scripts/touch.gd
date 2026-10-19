@@ -52,7 +52,7 @@ func active() -> bool:
 
 func _layout() -> void:
 	var s := get_viewport().get_visible_rect().size
-	var u := minf(s.x, s.y) / 8.0
+	var u := minf(s.x, s.y) / 8.0 * Settings.btn_size
 	buttons = []
 	var br := Vector2(s.x - u * 1.25, s.y - u * 1.35)
 	buttons.append({id = "use", label = "USE", c = br, r = u * 0.82})
@@ -62,7 +62,7 @@ func _layout() -> void:
 	buttons.append({id = "wheel_up", label = "▲", c = br + Vector2(u * 0.8, -u * 3.1), r = u * 0.36})
 	buttons.append({id = "wheel_down", label = "▼", c = br + Vector2(u * 0.8, -u * 2.3), r = u * 0.36})
 	# the rest, small, along the top right under the money
-	var small := [["saw_start", "START SAW"], ["drag", "DRAG"], ["throw", "THROW"], ["drop", "DROP"], ["crouch", "CROUCH"], ["camera", "CAMERA"], ["unstick", "UNSTICK"]]
+	var small := [["saw_start", "START SAW"], ["drag", "DRAG"], ["throw", "THROW"], ["drop", "DROP"], ["crouch", "CROUCH"], ["camera", "CAMERA"], ["unstick", "UNSTICK"], ["menu", "MENU"]]
 	# rows of four across the top right, under the money
 	var w := u * 1.3; var h := u * 0.5; var gap := u * 0.12
 	for i in range(small.size()):
@@ -128,10 +128,11 @@ func _input(ev: InputEvent) -> void:
 		elif ev.index == look_id:
 			var dd: Vector2 = ev.position - look_last
 			look_last = ev.position
-			var k := 2.6 / s.y                      # a full-height swipe turns you about 150°
+			var k := 2.6 / s.y * Settings.look_sens        # a full-height swipe turns you about 150°
+			var ky := k * (-1.0 if Settings.invert_y else 1.0)
 			if game.player and game.dlg == null:
-				if game.player.in_truck: game.truck.look(dd.x * k, dd.y * k)
-				else: game.player.look(dd.x * k, dd.y * k)
+				if game.player.in_truck: game.truck.look(dd.x * k, dd.y * ky)
+				else: game.player.look(dd.x * k, dd.y * ky)
 
 ## the joystick as the four move actions (analogue), and running when it's pushed right out
 func _move(v: Vector2) -> void:
@@ -148,6 +149,7 @@ func _press(id: String, down: bool) -> void:
 		"alt": _mouse(MOUSE_BUTTON_RIGHT, down); _poll("rev", down)
 		"wheel_up": if down: _mouse(MOUSE_BUTTON_WHEEL_UP, true); _mouse(MOUSE_BUTTON_WHEEL_UP, false)
 		"wheel_down": if down: _mouse(MOUSE_BUTTON_WHEEL_DOWN, true); _mouse(MOUSE_BUTTON_WHEEL_DOWN, false)
+		"menu": if not down and game.can_pause(): game.pause.open()
 		_: _action(id, down)
 	pad.queue_redraw()
 

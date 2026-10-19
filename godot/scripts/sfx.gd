@@ -29,14 +29,20 @@ func _ready() -> void:
 	for i in range(12):
 		var p := AudioStreamPlayer.new(); add_child(p); pool.append(p)
 	_build()
+	Settings.load_all(); apply_volume()
 
 func set_muffs(on: bool) -> void:
 	muffs = on
 	_lp.cutoff_hz = 650.0 if on else 20000.0
 	AudioServer.set_bus_volume_db(_machines_bus, linear_to_db(0.38) if on else 0.0)
 	_amb_lp.cutoff_hz = 500.0 if on else 20000.0
-	AudioServer.set_bus_volume_db(_amb_bus, linear_to_db(0.4) if on else 0.0)
-	AudioServer.set_bus_volume_db(0, linear_to_db(0.7) if on else 0.0)
+	apply_volume()
+
+## bus levels: the muffs and the player's volume settings together
+func apply_volume() -> void:
+	if _amb_bus < 0: return
+	AudioServer.set_bus_volume_db(_amb_bus, linear_to_db(maxf((0.4 if muffs else 1.0) * Settings.ambience, 0.0001)))
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf((0.7 if muffs else 1.0) * Settings.volume, 0.0001)))
 
 func play(name: String, vol := 1.0, pitch := 1.0, bus := "Master") -> void:
 	if not sounds.has(name): return
