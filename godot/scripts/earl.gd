@@ -50,6 +50,7 @@ func setup(w: WorldGen, at: Vector2, look := "earl") -> void:
 		n_leg[side] = _part(P.leg, hp)
 	var hand := Node3D.new(); hand.position = Vector3(0, -0.3, 0); n_fore[-1.0].add_child(hand)
 	n_cane = _part(P.cane, hand)
+	if P.has("skinned"): _skin_setup(P.skinned)
 	body = AnimatableBody3D.new()
 	var cs := CollisionShape3D.new(); var cap := CapsuleShape3D.new(); cap.radius = 0.3; cap.height = 1.7
 	cs.shape = cap; cs.position = Vector3(0, 0.85, 0); body.add_child(cs)
@@ -68,10 +69,60 @@ func setup(w: WorldGen, at: Vector2, look := "earl") -> void:
 	add_child(bubble)
 
 func _part(src, parent: Node3D) -> Node3D:
+	if src == null:                          # a skinned character: the rig's joints are just empty pivots
+		var n := Node3D.new(); parent.add_child(n); return n
 	var mi: MeshInstance3D
 	if src is MeshBuilder: mi = (src as MeshBuilder).instance()
 	else: mi = MeshInstance3D.new(); mi.mesh = src
 	parent.add_child(mi); return mi
+
+# ---------------------------------------------------------------- a skinned (one-piece) character
+# The .glb holds one mesh skinned to a skeleton whose bones sit at the same joints as the pivots above.
+# The pivots still do all the posing; each frame their movement is copied onto the bones.
+var skel: Skeleton3D
+var _bones: Array = []          # [bone index, pivot node, the pivot's rest transform, the bone's rest pose]
+var _skel_k := Transform3D()     # the skeleton's place relative to this node
+
+func _rel(n: Node3D) -> Transform3D:
+	var t := Transform3D(); var c: Node = n
+	while c != null and c != self:
+		t = (c as Node3D).transform * t; c = c.get_parent()
+	return t
+
+func _skin_setup(scene: PackedScene) -> void:
+	var root: Node3D = scene.instantiate(); add_child(root)
+	var cn := root.find_child("cane", true, false)
+	if cn: cn.queue_free()                   # the stick is held on the hand pivot instead
+	var found := root.find_children("*", "Skeleton3D", true, false)
+	if found.is_empty(): return
+	skel = found[0]
+	for mi in root.find_children("*", "MeshInstance3D", true, false): _crisp_palette((mi as MeshInstance3D).mesh)
+	# the pivots in their rest pose (standing straight, arms down) to measure movement from
+	n_hip.position = Vector3(0, 0.92, 0)
+	for n in [n_hip, n_torso, n_head] + n_up.values() + n_fore.values() + n_leg.values(): (n as Node3D).rotation = Vector3.ZERO
+	_skel_k = _rel(skel)
+	var map := {"hips": n_hip, "torso": n_torso, "head": n_head, "upper_l": n_up[1.0], "upper_r": n_up[-1.0],
+		"fore_l": n_fore[1.0], "fore_r": n_fore[-1.0], "leg_l": n_leg[1.0], "leg_r": n_leg[-1.0]}
+	for name in ["hips", "torso", "head", "upper_l", "upper_r", "fore_l", "fore_r", "leg_l", "leg_r"]:
+		var i := skel.find_bone(name)
+		if i >= 0: _bones.append([i, map[name], _rel(map[name]), skel.get_bone_global_rest(i)])
+
+func _drive_skeleton() -> void:
+	if skel == null: return
+	var ki := _skel_k.affine_inverse()
+	for b in _bones:                          # parents come first in the list, so children build on them
+		var delta: Transform3D = _rel(b[1]) * (b[2] as Transform3D).affine_inverse()
+		skel.set_bone_global_pose(b[0], ki * delta * _skel_k * (b[3] as Transform3D))
+
+static func _crisp_palette(m: Mesh) -> void:
+	if m == null: return
+	for si in m.get_surface_count():
+		var mat := m.surface_get_material(si)
+		if mat is BaseMaterial3D:
+			var bm := (mat as BaseMaterial3D)
+			if bm.albedo_texture and bm.albedo_texture.get_width() <= 64:
+				bm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+			bm.roughness = 0.9; bm.metallic_specular = 0.25
 
 ## a character modelled in Blender: the .glb holds one mesh per posable part (torso, head, upper, fore,
 ## leg, cane), each with its origin at the joint it turns about, so they drop straight into the rig above
@@ -80,7 +131,16 @@ static func modeled(path: String) -> Dictionary:
 	if _models.has(path): return _models[path]
 	var out := {}
 	if ResourceLoader.exists(path):
-		var root: Node = (load(path) as PackedScene).instantiate()
+		var ps := load(path) as PackedScene
+		var root: Node = ps.instantiate()
+		if not root.find_children("*", "Skeleton3D", true, false).is_empty():
+			# one skinned body: no separate part meshes, only the stick
+			out = {"skinned": ps, "torso": null, "head": null, "upper": null, "fore": null, "leg": null, "cane": null}
+			var cn := root.find_child("cane", true, false)
+			if cn is MeshInstance3D: out.cane = (cn as MeshInstance3D).mesh; _crisp_palette(out.cane)
+			root.free()
+			_models[path] = out
+			return out
 		for k in ["torso", "head", "upper", "fore", "leg", "cane"]:
 			var n := root.find_child(k, true, false)
 			if n is MeshInstance3D:
@@ -154,3 +214,4 @@ func _pose() -> void:
 		n_up[side].rotation = up
 		n_fore[side].rotation = fo
 		n_leg[side].rotation = Vector3(sw * side, 0, 0)
+	_drive_skeleton()
