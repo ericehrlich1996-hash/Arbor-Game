@@ -110,7 +110,7 @@ func _ready() -> void:
 	else:
 		if test_name.begins_with("hale"): job = Jobs.HALE
 		if test_name.begins_with("dock"): job = Jobs.DOCK
-		new_level(randi() % 1000000 + 1)
+		new_level(randi() % 1000000)
 	Sfx.start_ambience()
 	_prewarm_shaders()
 	if OS.get_environment("ARBOR_LOW") != "": set_detail(0)
@@ -219,7 +219,7 @@ func start_job(idx: int) -> void:
 		in_hub = false
 		hub = null
 		hud.set_play_visible(false); hud.set_prompt("")
-		new_level(randi() % 1000000 + 1)
+		new_level(randi() % 1000000)
 		_prewarm_shaders()
 		start_intro())
 
@@ -376,18 +376,20 @@ func _watch_fps(dt: float) -> void:
 			hud.toast("Running slow, so I lowered the graphics detail. F3 switches it back.", 4.0)
 
 # ================================================================ a new property
-func new_level(sd: int) -> void:
+## a job's property: always the same layout (WorldGen.LAYOUT); "variant" only varies the job tree
+func new_level(variant: int) -> void:
+	var sd := WorldGen.layout_seed(job.id)
 	seed = sd
 	in_hub = false
 	if level_root: level_root.queue_free()
 	level_root = Node3D.new(); level_root.name = "Level"; add_child(level_root)
-	world = WorldGen.new(); world.setup(sd, job.id); world.build(level_root)
+	world = WorldGen.new(); world.setup(sd, job.id, variant); world.build(level_root)
 	set_detail(detail)            # fit the new forest's draw distances to the detail setting (phones: shorter)
 	_job_light()
 	Mats.bark.albedo_color = job.bark_tint
 	ambient = Ambient.new(); ambient.name = "Ambient"; level_root.add_child(ambient)
 	weather = Weather.new(); weather.name = "Weather"; level_root.add_child(weather)
-	weather.setup(self, sd)
+	weather.setup(self, variant)       # the weather still changes from visit to visit
 	Sfx.set_ambient_level(0.6 if job.id == "hale" or job.id == "dock" else 1.0)     # the lake jobs are quiet spots
 	ambient.setup(Vector3(0, world.H(0, 0), 0))
 	var rng := RandomNumberGenerator.new(); rng.seed = sd + 99

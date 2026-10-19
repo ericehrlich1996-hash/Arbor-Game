@@ -48,10 +48,21 @@ func _range(a: float, b: float) -> float:
 func _noise(n: FastNoiseLite, x: float, z: float) -> float:
 	return n.get_noise_2d(x, z) * 0.5 + 0.5
 
-func setup(sd: int, job_id := "earl") -> void:
+## each job's property is laid out the same every visit (picked to look good); only the job tree's
+## exact spot and shape vary a little from visit to visit, from its own random numbers (trng), so the
+## rest of the layout never shifts. Change a seed here to re-roll that property.
+const LAYOUT := {"earl": 202, "hale": 202, "dock": 202}
+var trng := RandomNumberGenerator.new()
+
+static func layout_seed(job_id: String) -> int:
+	if OS.get_environment("ARBOR_LAYOUT") != "": return int(OS.get_environment("ARBOR_LAYOUT"))     # previewing other layouts
+	return LAYOUT.get(job_id, 202)
+
+func setup(sd: int, job_id := "earl", variant := -1) -> void:
 	seed = sd
 	job = job_id
 	rng.seed = sd
+	trng.seed = variant if variant >= 0 else sd + 5
 	s = -1.0 if rng.randf() < 0.5 else 1.0
 	for n in [_nA, _nB, _nC]:
 		n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
@@ -69,15 +80,20 @@ func setup(sd: int, job_id := "earl") -> void:
 	tree = {}
 	for k in range(400):
 		var x := _range(-38, 38); var z := _range(-24, 40); var ht := _range(17, 20)
-		var clear := ht + 3.5
-		var d_drive := 1e9
-		for p in drive: d_drive = minf(d_drive, Vector2(x, z).distance_to(p))
-		if _box_dist(x, z, house) < clear or _box_dist(x, z, shed) < clear or Vector2(x, z).distance_to(Vector2(pile.x, pile.z)) < clear - 1: continue
-		if Vector2(x, z).distance_to(Vector2(park.x, park.z)) < clear + 4 or d_drive < clear - 2 or z - road_z < clear + 4: continue
+		if not _tree_spot_ok(x, z, ht): continue
 		tree = {x = x, z = z, h = ht, dbh = _range(0.5, 0.6), lean = _range(0.015, 0.1), lean_dir = _range(0, TAU), seed = rng.randi_range(1, 1000000)}
 		break
 	if tree.is_empty():
 		tree = {x = s * 24, z = 30.0, h = 16.0, dbh = 0.5, lean = 0.04, lean_dir = 1.0, seed = 5}
+	if job == "earl":
+		# this visit's tree: within a few metres of the property's spot, its own height, lean and shape
+		var ax: float = tree.x; var az: float = tree.z
+		for k in range(60):
+			var x := ax + trng.randf_range(-5.0, 5.0); var z := az + trng.randf_range(-5.0, 5.0)
+			var ht := trng.randf_range(17, 20)
+			if not _tree_spot_ok(x, z, ht): continue
+			tree = {x = x, z = z, h = ht, dbh = trng.randf_range(0.5, 0.6), lean = trng.randf_range(0.015, 0.1), lean_dir = trng.randf_range(0, TAU), seed = trng.randi_range(1, 1000000)}
+			break
 	if job == "hale": _hale_layout()
 	if job == "dock": _dock_layout()
 	old_man = Vector2(park.x - s * 3.2, park.z + 4.5)
@@ -417,6 +433,16 @@ func _build_hale_yard(root: Node3D) -> void:
 
 ## Mrs. Hale's place: a tidy pale-yellow house, a detached garage at the end of the drive, and Walter's
 ## dead sugar maple on the lawn beside it, leaning hard at the garage. The lawn's wide open the other way.
+## open lawn, clear of the house, shed, pile, truck spot, drive and road by more than the tree's height
+func _tree_spot_ok(x: float, z: float, ht: float) -> bool:
+	if absf(x) > 40.0 or z < -26.0 or z > 42.0: return false
+	var clear := ht + 3.5
+	var d_drive := 1e9
+	for p in drive: d_drive = minf(d_drive, Vector2(x, z).distance_to(p))
+	if _box_dist(x, z, house) < clear or _box_dist(x, z, shed) < clear or Vector2(x, z).distance_to(Vector2(pile.x, pile.z)) < clear - 1: return false
+	if Vector2(x, z).distance_to(Vector2(park.x, park.z)) < clear + 4 or d_drive < clear - 2 or z - road_z < clear + 4: return false
+	return true
+
 func _hale_layout() -> void:
 	house.siding = Color.html("#f0e2b0"); house.roof = Color.html("#3a3d4a"); house.door = Color.html("#3a4a6a")
 	garage = {x = s * 5.2, z = 13.0, w = 6.4, d = 7.0, wall = 2.6}
@@ -427,8 +453,8 @@ func _hale_layout() -> void:
 	flat.append({x = trailer.x, z = trailer.z + 2.0, r = 5.0})
 	var tx := s * 15.6; var tz := 15.5
 	var to := Vector2(garage.x - tx, garage.z - tz)
-	tree = {x = tx, z = tz, h = _range(17.5, 18.5), dbh = 0.56, lean = _range(0.115, 0.13),
-		lean_dir = atan2(to.y, to.x) + _range(-0.12, 0.12), seed = rng.randi_range(1, 1000000), sits_back = true, species = "maple"}
+	tree = {x = tx, z = tz, h = trng.randf_range(17.5, 18.5), dbh = 0.56, lean = trng.randf_range(0.115, 0.13),
+		lean_dir = atan2(to.y, to.x) + trng.randf_range(-0.12, 0.12), seed = trng.randi_range(1, 1000000), sits_back = true, species = "maple"}
 	# Cedar Ln backs onto a little lake: the lawn runs down to the water, woods wrap round the far shore
 	lake = {cx = s * -6.0, cz = 108.0, rx = 78.0, rz = 42.0, y = _base - 0.85}
 
