@@ -2543,13 +2543,18 @@ func _touch_job() -> void:
 	note("touch", [g.touch != null, g.touch != null and g.touch.active()])
 	var s: Vector2 = g.get_viewport().get_visible_rect().size
 	var p0: Vector3 = g.player.global_position
+	var yw0: float = g.player.yaw; var pt0: float = g.player.pitch if "pitch" in g.player else 0.0
 	_tp(0, Vector2(s.x * 0.15, s.y * 0.75), true)
 	await wait(0.1)
 	_td(0, Vector2(s.x * 0.15, s.y * 0.75 - 120))
+	# a phone browser also sends a fake mouse move for the first finger; it must not turn the camera
+	var mm := InputEventMouseMotion.new(); mm.position = Vector2(s.x * 0.15, s.y * 0.75 - 120); mm.relative = Vector2(40, -120)
+	Input.parse_input_event(mm)
 	await wait(1.5)
 	await shot("touch-walk")
 	_tp(0, Vector2(s.x * 0.15, s.y * 0.75 - 120), false)
 	note("walked", snappedf(g.player.global_position.distance_to(p0), 0.1))
+	note("stick turned the camera (should be 0)", [snappedf(g.player.yaw - yw0, 0.001), snappedf((g.player.pitch if "pitch" in g.player else 0.0) - pt0, 0.001)])
 	var y0: float = g.player.yaw
 	_tp(1, Vector2(s.x * 0.6, s.y * 0.4), true)
 	for k in range(10):

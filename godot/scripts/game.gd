@@ -34,7 +34,7 @@ var touch: TouchControls          # on-screen controls on phones and tablets
 
 ## the mouse is "ours": captured on a computer, always on a touchscreen (there's no pointer to capture)
 func cap() -> bool:
-	return touch != null or cap()
+	return touch != null or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 
 func _capture() -> void:
 	if touch == null and tests == null: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -556,7 +556,9 @@ func _start() -> void:
 
 # ================================================================ input
 func _input(ev: InputEvent) -> void:
-	if (phase == "play" or phase == "hub") and ev is InputEventMouseMotion and cap() and dlg == null:
+	# on a touchscreen the browser fakes mouse movement from the first finger down (often the move
+	# thumb), so mouse look is for computers only; touch looking is the right-thumb swipe in touch.gd
+	if touch == null and (phase == "play" or phase == "hub") and ev is InputEventMouseMotion and cap() and dlg == null:
 		var k := 0.0022
 		if player.in_truck: truck.look(ev.relative.x * k, ev.relative.y * k)
 		else: player.look(ev.relative.x * k, ev.relative.y * k)
@@ -576,6 +578,7 @@ func _unhandled_input(ev: InputEvent) -> void:
 		_capture()
 		return
 	if ev is InputEventMouseMotion and cap():
+		if touch != null: return
 		var k := 0.0022
 		if player.in_truck: truck.look(ev.relative.x * k, ev.relative.y * k)
 		else: player.look(ev.relative.x * k, ev.relative.y * k)
