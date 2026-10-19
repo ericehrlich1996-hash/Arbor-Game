@@ -2725,3 +2725,65 @@ func _hale_layout_fixed() -> void:
 
 func _dock_layout_fixed() -> void:
 	await _layout_fixed()
+
+## reference sheets of the current models: each character from the front, 3/4, side and back, three
+## head views and an in-game shot; the player's first-person arms; every fish side-on
+func _refsheet() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(0.5)
+	g.hud.visible = false
+	g.earl.visible = false
+	var w = g.world
+	var spot := Vector3(w.park.x + w.s * 3.0, 0, w.park.z + 14.0)
+	spot.y = w.H(spot.x, spot.z)
+	var cam := Camera3D.new(); cam.fov = 30; cam.far = 800; g.level_root.add_child(cam)
+	for look in ["earl", "hale", "gus"]:
+		var e := Earl.new(); g.level_root.add_child(e)
+		e.setup(w, Vector2(spot.x, spot.z), look)
+		e.state = "idle"; e.talking = false
+		e.rotation.y = atan2(-w.s, -1.0)        # facing back toward the drive and the house
+		e.t = 1.0; e._pose()
+		cam.make_current()
+		var b: Basis = e.global_transform.basis
+		var views := [["front", 0.0, 4.6, 0.92], ["34", 0.75, 4.6, 0.92], ["side", PI / 2, 4.6, 0.92], ["back", PI, 4.6, 0.92],
+			["head1", 0.0, 1.35, 1.66], ["head2", 0.6, 1.35, 1.66], ["head3", 1.25, 1.35, 1.66], ["game", 0.45, 9.0, 0.9]]
+		for v in views:
+			var fwd: Vector3 = (b.z * cos(v[1]) + b.x * sin(v[1])).normalized()
+			var tgt: Vector3 = e.global_position + Vector3(0, v[3], 0)
+			cam.fov = 30 if v[0] != "game" else 50
+			cam.global_position = tgt + fwd * v[2] + Vector3(0, 0.08 if v[0] != "game" else 0.7, 0)
+			cam.look_at(tgt)
+			await wait(0.35)
+			await shot("%s-%s" % [look, v[0]])
+		e.queue_free()
+		await frames(2)
+	# the player: first-person arms, empty-handed and with the saw
+	g.player.cam.make_current()
+	g.player.yaw = atan2(w.s, 1.0); g.player.pitch = -0.15
+	await wait(0.6)
+	await shot("player-hands")
+	g._unhandled_input(_act("tool2"))
+	await wait(0.8)
+	await shot("player-saw")
+	# fish: side-on against the sky, each scaled to fill the frame
+	var fsh := Fishing.new()
+	var stage := Node3D.new(); g.level_root.add_child(stage)
+	stage.global_position = Vector3(0, 180, 0)
+	cam.make_current(); cam.fov = 30
+	cam.global_position = stage.global_position + Vector3(0, 0.02, 2.4); cam.look_at(stage.global_position)
+	for n in Fishing.SPECIES:
+		var sp: Dictionary = Fishing.SPECIES[n]
+		var cm: float = (sp.len[0] + sp.len[1]) * 0.5
+		var mi: MeshInstance3D = fsh._fish_model(n, cm).instance()
+		stage.add_child(mi)
+		var L: float = clampf(cm / 100.0, 0.12, 1.3)
+		mi.scale = Vector3.ONE * (1.0 / L)
+		await wait(0.3)
+		await shot("fish-" + n.to_lower().replace(" ", "_"))
+		mi.queue_free()
+		await frames(1)
+
+func _act(a: String) -> InputEventAction:
+	var e := InputEventAction.new(); e.action = a; e.pressed = true
+	return e
