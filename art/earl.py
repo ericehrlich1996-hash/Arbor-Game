@@ -271,20 +271,27 @@ def glove(s, sx):
 	o = Vector((sx * 0.264, 0.86, 0.022))            # the wrist
 	K = 1.15
 	def M(x, y, z): return (o.x + sx * x * K, o.y + y * K, o.z + z * K)
-	def build(p):
-		# the flared gauntlet cuff, with a turned rim; extra rings keep it a crisp band through the smoothing
-		p.lathe([(o.y + 0.035 * K, 0.046 * K, 0.05 * K), (o.y + 0.03 * K, 0.048 * K, 0.052 * K), (o.y - 0.018 * K, 0.05 * K, 0.054 * K),
-			(o.y - 0.024 * K, 0.053 * K, 0.057 * K), (o.y - 0.032 * K, 0.053 * K, 0.057 * K), (o.y - 0.036 * K, 0.044 * K, 0.048 * K)],
-			"glove_dk", seg=16, x=o.x, z=o.z, hold=True)
-		p.box(M(0.0, -0.078, 0.0), (0.066 * K, 0.092 * K, 0.108 * K), "glove", 0.02, segs=1)                     # back and palm
-		p.box(M(0.034, -0.078, 0.0), (0.004, 0.058 * K, 0.07 * K), "glove_lt", 0.002)                               # stitched panel
+	def hand(p):
+		# ONE fused surface: palm, fingers and thumb overlap, so the fingers grow out of the hand and only a
+		# shallow groove is left between them; the gauntlet cuff joins it at the wrist
+		p.lathe([(o.y + 0.035 * K, 0.046 * K, 0.05 * K), (o.y - 0.036 * K, 0.053 * K, 0.057 * K)], "glove", seg=16, x=o.x, z=o.z, hold=True)
+		p.box(M(0.0, -0.078, 0.0), (0.066 * K, 0.096 * K, 0.108 * K), "glove", 0.022, segs=2)                     # back and palm
 		for i in range(4):
-			z = -0.038 + i * 0.0253
-			p.box(M(-0.004, -0.134, z), (0.056 * K, 0.044 * K, 0.0275 * K), "glove", 0.009, segs=1)                  # first knuckle, down
-			p.box(M(-0.036, -0.15, z), (0.034 * K, 0.032 * K, 0.0265 * K), "glove", 0.009, segs=1)                    # curled back under
-		p.box(M(-0.022, -0.09, 0.058), (0.032 * K, 0.064 * K, 0.03 * K), "glove", 0.011, segs=1, rot=gRx(0.35))     # thumb across the front
-	return plain("glove_" + s, build, smooth=1)
-for s, sx in (("l", 1), ("r", -1)): pieces.append((glove(s, sx), "fore_" + s))
+			z = -0.0375 + i * 0.025
+			p.box(M(-0.004, -0.132, z), (0.058 * K, 0.05 * K, 0.0275 * K), "glove", 0.012, segs=2)                    # knuckle, down
+			p.box(M(-0.034, -0.148, z), (0.038 * K, 0.034 * K, 0.027 * K), "glove", 0.012, segs=2)                    # curled under
+		p.box(M(-0.022, -0.09, 0.058), (0.034 * K, 0.066 * K, 0.032 * K), "glove", 0.013, segs=2, rot=gRx(0.35))     # thumb
+	def col(c, n):
+		return "glove_dk" if c.y > o.y - 0.04 * K else "glove"         # the cuff a shade darker
+	fused = solid("glove_" + s, hand, 0.003, 0.13, col)
+	def panel(p):
+		p.box(M(0.035, -0.078, 0.0), (0.004, 0.058 * K, 0.07 * K), "glove_lt", 0.002)                              # stitched panel
+		p.lathe([(o.y - 0.03 * K, 0.0545 * K, 0.0585 * K), (o.y - 0.037 * K, 0.0545 * K, 0.0585 * K)], "glove_dk", seg=16, x=o.x, z=o.z, hold=False, cap_top=False, cap_bot=False)   # the cuff's rim
+	return fused, plain("glove_bits_" + s, panel)
+for s, sx in (("l", 1), ("r", -1)):
+	g, gb = glove(s, sx)
+	pieces.append((g, "fore_" + s)); pieces.append((gb, "fore_" + s))
+
 
 # ================================================================== 4. boots: chunky lace-up work boots, after the concept
 # a leather upper fused into one piece (shaft, foot and rounded toe) with a toe-cap seam, a thick dark sole
