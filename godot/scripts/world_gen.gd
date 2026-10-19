@@ -1191,9 +1191,9 @@ func _build_grass(root: Node3D) -> void:
 		mmi.multimesh = mm
 		mmi.material_override = Mats.grass
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mmi.visibility_range_end = 38.0
-		mmi.visibility_range_end_margin = 6.0
-		mmi.set_meta("vr", Vector2(0.0, 38.0))
+		mmi.visibility_range_end = 38.0 + 11.4          # + half a tile's diagonal: the shader shrinks each tuft itself
+		mmi.visibility_range_end_margin = 2.0
+		mmi.set_meta("vr", Vector2(0.0, 38.0)); mmi.set_meta("vm", 11.4)
 		mmi.layers = 2
 		root.add_child(mmi)
 

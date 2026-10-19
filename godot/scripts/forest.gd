@@ -43,10 +43,10 @@ func _models() -> void:
 		_lods("oak%d" % i, func(l: int) -> ArrayMesh: return Nature.broadleaf(200 + i, l))
 	for i in range(2):
 		_lods("birch%d" % i, func(l: int) -> ArrayMesh: return Nature.broadleaf(300 + i, l, true))
-		models["snag%d" % i] = {mesh = Nature.snag(400 + i), end = 300.0 + FAR_CELL * 0.71, shadow = true, big = true}
+		models["snag%d" % i] = {mesh = Nature.snag(400 + i), end = 300.0, shadow = true, big = true}
 	for i in range(3):
 		models["fern%d" % i] = {mesh = Nature.fern(500 + i), end = 55.0, shadow = false}
-		models["rock%d" % i] = {mesh = Nature.rock(600 + i), end = 160.0 + FAR_CELL * 0.71, shadow = true, big = true}
+		models["rock%d" % i] = {mesh = Nature.rock(600 + i), end = 160.0, shadow = true, big = true}
 		models["log%d" % i] = {mesh = Nature.fallen_log(700 + i), end = 120.0, shadow = true}
 	models.bush0 = {mesh = Nature.bush(800, Color(0.5, 0.66, 0.32)), end = 80.0, shadow = false}
 	models.bush1 = {mesh = Nature.bush(801, Color(0.82, 0.5, 0.2)), end = 80.0, shadow = false}
@@ -68,16 +68,15 @@ const FAR_CELL := 120.0         # far trees are batched in patches this big (3 x
 ## the three models cross-fade (a dithered blend in the foliage shader) instead of popping
 func _lods(key: String, make: Callable) -> void:
 	var near: ArrayMesh = make.call(0); var mid: ArrayMesh = make.call(1); var far: ArrayMesh = make.call(2)
-	_fade(near, Vector4(-2, -1, NEAR - 7.0, NEAR), false)
-	_fade(mid, Vector4(NEAR - 7.0, NEAR, MID - 9.0, MID), true)
-	_fade(far, Vector4(MID - 9.0, MID, FAR - 25.0, FAR), true)
+	_fade(near, Vector4(-2, -1, NEAR - 3.5, NEAR), false)
+	_fade(mid, Vector4(NEAR - 3.5, NEAR, MID - 4.5, MID), true)
+	_fade(far, Vector4(MID - 4.5, MID, FAR - 25.0, FAR), true)
 	# up close the detailed tree is drawn, but its shadow comes from the lighter model (a fraction of the cost)
 	models[key] = {mesh = near, end = NEAR + 1.0, shadow = false}
 	models[key + "_shadow"] = {mesh = make.call(1), end = 60.0, shadow = true, shadow_only = true}
 	models[key + "_mid"] = {mesh = mid, begin = NEAR - 8.0, end = MID + 1.0, shadow = false}
-	# the far models go out in big patches (FAR_CELL) to keep draw calls down; the shader does the
-	# per-tree cut-off at both ends, so the patch only needs culling once it's wholly out of range
-	models[key + "_far"] = {mesh = far, end = FAR + FAR_CELL * 0.71, shadow = false, big = true}
+	# the far models go out in big patches (FAR_CELL) to keep draw calls down
+	models[key + "_far"] = {mesh = far, begin = MID - 10.0, end = FAR, shadow = false, big = true}
 
 static func _fade(m: ArrayMesh, f: Vector4, inv: bool) -> void:
 	for i in range(m.get_surface_count()):
@@ -298,12 +297,17 @@ func _emit() -> void:
 			# small plants live on render layer 2, which the truck mirror skips
 			if key.begins_with("fern") or key.begins_with("grass") or key.begins_with("flower") or key.begins_with("litter") or key.begins_with("bush"):
 				mi.layers = 2
-			mi.visibility_range_begin = md.get("begin", 0.0)
-			mi.visibility_range_end = md.end
+			# Godot measures a visibility range to the middle of the whole patch, but plants are anywhere
+			# in it: so each patch's range is widened by half its diagonal ("vm"), and the shaders fade
+			# every plant at its own distance. Without this a patch near you could switch on or off at once.
+			var margin := (FAR_CELL if md.get("big", false) else CELL) * 0.71
+			mi.set_meta("vr", Vector2(md.get("begin", 0.0), md.end))
+			mi.set_meta("vm", margin)
+			mi.visibility_range_begin = maxf(0.0, md.get("begin", 0.0) - margin) if md.has("begin") else 0.0
+			mi.visibility_range_end = md.end + margin
 			mi.visibility_range_end_margin = 1.0
 			mi.visibility_range_begin_margin = 1.0 if md.has("begin") else 0.0
 			mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
-			mi.set_meta("vr", Vector2(mi.visibility_range_begin, mi.visibility_range_end))
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if md.shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			if md.get("shadow_only", false): mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 			root.add_child(mi)

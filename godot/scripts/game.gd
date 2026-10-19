@@ -127,6 +127,7 @@ func enter_hub() -> void:
 	level_root = Node3D.new(); level_root.name = "Level"; add_child(level_root)
 	hub = Hub.new(); hub.name = "Home"; level_root.add_child(hub)
 	hub.build(self)
+	set_detail(detail)
 	world = hub.world
 	truck = hub.truck
 	player = hub.player
@@ -356,8 +357,9 @@ func set_detail(d: int) -> void:
 	for n in level_root.find_children("*", "GeometryInstance3D", true, false):
 		if n.has_meta("vr"):
 			var vr: Vector2 = n.get_meta("vr")
-			(n as GeometryInstance3D).visibility_range_begin = vr.x * k
-			(n as GeometryInstance3D).visibility_range_end = vr.y * (k if vr.y < 200.0 else (0.65 if d == 0 else 1.0))
+			var vm: float = n.get_meta("vm", 0.0)          # the patch's half-diagonal: plants sit anywhere in it
+			(n as GeometryInstance3D).visibility_range_begin = maxf(0.0, vr.x * k - vm) if vr.x > 0.0 else 0.0
+			(n as GeometryInstance3D).visibility_range_end = vr.y * k + vm
 
 ## if the first few seconds of play run badly, drop to low detail once and say so
 ## watch the frame rate from the start of the drive in: if it's struggling, drop to low detail early
@@ -380,6 +382,7 @@ func new_level(sd: int) -> void:
 	if level_root: level_root.queue_free()
 	level_root = Node3D.new(); level_root.name = "Level"; add_child(level_root)
 	world = WorldGen.new(); world.setup(sd, job.id); world.build(level_root)
+	set_detail(detail)            # fit the new forest's draw distances to the detail setting (phones: shorter)
 	_job_light()
 	Mats.bark.albedo_color = job.bark_tint
 	ambient = Ambient.new(); ambient.name = "Ambient"; level_root.add_child(ambient)

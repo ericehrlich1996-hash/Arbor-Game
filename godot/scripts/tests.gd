@@ -2662,3 +2662,27 @@ func _pause_menu() -> void:
 	note("moves again", snappedf(g.player.global_position.distance_to(p0), 0.01) > 0.5)
 	await shot("pause-after")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(Settings.PATH))     # leave no settings behind
+
+## pop-in scan: walk the camera in a straight line in small steps, a screenshot per step. Plants or
+## trees switching on/off show up as spikes in the change between neighbouring frames.
+## POP_PATH: "hub" (out from the yard into the woods) or "job" (along the property).
+func _hub_popscan() -> void:
+	await _popscan()
+
+func _popscan() -> void:
+	await wait(1.0)
+	if g.in_hub: g.hub_begin()
+	else: g._start()
+	await wait(1.0)
+	RenderingServer.global_shader_parameter_set(&"detail_k", 0.55)   # phone detail, as set_detail(0)
+	g.set_detail(0)
+	var p: Player = g.player
+	var a := Vector3(12, 0, -20) if g.in_hub else Vector3(-30, 0, 30)
+	var b := Vector3(70, 0, -75) if g.in_hub else Vector3(40, 0, -40)
+	var n := 70
+	for i in range(n + 1):
+		var q := a.lerp(b, float(i) / n)
+		p.teleport(Vector3(q.x, g.world.H(q.x, q.z) + 0.05, q.z))
+		look_at_point(Vector3(b.x * 2.0 - a.x, g.world.H(q.x, q.z) + 1.4, b.z * 2.0 - a.z))
+		await frames(2)
+		await shot("pop-%03d" % i)

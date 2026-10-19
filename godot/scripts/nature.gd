@@ -258,7 +258,13 @@ void vertex() {
 	vec3 org = MODEL_MATRIX[3].xyz;
 	float d = distance(org, CAMERA_POSITION_WORLD) / max(detail_k, 0.05);
 	vfade = smoothstep(fade.x, fade.y, d) * (1.0 - smoothstep(fade.z, fade.w, d));
-	if (shrink_end > 0.0) VERTEX *= 1.0 - smoothstep(shrink_end * 0.7, shrink_end, d);
+	// small plants shrink away by distance, each at its own range (55-100% of shrink_end), so the edge of
+	// the planted area thins out gradually instead of ending in a ring
+	if (shrink_end > 0.0) {
+		float r = fract(sin(dot(org.xz, vec2(12.9898, 78.233))) * 43758.5453);
+		float e = shrink_end * mix(0.55, 1.0, r);
+		VERTEX *= 1.0 - smoothstep(e * 0.75, e, d);
+	}
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float w = COLOR.a * wind;
 	float t = TIME;
@@ -277,6 +283,12 @@ void fragment() {
 		if (h >= vfade) discard;
 	}
 	vec4 tx = texture(tex, UV);
+	// keep leaves full at a distance: the blurrier mip levels average the leaf edges into the
+	// background, so fewer pixels pass the cut-out and canopies thin out, then "pop" thick up close.
+	// Boosting alpha by the mip level being read keeps the coverage about the same (Golus's trick)
+	vec2 tuv = UV * vec2(textureSize(tex, 0));
+	float mip = max(0.0, 0.5 * log2(max(dot(dFdx(tuv), dFdx(tuv)), dot(dFdy(tuv), dFdy(tuv)))));
+	tx.a *= 1.0 + mip * 0.25;
 	ALBEDO = tx.rgb * pow(COLOR.rgb, vec3(2.2));
 	// the further off, the more the colour drains into the haze (foreground stays rich)
 	float far_k = smoothstep(28.0, 190.0, length(VERTEX)) * 0.45;

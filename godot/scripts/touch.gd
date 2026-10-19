@@ -211,5 +211,11 @@ class Pad extends Control:
 			else:
 				draw_circle(b.c, b.r, bg)
 				draw_arc(b.c, b.r, 0, TAU, 36, edge, 2.0)
+			if b.id == "wheel_up" or b.id == "wheel_down":
+				# drawn, not typed: phone fonts often have no arrow characters (they show as boxes)
+				var hs := float(b.r) * 0.42
+				var sgn := -1.0 if b.id == "wheel_up" else 1.0
+				draw_colored_polygon(PackedVector2Array([b.c + Vector2(0, sgn * hs * 0.8), b.c + Vector2(-hs, -sgn * hs * 0.55), b.c + Vector2(hs, -sgn * hs * 0.55)]), Color(1, 1, 1, 0.9))
+				continue
 			var fs := 12 if small else (20 if b.label.length() <= 2 else 16)
 			draw_string(font, b.c + Vector2(-w / 2.0, fs * 0.35), b.label, HORIZONTAL_ALIGNMENT_CENTER, w, fs, Color(1, 1, 1, 0.9))
