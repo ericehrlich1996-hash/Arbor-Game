@@ -659,6 +659,7 @@ func fish_mesh(name: String, cm: float) -> MeshInstance3D:
 	if not _fish_meshes.has(key):
 		var m: Mesh = null
 		var path := "res://models/fish/%s.glb" % key
+		if key == "gerald" and not ResourceLoader.exists(path): path = "res://models/fish/largemouth_bass.glb"   # the old legend is a largemouth
 		if ResourceLoader.exists(path):
 			var inst: Node = (load(path) as PackedScene).instantiate()
 			var found := inst.find_children("*", "MeshInstance3D", true, false)
