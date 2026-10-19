@@ -2855,3 +2855,22 @@ func _fish_sheet() -> void:
 	await wait(0.3)
 	await shot("fish-sheet-34")
 	fish.free()
+
+## the skinned client's skeleton follows the rig: how far each limb bone turns while walking and waving
+func _earl_bones() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(0.5)
+	var e = g.earl
+	e.walk_to = null
+	for st in ["idle", "walk", "wave"]:
+		e.state = st; e.talking = false
+		var most := {}
+		for k in range(40):
+			await frames(1)
+			if e.skel == null: break
+			for b in ["leg_l", "upper_l", "fore_r", "head"]:
+				var i: int = e.skel.find_bone(b)
+				var ang: float = e.skel.get_bone_global_pose(i).basis.get_rotation_quaternion().angle_to(e.skel.get_bone_global_rest(i).basis.get_rotation_quaternion())
+				most[b] = maxf(float(most.get(b, 0.0)), snappedf(rad_to_deg(ang), 0.1))
+		note(st, most)
