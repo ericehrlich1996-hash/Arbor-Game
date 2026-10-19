@@ -6,7 +6,7 @@ extends WorldGen
 
 const CLEAR_R := 15.0          # the clearing round the cabin
 
-func setup(sd: int, _job_id := "earl") -> void:
+func setup(sd: int, _job_id := "earl", _variant := -1) -> void:
 	seed = sd
 	rng.seed = sd
 	s = 1.0

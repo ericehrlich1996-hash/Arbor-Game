@@ -2686,3 +2686,42 @@ func _popscan() -> void:
 		look_at_point(Vector3(b.x * 2.0 - a.x, g.world.H(q.x, q.z) + 1.4, b.z * 2.0 - a.z))
 		await frames(2)
 		await shot("pop-%03d" % i)
+
+## the property is the same on every visit; only the job tree moves (a few metres) and changes shape
+func _layout_fixed() -> void:
+	await wait(0.5)
+	var a := []
+	for v in [11, 222, 3333]:
+		g.new_level(v)
+		await wait(0.3)
+		var w = g.world
+		a.append([w.house.x, w.house.z, w.shed.z, w.bg_trees.size(), snappedf(w.bg_trees[5].x, 0.01), Vector2(w.tree.x, w.tree.z).snapped(Vector2(0.1, 0.1)), snappedf(w.tree.h, 0.1)])
+	note("layout same", a[0].slice(0, 5) == a[1].slice(0, 5) and a[1].slice(0, 5) == a[2].slice(0, 5))
+	note("tree per visit", [a[0][5], a[1][5], a[2][5], a[0][6], a[1][6], a[2][6]])
+	note("forest children", g.level_root.get_child_count())
+
+## a look at a property from above the road and from the lawn, for picking layouts (ARBOR_LAYOUT=seed)
+func _preview() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(1.0)
+	var cam := Camera3D.new(); cam.fov = 60; cam.far = 600; g.level_root.add_child(cam)
+	var y0: float = g.world.H(0, 0)
+	cam.global_position = Vector3(0, y0 + 42, -78); cam.look_at(Vector3(0, y0, 18)); cam.make_current()
+	await wait(1.5)
+	await shot("preview-air")
+	cam.global_position = Vector3(g.world.park.x, y0 + 1.7, g.world.park.z - 6); cam.look_at(Vector3(g.world.tree.x, y0 + 5, g.world.tree.z)); cam.make_current()
+	await wait(1.0)
+	await shot("preview-lawn")
+
+func _hale_preview() -> void:
+	await _preview()
+
+func _dock_preview() -> void:
+	await _preview()
+
+func _hale_layout_fixed() -> void:
+	await _layout_fixed()
+
+func _dock_layout_fixed() -> void:
+	await _layout_fixed()
