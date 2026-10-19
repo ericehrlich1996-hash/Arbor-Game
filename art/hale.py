@@ -28,10 +28,8 @@ KNIT_ARM = (G(0, 0, 0), (4.0, 14.0))
 
 # ------------------------------------------------------------------ torso (pivot: hips)
 t = kit.part("torso")
-t.lathe([(0.08, 0.185, 0.145), (0.2, 0.2, 0.158), (0.32, 0.206, 0.156), (0.44, 0.2, 0.142), (0.5, 0.19, 0.13),
-	(0.545, 0.16, 0.112), (0.575, 0.1, 0.085), (0.59, 0.066, 0.066)], None, seg=20, cloth=KNIT_BODY)
-for sx in (-1, 1):
-	t.ball((sx * 0.19, 0.49, 0.0), (0.075, 0.062, 0.09), None, 12, 8, cloth=(G(sx * 0.17, 0, 0), (4.0, 14.0)))
+t.lathe([(0.06, 0.185, 0.145), (0.2, 0.2, 0.158), (0.32, 0.21, 0.158), (0.44, 0.226, 0.15), (0.5, 0.222, 0.135),
+	(0.55, 0.16, 0.11), (0.58, 0.095, 0.08), (0.6, 0.062, 0.062)], None, seg=12, cloth=KNIT_BODY)    # sloping shoulders
 # the blouse showing down the open front, its rounded collar, and pearls
 t.box((0, 0.36, 0.142), (0.085, 0.36, 0.02), "blouse", 0.008)
 for k in range(4): t.ball((0, 0.24 + k * 0.075, 0.154), (0.007, 0.007, 0.004), "blouse_dk", 6, 4)
@@ -47,9 +45,8 @@ for k in range(13):
 	t.ball((math.sin(a) * 0.082, 0.57 - math.cos(a * 0.85) * 0.03 + 0.03, math.cos(a) * 0.08), (0.011, 0.011, 0.011), "pearl", 6, 4)
 # cardigan hem, then a plum pleated skirt to mid-calf
 t.lathe([(0.06, 0.192, 0.152), (0.1, 0.19, 0.15)], "cardi_dk", seg=20, cap_top=False, cap_bot=False)
-t.lathe([(-0.46, 0.25, 0.22), (-0.2, 0.218, 0.188), (0.0, 0.19, 0.156), (0.075, 0.168, 0.13)], "skirt", seg=28,
-	cap_top=False, wave=(28, 0.03))       # its waist tucked up inside the cardigan
-t.lathe([(-0.465, 0.252, 0.222), (-0.45, 0.252, 0.222)], "skirt_dk", seg=28, cap_top=False, cap_bot=False, wave=(28, 0.03))
+t.lathe([(-0.46, 0.25, 0.22), (-0.2, 0.218, 0.188), (0.0, 0.19, 0.156), (0.075, 0.168, 0.13)], "skirt", seg=24,
+	cap_top=False, cap_bot=False, wave=(24, 0.045))       # its waist tucked up inside the cardigan
 torso = t.finish()
 
 # ------------------------------------------------------------------ head (pivot: base of the neck)
@@ -66,7 +63,7 @@ for sx in (-1, 1):
 	h.ball(hs((sx * 0.039, 0.178, 0.097)), hr((0.011, 0.014, 0.007)), "eye", 8, 6)
 	h.box(hs((sx * 0.04, 0.207, 0.099)), (0.034, 0.008, 0.012), "hair_dk", 0.003, rot=gRz(-sx * 0.12))   # fine brows
 	# round glasses: a rim each side, arms back to the ears
-	h.ring(hs((sx * 0.041, 0.178, 0.112)), (0.027 * S, 0.023 * S), 0.0028, "frame", 14)
+	h.ring(hs((sx * 0.041, 0.178, 0.112)), (0.027 * S, 0.023 * S), 0.0035, "frame", 14)
 	h.tube(hs((sx * 0.068, 0.182, 0.108)), hs((sx * 0.1, 0.178, 0.02)), 0.0028, 0.0028, "frame", 4, False)
 h.tube(hs((-0.014, 0.183, 0.114)), hs((0.014, 0.183, 0.114)), 0.0028, 0.0028, "frame", 4, False)
 h.ball(hs((0, 0.148, 0.11)), hr((0.019, 0.022, 0.02)), "nose", 10, 6)
@@ -79,17 +76,16 @@ for sx in (-1, 1):
 		h.box(hs((sx * (0.03 + k * 0.03), 0.282 - k * 0.012, 0.03 - k * 0.012)), (0.026, 0.006, 0.05), "hair_dk", 0.003, rot=gRy(sx * 0.3))
 h.icob(hs((0, 0.27, -0.08)), hr((0.058, 0.05, 0.05)), "hair", 2, jitter=0.04)
 h.tube(hs((-0.05, 0.29, -0.08)), hs((0.05, 0.28, -0.07)), 0.003, 0.003, "pin", 4, True)
-head = h.finish(45)
+head = h.finish()
 
 # ------------------------------------------------------------------ arms
 u = kit.part("upper")
-u.lathe([(-0.02, 0.064, 0.07), (-0.12, 0.06, 0.064), (-0.3, 0.052, 0.055)], None, seg=12, cloth=KNIT_ARM, cap_top=False)
-u.ball((0, -0.02, 0), (0.064, 0.06, 0.07), None, 12, 8, cloth=KNIT_ARM)         # a rounded shoulder, not a flat top
+u.lathe([(-0.35, 0.05, 0.052), (-0.15, 0.058, 0.06), (-0.02, 0.064, 0.068), (0.03, 0.05, 0.054)], None, seg=10, cloth=KNIT_ARM, hold=False, x=-0.012)   # runs past the elbow
 u.ball((0, -0.3, 0), (0.052, 0.03, 0.055), "cardi", 10, 6)
 upper = u.finish()
 
 f = kit.part("fore")
-f.lathe([(0.0, 0.052, 0.054), (-0.19, 0.047, 0.048)], None, seg=12, cloth=KNIT_ARM, cap_top=False)
+f.lathe([(-0.19, 0.047, 0.048), (-0.08, 0.052, 0.054), (0.03, 0.05, 0.052)], None, seg=10, cloth=KNIT_ARM, cap_bot=False)
 f.lathe([(-0.185, 0.052, 0.054), (-0.215, 0.052, 0.054)], "cardi_dk", seg=12)              # ribbed cuff
 f.lathe([(-0.21, 0.042, 0.044), (-0.235, 0.044, 0.046)], "blouse", seg=12)                 # blouse cuff
 f.lathe([(-0.23, 0.03, 0.032), (-0.265, 0.031, 0.033)], "skin_dk", seg=10, cap_top=False)   # wrist
@@ -101,7 +97,7 @@ fore = f.finish()
 
 # ------------------------------------------------------------------ legs: stockings and black low-heeled lace-ups
 l = kit.part("leg")
-l.lathe([(-0.3, 0.064, 0.066), (-0.45, 0.058, 0.062), (-0.6, 0.048, 0.052), (-0.78, 0.04, 0.042)], "hose", seg=12)
+l.lathe([(-0.8, 0.042, 0.044), (-0.62, 0.05, 0.054), (-0.47, 0.06, 0.064), (-0.3, 0.066, 0.068)], "hose", seg=10)
 l.box((0, -0.83, 0.02), (0.088, 0.08, 0.16), "shoe", 0.03, segs=3)
 l.box((0, -0.85, 0.075), (0.085, 0.05, 0.11), "shoe", 0.025, segs=3)
 l.box((0, -0.893, 0.04), (0.094, 0.018, 0.22), "sole", 0.006)
@@ -112,7 +108,7 @@ leg = l.finish()
 # ------------------------------------------------------------------ lemonade (pivot in the hand)
 c = kit.part("cane")
 c.lathe([(-0.12, 0.04, 0.04), (-0.02, 0.042, 0.042)], "mug", seg=14, cap_top=False, z=0.05)
-c.lathe([(-0.03, 0.038, 0.038), (-0.028, 0.038, 0.038)], "lemonade", seg=14, z=0.05)
+c.lathe([(-0.034, 0.038, 0.038), (-0.026, 0.038, 0.038)], "lemonade", seg=12, z=0.05, hold=False)
 c.ball((0.018, -0.026, 0.06), (0.018, 0.018, 0.004), "lemon", 10, 4, rot=gRz(0.6))
 for k in range(4):
 	a0 = -1.1 + k * 0.55; a1 = a0 + 0.55

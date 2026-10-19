@@ -12,6 +12,7 @@ from mathutils import Vector, Matrix
 
 ARGV = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 HERE = os.path.dirname(os.path.abspath(__file__))
+DECIMATE = float(os.environ.get("CHAR_DECIMATE", "0.6"))     # how much of the smoothed mesh to keep
 
 def G(x, y, z):            # game space -> Blender space
 	return Vector((x, -z, y))
@@ -78,8 +79,9 @@ class Kit:
 	# ------------------------------------------------------------------ export
 	def export(self, out):
 		tris = 0
+		dg = bpy.context.evaluated_depsgraph_get()
 		for k, ob in self.parts.items():
-			me = ob.data; me.calc_loop_triangles(); n = len(me.loop_triangles)
+			me = ob.evaluated_get(dg).to_mesh(); me.calc_loop_triangles(); n = len(me.loop_triangles)
 			tris += n * (2 if k in ("upper", "fore", "leg") else 1)
 			print("PART", k, n, "tris")
 		print("WHOLE FIGURE ~%d tris" % tris)
@@ -132,6 +134,7 @@ class Kit:
 class Part:
 	def __init__(self, kit, name):
 		self.kit = kit; self.name = name; self.bm = bmesh.new(); self.uv = self.bm.loops.layers.uv.new("UV")
+		self.cr = self.bm.edges.layers.float.new("crease_edge")      # 1 = keep this edge crisp through the smoothing
 
 	def _paint(self, faces, color, cloth):
 		uv = self.uv
@@ -153,7 +156,7 @@ class Part:
 				for l in f.loops:
 					if l[uv].uv.x < 0: l[uv].uv.x += su
 
-	def _merge(self, fn, color, m, cloth):
+	def _merge(self, fn, color, m, cloth, crease=0.0):
 		tmp = bmesh.new(); fn(tmp)
 		bmesh.ops.transform(tmp, matrix=m, verts=tmp.verts)
 		me = bpy.data.meshes.new("tmp"); tmp.to_mesh(me); tmp.free()
@@ -161,6 +164,9 @@ class Part:
 		self.bm.from_mesh(me); bpy.data.meshes.remove(me)
 		new = [f for f in self.bm.faces if f not in before]
 		self._paint(new, color, cloth)
+		if crease:
+			for f in new:
+				for e in f.edges: e[self.cr] = crease
 		return new
 
 	def ball(self, c, r, color, seg=12, rings=8, rot=None, cloth=None, jitter=0.0):
@@ -179,14 +185,14 @@ class Part:
 		m = Matrix.Translation(G(*c)) @ (rot or Matrix()) @ Matrix.Diagonal((r[0], r[2], r[1], 1.0))
 		return self._merge(fn, color, m, None)
 
-	def box(self, c, s, color, bevel=0.0, rot=None, segs=2):
+	def box(self, c, s, color, bevel=0.0, rot=None, segs=1, crease=0.0):
 		def fn(b):
 			bmesh.ops.create_cube(b, size=1.0)
 			bmesh.ops.scale(b, vec=Vector((s[0], s[2], s[1])), verts=b.verts)
 			if bevel > 0:
 				bmesh.ops.bevel(b, geom=list(b.edges), offset=min(bevel, min(s) * 0.45), offset_type="OFFSET",
 					segments=segs, profile=0.5, affect="EDGES", clamp_overlap=True)
-		return self._merge(fn, color, Matrix.Translation(G(*c)) @ (rot or Matrix()), None)
+		return self._merge(fn, color, Matrix.Translation(G(*c)) @ (rot or Matrix()), None, crease)
 
 	def tube(self, a, b, r0, r1, color, seg=10, caps=True, cloth=None, squash=1.0):
 		A = G(*a); B = G(*b); d = B - A; L = d.length
@@ -197,8 +203,16 @@ class Part:
 		q = Vector((0, 0, 1)).rotation_difference(d.normalized()).to_matrix().to_4x4()
 		return self._merge(fn, color, Matrix.Translation(A) @ q, cloth)
 
-	def lathe(self, prof, color, seg=20, cloth=None, cap_top=True, cap_bot=True, x=0.0, z=0.0, wave=None):
-		"""body of revolution from [(y, rx, rz), ...]; wave=(count, depth) ripples the radius (pleats, ribs)"""
+	def lathe(self, prof, color, seg=20, cloth=None, cap_top=True, cap_bot=True, x=0.0, z=0.0, wave=None, crease=0.0, hold=True):
+		"""body of revolution from [(y, rx, rz), ...]; wave=(count, depth) ripples the radius (pleats, ribs).
+		hold: extra rings just inside each end (and a flat inset on each cap) so the smoothing rounds the
+		edges without pinching the ends or ballooning the middle"""
+		prof = [tuple(p) for p in prof]
+		if hold and len(prof) >= 2:
+			def mix(p, q, t): return tuple(p[i] + (q[i] - p[i]) * t for i in range(3))
+			prof = [prof[0], mix(prof[0], prof[1], 0.15)] + prof[1:-1] + [mix(prof[-1], prof[-2], 0.15), prof[-1]]
+			if cap_bot: prof = [(prof[0][0], prof[0][1] * 0.82, prof[0][2] * 0.82)] + prof
+			if cap_top: prof = prof + [(prof[-1][0], prof[-1][1] * 0.82, prof[-1][2] * 0.82)]
 		def fn(b):
 			rings = []
 			for (y, rx, rz) in prof:
@@ -214,25 +228,47 @@ class Part:
 			if cap_bot: b.faces.new(list(reversed(rings[0])))
 			if cap_top: b.faces.new(rings[-1])
 			bmesh.ops.recalc_face_normals(b, faces=b.faces)
-		return self._merge(fn, color, Matrix(), cloth)
+		return self._merge(fn, color, Matrix(), cloth, crease)
 
-	def ring(self, c, r, thick, color, seg=12, rot=None):
-		"""a thin torus-ish loop (glasses rims, handles): made from short tubes"""
-		pts = []
-		for i in range(seg + 1):
-			a = 2 * math.pi * i / seg
-			pts.append((c[0] + math.cos(a) * r[0], c[1] + math.sin(a) * r[1], c[2]))
-		for i in range(seg): self.tube(pts[i], pts[i + 1], thick, thick, color, 5, False)
+	def ring(self, c, r, thick, color, seg=12, sides=4):
+		"""a closed loop facing +z (glasses rims): one clean torus, elliptical radii r=(rx, ry)"""
+		def fn(b):
+			rings = []
+			for i in range(seg):
+				a = 2 * math.pi * i / seg
+				ctr = Vector((math.cos(a) * r[0], math.sin(a) * r[1], 0.0))
+				out = Vector((math.cos(a), math.sin(a), 0.0))
+				ring = []
+				for j in range(sides):
+					t = 2 * math.pi * j / sides
+					p = ctr + out * math.cos(t) * thick + Vector((0, 0, 1)) * math.sin(t) * thick
+					ring.append(b.verts.new(G(p.x, p.y, p.z)))
+				rings.append(ring)
+			for i in range(seg):
+				for j in range(sides):
+					b.faces.new((rings[i][j], rings[(i + 1) % seg][j], rings[(i + 1) % seg][(j + 1) % sides], rings[i][(j + 1) % sides]))
+			bmesh.ops.recalc_face_normals(b, faces=b.faces)
+		return self._merge(fn, color, Matrix.Translation(G(*c)), None)
 
-	def finish(self, smooth_angle=38.0):
+	def finish(self, subdiv=1, keep=None):
+		"""smooth shading all over and a level of subdivision: every corner, cap and edge rounds off like
+		clay (creased edges stay crisp). Build the base shapes coarse: subdivision multiplies them by 4"""
 		bm = self.bm
-		bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0002)
+		# (no welding: the pieces are separate closed shapes; welding where they touch makes bad faces)
+
 		for f in bm.faces: f.smooth = True
-		lim = math.radians(smooth_angle)
-		for e in bm.edges:
-			if len(e.link_faces) == 2 and e.calc_face_angle(0) > lim: e.smooth = False
 		me = bpy.data.meshes.new(self.name); bm.to_mesh(me); bm.free()
+		if me.validate(verbose=False): print("REPAIRED", self.name)     # drop any bad faces before smoothing
 		me.materials.append(self.kit.palette); me.materials.append(self.kit.cloth)
 		ob = bpy.data.objects.new(self.name, me); bpy.context.collection.objects.link(ob)
+		if self.name in os.environ.get("CHAR_FLAT", "").split(","): subdiv = 0     # debugging: leave these unsmoothed
+		if subdiv:
+			m = ob.modifiers.new("round", "SUBSURF"); m.levels = subdiv; m.render_levels = subdiv
+			m.uv_smooth = "PRESERVE_BOUNDARIES"; m.use_creases = True; m.quality = 3
+			k = keep if keep is not None else DECIMATE
+			if k < 1.0:
+				# then thin the smoothed mesh back down (keeps the shape; flat areas lose the most)
+				d = ob.modifiers.new("thin", "DECIMATE"); d.decimate_type = "COLLAPSE"; d.ratio = k
+				d.use_collapse_triangulate = True
 		self.kit.parts[self.name] = ob
 		return ob
