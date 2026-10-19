@@ -51,12 +51,12 @@ func _noise(n: FastNoiseLite, x: float, z: float) -> float:
 ## each job's property is laid out the same every visit (picked to look good); only the job tree's
 ## exact spot and shape vary a little from visit to visit, from its own random numbers (trng), so the
 ## rest of the layout never shifts. Change a seed here to re-roll that property.
-const LAYOUT := {"earl": 1003, "hale": 1001, "dock": 1002}
+const LAYOUT := {"earl": 202, "hale": 202, "dock": 202}
 var trng := RandomNumberGenerator.new()
 
 static func layout_seed(job_id: String) -> int:
 	if OS.get_environment("ARBOR_LAYOUT") != "": return int(OS.get_environment("ARBOR_LAYOUT"))     # previewing other layouts
-	return LAYOUT.get(job_id, 1003)
+	return LAYOUT.get(job_id, 202)
 
 func setup(sd: int, job_id := "earl", variant := -1) -> void:
 	seed = sd
