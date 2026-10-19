@@ -1,0 +1,10 @@
+# Netlify: the finished web build sits at the top of the repo, so there's nothing to build.
+[build]
+  publish = "."
+  command = ""
+
+# the game files are big and change with every update: let browsers check for a new version
+[[headers]]
+  for = "/index.*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
