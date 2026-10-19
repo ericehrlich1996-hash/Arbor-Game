@@ -2824,3 +2824,34 @@ func _turnaround() -> void:
 
 func _hale_turnaround() -> void:
 	await _turnaround()
+
+## a sheet of every fish as the game builds it now: side on, then from 3/4 above, labelled, on a plain backdrop
+func _fish_sheet() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(0.5)
+	g.hud.visible = false
+	var fish := Fishing.new()
+	var stage := Node3D.new(); g.add_child(stage); stage.position = Vector3(0, 600, 0)
+	var env := Environment.new(); env.background_mode = Environment.BG_COLOR; env.background_color = Color("#d9dccf")
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR; env.ambient_light_color = Color(1, 1, 1); env.ambient_light_energy = 0.55
+	var sun := DirectionalLight3D.new(); sun.rotation = Vector3(-0.9, 0.5, 0); sun.light_energy = 1.0; stage.add_child(sun)
+	var names: Array = fish.SPECIES.keys()
+	var cols := 4
+	var nodes := []
+	for i in range(names.size()):
+		var nm: String = names[i]
+		var mi: MeshInstance3D = fish._fish_model(nm, 100.0).instance()
+		var cell := Node3D.new(); stage.add_child(cell)
+		cell.position = Vector3((i % cols - 1.5) * 1.45, -(i / cols - 1) * 0.95, 0)
+		cell.add_child(mi); nodes.append(mi)
+		var lb := Label3D.new(); lb.text = nm; lb.font_size = 48; lb.pixel_size = 0.0018; lb.modulate = Color("#202020"); lb.outline_size = 0
+		lb.position = Vector3(0, -0.4, 0); cell.add_child(lb)
+	var cam := Camera3D.new(); cam.environment = env; cam.fov = 30; stage.add_child(cam); cam.make_current()
+	cam.position = Vector3(0, -0.05, 7.0); cam.look_at(stage.global_position)
+	await wait(0.5)
+	await shot("fish-sheet-side")
+	for mi in nodes: mi.rotation = Vector3(0.35, -0.65, 0)
+	await wait(0.3)
+	await shot("fish-sheet-34")
+	fish.free()
