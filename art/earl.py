@@ -17,7 +17,7 @@ PAL = {
 	"hat": "#46602b", "hat_dk": "#384e22", "band": "#5a3a22", "leaf": "#d88a2a", "leaf2": "#e2b03a",
 	"denim": "#3d5a86", "denim_dk": "#33507a", "denim_lt": "#6b89b6", "stitch": "#c9a256",
 	"brass": "#c9a24a", "leather": "#6a4426", "leather_dk": "#53341c", "patch": "#8a5a30",
-	"glove": "#a8833a", "glove_dk": "#8a6a2c", "cuff": "#b03a30",
+	"glove": "#a8833a", "glove_dk": "#8a6a2c", "glove_lt": "#b8944a", "cuff": "#b03a30",
 	"boot": "#7a4c28", "boot_dk": "#5e3b1f", "sole": "#2a2420", "lace": "#d8bf86",
 	"wood": "#6a4a2a", "rubber": "#1e1e1e", "red_dk": "#7a2420",
 }
@@ -78,12 +78,16 @@ def solid(name, build, voxel, keep, painter):
 	me = bake(ob)
 	return paint(me, painter if callable(painter) else (lambda c, n, s=painter: s))
 
-def plain(name, build):
-	"""small hard-surface bits (buttons, buckle, laces) kept as built, smooth-shaded"""
+def plain(name, build, smooth=0):
+	"""hard-surface bits (buttons, buckle, laces) kept as built, smooth-shaded; smooth=1 rounds them once"""
 	p = kit.part("_" + name); build(p)
 	kit.parts.pop("_" + name, None)
 	for f in p.bm.faces: f.smooth = True
 	me = bpy.data.meshes.new(name); p.bm.to_mesh(me); p.bm.free()
+	if smooth:
+		ob = link(bpy.data.objects.new(name, me))
+		m = ob.modifiers.new("soft", "SUBSURF"); m.levels = smooth; m.render_levels = smooth; m.uv_smooth = "PRESERVE_BOUNDARIES"
+		me = bake(ob)
 	return me
 
 # ================================================================== 1. the body: one surface
@@ -233,7 +237,7 @@ pieces.append((drape("collar", 20, 2, ring_y(1.5, 1.57, 0.0, 0.004), 0.006, 0.01
 for s, sx in (("l", 1), ("r", -1)):
 	a, d, L = ARM[s]
 	pieces.append((drape("sleeve_cuff", 16, 2, ring_axis(a, d, L - 0.09, L - 0.015), 0.008, 0.016, "cuff"), "fore_" + s))
-	pieces.append((drape("jean_cuff", 16, 2, ring_axis(Vector((sx * 0.11, 0.5, 0.0)), Vector((0, -1, 0)), 0.29, 0.36), 0.008, 0.018, "denim_lt"), "leg_" + s))
+	pieces.append((drape("jean_cuff", 16, 2, ring_axis(Vector((sx * 0.11, 0.5, 0.0)), Vector((0, -1, 0)), 0.275, 0.345), 0.008, 0.018, "denim_lt"), "leg_" + s))
 
 # hardware: brass buttons on the strap ends, side buttons, the buckle, the pouch
 def on_body(o, d, lift=0.0):
@@ -259,43 +263,94 @@ def hardware(p):
 		p.box((c.x, c.y, c.z), (0.07, 0.014, 0.05), "red_dk", 0.006, rot=gRz(sx * 0.6) @ gRx(0.6))
 pieces.append((plain("hardware", hardware), "torso"))
 
-# ================================================================== 3. gloves: one fused fist each
-def glove(sx):
+# ================================================================== 3. gloves: chunky work gloves, after the concept
+# a flared gauntlet cuff, a flat back with a stitched panel, four fingers curled into a fist in two
+# segments each, and the thumb laid across the front. Built hand-local: +x is the back of the hand
+# (outward), -y down the fingers, +z forward; mirrored for the right hand.
+def glove(s, sx):
 	o = Vector((sx * 0.264, 0.86, 0.022))            # the wrist
-	K = 1.3                                            # big work gloves
+	K = 1.15
+	def M(x, y, z): return (o.x + sx * x * K, o.y + y * K, o.z + z * K)
 	def build(p):
-		def P(x, y, z): return (o.x + sx * x * K, o.y + y * K, o.z + z * K)
-		p.lathe([(o.y + 0.035, 0.06, 0.062), (o.y - 0.03, 0.058, 0.06)], "glove", seg=12, x=o.x, z=o.z, hold=False)  # gauntlet
-		p.box(P(0.0, -0.065, 0.004), (0.062 * K, 0.085 * K, 0.096 * K), "glove", 0.022)          # back of the hand / palm
-		for i in range(4):                                                                       # curled fingers
-			z = -0.034 + i * 0.023
-			p.tube(P(0.006, -0.1, z), P(-0.012, -0.125, z), 0.0135 * K, 0.013 * K, "glove", 8, True)
-			p.tube(P(-0.012, -0.125, z), P(-0.032, -0.108, z), 0.013 * K, 0.012 * K, "glove", 8, True)
-		p.tube(P(-0.022, -0.045, 0.045), P(-0.036, -0.088, 0.05), 0.015 * K, 0.013 * K, "glove", 8, True)   # thumb
-	def col(c, n):
-		return "glove_dk" if c.y > o.y - 0.02 else "glove"
-	return solid("glove", build, 0.005, 0.1, col)
-for s, sx in (("l", 1), ("r", -1)): pieces.append((glove(sx), "fore_" + s))
+		# the flared gauntlet cuff, with a turned rim; extra rings keep it a crisp band through the smoothing
+		p.lathe([(o.y + 0.035 * K, 0.046 * K, 0.05 * K), (o.y + 0.03 * K, 0.048 * K, 0.052 * K), (o.y - 0.018 * K, 0.05 * K, 0.054 * K),
+			(o.y - 0.024 * K, 0.053 * K, 0.057 * K), (o.y - 0.032 * K, 0.053 * K, 0.057 * K), (o.y - 0.036 * K, 0.044 * K, 0.048 * K)],
+			"glove_dk", seg=16, x=o.x, z=o.z, hold=True)
+		p.box(M(0.0, -0.078, 0.0), (0.066 * K, 0.092 * K, 0.108 * K), "glove", 0.02, segs=1)                     # back and palm
+		p.box(M(0.034, -0.078, 0.0), (0.004, 0.058 * K, 0.07 * K), "glove_lt", 0.002)                               # stitched panel
+		for i in range(4):
+			z = -0.038 + i * 0.0253
+			p.box(M(-0.004, -0.134, z), (0.056 * K, 0.044 * K, 0.0275 * K), "glove", 0.009, segs=1)                  # first knuckle, down
+			p.box(M(-0.036, -0.15, z), (0.034 * K, 0.032 * K, 0.0265 * K), "glove", 0.009, segs=1)                    # curled back under
+		p.box(M(-0.022, -0.09, 0.058), (0.032 * K, 0.064 * K, 0.03 * K), "glove", 0.011, segs=1, rot=gRx(0.35))     # thumb across the front
+	return plain("glove_" + s, build, smooth=1)
+for s, sx in (("l", 1), ("r", -1)): pieces.append((glove(s, sx), "fore_" + s))
 
-# ================================================================== 4. boots: one fused boot, a sole, laces
-def boot(sx):
+# ================================================================== 4. boots: chunky lace-up work boots, after the concept
+# a leather upper fused into one piece (shaft, foot and rounded toe) with a toe-cap seam, a thick dark sole
+# with a separate heel block, a padded collar, brass lace hooks and crossed laces
+def boot(s, sx):
 	x = sx * 0.11
+	# a shoemaker's last: rounded-box cross-sections from heel to toe (z, top height, width), joined into
+	# one shell. The two sections either side of z 0.1 make the toe cap's seam
+	SECT = [(-0.105, 0.19, 0.12), (-0.09, 0.2, 0.136), (-0.05, 0.205, 0.146), (0.0, 0.2, 0.15), (0.04, 0.178, 0.152),
+		(0.075, 0.148, 0.152), (0.096, 0.126, 0.15), (0.104, 0.121, 0.15), (0.13, 0.108, 0.146), (0.155, 0.095, 0.13),
+		(0.172, 0.078, 0.104), (0.182, 0.06, 0.066)]
+	BOT = 0.042; N = 16
 	def build(p):
-		p.lathe([(0.06, 0.095, 0.1), (0.17, 0.092, 0.096)], "boot", seg=14, x=x, z=-0.005, hold=False)      # shaft
-		p.box((x, 0.06, 0.035), (0.15, 0.11, 0.25), "boot", 0.045)                                          # foot
-		p.ball((x, 0.058, 0.135), (0.075, 0.055, 0.08), "boot", 12, 8)                                       # round toe
+		def fn(b):
+			rings = []
+			for (z, h, w) in SECT:
+				cy = (BOT + h) / 2; hy = (h - BOT) / 2; hx = w / 2
+				ring = []
+				for i in range(N):
+					a = 2 * math.pi * i / N; ca, sa = math.cos(a), math.sin(a)
+					k = 0.32                                                    # boxy: a superellipse
+					ring.append(b.verts.new(G(x + hx * math.copysign(abs(ca) ** k, ca), cy + hy * math.copysign(abs(sa) ** k, sa), z)))
+				rings.append(ring)
+			for j in range(len(rings) - 1):
+				for i in range(N):
+					b.faces.new((rings[j][i], rings[j][(i + 1) % N], rings[j + 1][(i + 1) % N], rings[j + 1][i]))
+			b.faces.new(list(reversed(rings[0]))); b.faces.new(rings[-1])
+			bmesh.ops.recalc_face_normals(b, faces=b.faces)
+		p._merge(fn, "boot", Matrix(), None)
 	def col(c, n):
-		return "boot_dk" if (c.z > 0.03 and c.y > 0.07 and abs(c.x - x) < 0.03) else "boot"
-	return solid("boot", build, 0.007, 0.12, col)
-def soles(p):
-	for sx in (1, -1):
-		x = sx * 0.105
-		p.box((x, 0.016, 0.035), (0.148, 0.032, 0.29), "sole", 0.01)
-		for k in range(4): p.box((x, 0.12 - k * 0.016, 0.06 + k * 0.022), (0.074, 0.009, 0.011), "lace", 0.003)
-for s, sx in (("l", 1), ("r", -1)): pieces.append((boot(sx), "leg_" + s))
-sole_l = plain("soles_l", lambda p: [p.box((0.11, 0.016, 0.04), (0.168, 0.034, 0.32), "sole", 0.01)] + [p.box((0.11, 0.13 - k * 0.017, 0.085 + k * 0.024), (0.08, 0.01, 0.012), "lace", 0.003) for k in range(4)])
-sole_r = plain("soles_r", lambda p: [p.box((-0.11, 0.016, 0.04), (0.168, 0.034, 0.32), "sole", 0.01)] + [p.box((-0.11, 0.13 - k * 0.017, 0.085 + k * 0.024), (0.08, 0.01, 0.012), "lace", 0.003) for k in range(4)])
-pieces.append((sole_l, "leg_l")); pieces.append((sole_r, "leg_r"))
+		return "boot_dk" if 0.096 < c.z < 0.104 else "boot"
+	pu = kit.part("_boot"); build(pu)
+	for f in pu.bm.faces: f.smooth = True
+	me = bpy.data.meshes.new("boot_" + s); pu.bm.to_mesh(me); pu.bm.free()
+	ob = link(bpy.data.objects.new("boot_" + s, me))
+	m = ob.modifiers.new("soft", "SUBSURF"); m.levels = 1; m.render_levels = 1
+	upper = paint(bake(ob), col)
+	ub = bmesh.new(); ub.from_mesh(upper); ubvh = BVHTree.FromBMesh(ub); ub.free()
+	def top(dx, z, lift=0.004):
+		"""the boot's top surface at (x + dx, z), and its slope there"""
+		loc, nrm, i, d = ubvh.ray_cast(G(x + dx, 0.4, z), Gv(0, -1, 0))
+		g = gam(loc); n = gam(nrm) - gam(Vector()) if False else Vector((nrm.x, nrm.z, -nrm.y))
+		return g + n * lift, math.atan2(n.z, n.y)
+	def bits(p):
+		p.box((x, 0.024, 0.085), (0.168, 0.044, 0.2), "sole", 0.01, segs=2)          # forefoot sole
+		p.box((x, 0.026, -0.068), (0.162, 0.05, 0.09), "sole", 0.01, segs=2)         # heel block
+		p.box((x, 0.034, 0.005), (0.152, 0.03, 0.08), "sole", 0.006)                 # arch between them
+		for k in range(5): p.box((x, 0.004, 0.16 - k * 0.032), (0.17, 0.008, 0.012), "rubber", 0.002)   # tread lugs
+		# the toe cap's seam, a tongue up the instep, brass hooks either side and crossed laces down it
+		# on the boot's actual surface: a toe-cap seam across the foot, the tongue, brass hooks and crossed laces
+		for k in range(7):
+			dx = -0.06 + k * 0.02; c, a = top(dx, 0.11, 0.002)
+			p.box((c.x, c.y, c.z), (0.022, 0.006, 0.01), "boot_dk", 0.002, rot=gRx(a))
+		for k in range(4):
+			zz = 0.09 - k * 0.026
+			c, a = top(0.0, zz, 0.003)
+			p.box((c.x, c.y, c.z), (0.058, 0.006, 0.03), "boot_dk", 0.003, rot=gRx(a))                     # tongue, in steps
+			for side in (1, -1):
+				h, _ = top(side * 0.036, zz, 0.006)
+				p.ball((h.x, h.y, h.z), (0.0075, 0.0075, 0.0075), "brass", 8, 5)
+			l, _ = top(0.0, zz, 0.009)
+			p.box((l.x, l.y, l.z), (0.078, 0.007, 0.01), "lace", 0.003, rot=gRx(a) @ gRy(0.3 * (1 if k % 2 else -1)))
+	return upper, plain("boot_bits_" + s, bits)
+for s, sx in (("l", 1), ("r", -1)):
+	up, bits = boot(s, sx)
+	pieces.append((up, "leg_" + s)); pieces.append((bits, "leg_" + s))
 
 # ================================================================== 5. head: face, beard, hair, hat
 HS = 1.26; HY = 1.49
@@ -459,6 +514,9 @@ if len(ARGS) > 1:
 	for name, ang in (("head1", 0.0), ("head2", 0.55), ("head3", 1.25)):
 		snap(name, (0, 1.68, 0.04), (math.sin(ang) * 1.6, 1.72, math.cos(ang) * 1.6), (360, 360))
 	snap("hands", (0.25, 0.85, 0.02), (1.0, 0.95, 1.1), (360, 360))
+	snap("glove_side", (0.26, 0.78, 0.02), (1.3, 0.85, 0.0), (360, 360))
+	snap("boot_side", (0.11, 0.1, 0.04), (1.3, 0.25, 0.1), (360, 360))
+	snap("boot_34", (0.11, 0.1, 0.04), (0.9, 0.35, 0.9), (360, 360))
 	snap("shoulder", (0.2, 1.35, 0.0), (0.9, 1.45, 1.3), (360, 360))
 	pose(wave=True)
 	snap("wave", (0, 1.1, 0), (0.6, 1.2, 5.0), (360, 640))
