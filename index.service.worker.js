@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1792435129|4617257';
+const CACHE_VERSION = '1792440250|4599416';
 /** @type {string} */
 const CACHE_PREFIX = 'Arbor Simulator-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
