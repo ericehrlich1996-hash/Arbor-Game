@@ -55,6 +55,7 @@ func setup(g) -> void:
 	add_child(rope_mi)
 
 static func owned(id: String) -> bool:
+	if Jobs.ALL_OPEN and (id == "wedges" or id == "rope"): return true
 	return bool(Career.load().get(id, false))
 
 # ---------------------------------------------------------------- models

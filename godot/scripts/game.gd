@@ -210,7 +210,7 @@ func _close_computer() -> void:
 func start_job(idx: int) -> void:
 	if idx < 0 or idx >= Jobs.LIST.size(): return
 	var need: String = Jobs.LIST[idx].get("needs", "")
-	if need != "" and not bool(Career.load().get(need, false)): return
+	if need != "" and not Jobs.ALL_OPEN and not bool(Career.load().get(need, false)): return
 	job = Jobs.LIST[idx]
 	Sfx.play("ding")
 	var tw := create_tween()

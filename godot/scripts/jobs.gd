@@ -3,6 +3,10 @@
 class_name Jobs
 extends RefCounted
 
+## playtest switch: every job open from the start, and the wedges + bull rope are
+## lent for free so the gear-gated jobs work. Set false to bring the career locks back.
+const ALL_OPEN := true
+
 const EARL := {
 	id = "earl", n = 1, title = "Earl's dead ash", pay = 400, unlock = 0, look = "earl", who = "Earl",
 	text = "Old fella out on Birch Rd. Dead ash in the yard, leaning. Drop it, limb it, chip the brush, stack the rounds behind his shed.",
@@ -98,11 +102,11 @@ static func board(jobs_done: int) -> Array:
 	var out := []
 	var c := Career.load()
 	for j in LIST:
-		var open: bool = jobs_done >= int(j.unlock)
+		var open: bool = ALL_OPEN or jobs_done >= int(j.unlock)
 		var text: String = j.text if open else "Finish %d job%s first. Word gets around." % [j.unlock, "" if j.unlock == 1 else "s"]
 		# some jobs need gear you have to buy first
 		var need: String = j.get("needs", "")
-		if open and need != "" and not bool(c.get(need, false)):
+		if not ALL_OPEN and open and need != "" and not bool(c.get(need, false)):
 			open = false
 			text = j.text + ("  >> BUY THE FELLING WEDGES (UPGRADES TAB) BEFORE YOU TAKE THIS ONE." if need == "wedges" else "  >> BUY THE BULL ROPE (UPGRADES TAB) BEFORE YOU TAKE THIS ONE.")
 		out.append({title = j.title, pay = j.pay, open = open, text = text})
