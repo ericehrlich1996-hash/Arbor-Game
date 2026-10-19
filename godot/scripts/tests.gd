@@ -2566,11 +2566,29 @@ func _touch_job() -> void:
 	note("tool", g.player.tool)
 	g.touch._press("saw_start", true); g.touch._press("saw_start", false)
 	await wait(1.5)
-	g.touch._press("alt", true)
+	# double-tap on the right side, holding the second tap = right mouse (rev)
+	var dp := Vector2(s.x * 0.6, s.y * 0.5)
+	_tp(2, dp, true); await wait(0.05); _tp(2, dp, false); await wait(0.1)
+	_tp(3, dp + Vector2(8, 4), true)
 	await wait(0.5)
-	note("saw", [g.saw.on, Input.is_action_pressed("rev")])
+	note("double-tap holds rev", [g.saw.on, Input.is_action_pressed("rev")])
 	await shot("touch-saw")
-	g.touch._press("alt", false)
+	_tp(3, dp + Vector2(8, 4), false)
+	await wait(0.1)
+	note("released rev", Input.is_action_pressed("rev"))
+	# a single tap must not
+	_tp(4, dp, true); await wait(0.6); _tp(4, dp, false); await wait(0.1)
+	_tp(5, dp, true); await wait(0.1)
+	note("slow taps don't rev", Input.is_action_pressed("rev"))
+	_tp(5, dp, false)
+	# a stick touch whose lift never arrived must not make the next left-thumb touch a look
+	_tp(6, Vector2(s.x * 0.15, s.y * 0.75), true); await wait(0.1)
+	var y1: float = g.player.yaw
+	_tp(7, Vector2(s.x * 0.15, s.y * 0.75), true)
+	for k in range(8):
+		_td(7, Vector2(s.x * 0.15 + k * 10, s.y * 0.75 - k * 10)); await wait(0.03)
+	note("stale stick: new thumb moves, doesn't look", [g.touch.joy_id, snappedf(g.player.yaw - y1, 0.001)])
+	_tp(7, Vector2(s.x * 0.15, s.y * 0.75), false)
 
 func _tp(i: int, p: Vector2, down: bool) -> void:
 	var e := InputEventScreenTouch.new(); e.index = i; e.position = p; e.pressed = down

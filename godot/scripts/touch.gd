@@ -1,7 +1,8 @@
 ## Touch controls for phones and tablets. Turns on by itself on a touchscreen (or with ARBOR_TOUCH=1).
 ## Left thumb: a floating joystick (walk; push it to the edge to run; in the truck it's throttle and
 ## steering). Right thumb: drag anywhere to look. Buttons on the right do what the mouse and keys do:
-## USE is the left mouse button (cut, grab, cast, reel, swing), ALT the right (rev, set down, jig),
+## USE is the left mouse button (cut, grab, cast, reel, swing); a double-tap is the right (hold the second
+## tap down to keep it held: rev, set down, jig),
 ## E to talk/use/drive, jump/brake, kick, and two little arrows for the mouse wheel (cut angle, set the
 ## hook). A row of small buttons along the top right covers the rest, and the hotbar slots are tappable.
 ## Every press is fed straight to the game as the key, action or mouse button it stands for.
@@ -11,7 +12,9 @@ extends CanvasLayer
 var game
 var pad: Pad
 var joy_id := -1; var joy_o := Vector2.ZERO; var joy_v := Vector2.ZERO
-var look_id := -1; var look_last := Vector2.ZERO
+var look_id := -1; var look_last := Vector2.ZERO; var look_start := Vector2.ZERO; var look_t := 0
+var alt_id := -1                  # the finger holding a double-tap (right mouse) down
+var tap_t := -100000; var tap_p := Vector2.ZERO   # when and where the last quick tap ended
 var held := {}                    # touch index -> button id
 var btn_down := {}                # button id -> true while held
 var buttons: Array = []           # [{id, label, c (centre), r (radius), small}]
@@ -53,15 +56,14 @@ func _layout() -> void:
 	buttons = []
 	var br := Vector2(s.x - u * 1.25, s.y - u * 1.35)
 	buttons.append({id = "use", label = "USE", c = br, r = u * 0.82})
-	buttons.append({id = "alt", label = "ALT", c = br + Vector2(-u * 1.85, u * 0.2), r = u * 0.6})
 	buttons.append({id = "interact", label = "E", c = br + Vector2(-u * 0.25, -u * 1.75), r = u * 0.55})
 	buttons.append({id = "jump", label = "JUMP", c = br + Vector2(-u * 1.85, -u * 1.25), r = u * 0.5})
 	buttons.append({id = "kick", label = "KICK", c = br + Vector2(-u * 3.3, -u * 0.6), r = u * 0.45})
 	buttons.append({id = "wheel_up", label = "▲", c = br + Vector2(u * 0.8, -u * 3.1), r = u * 0.36})
 	buttons.append({id = "wheel_down", label = "▼", c = br + Vector2(u * 0.8, -u * 2.3), r = u * 0.36})
 	# the rest, small, along the top right under the money
-	var small := [["saw_start", "START SAW"], ["drag", "DRAG"], ["throw", "THROW"], ["drop", "DROP"], ["crouch", "CROUCH"], ["camera", "CAMERA"], ["unstick", "UNSTICK"], ["help", "HELP"]]
-	# two rows of four across the top right, under the money
+	var small := [["saw_start", "START SAW"], ["drag", "DRAG"], ["throw", "THROW"], ["drop", "DROP"], ["crouch", "CROUCH"], ["camera", "CAMERA"], ["unstick", "UNSTICK"]]
+	# rows of four across the top right, under the money
 	var w := u * 1.3; var h := u * 0.5; var gap := u * 0.12
 	for i in range(small.size()):
 		var col := i % 4; var row := i / 4
@@ -91,15 +93,28 @@ func _input(ev: InputEvent) -> void:
 			var b := _hit(ev.position)
 			if b != "":
 				held[ev.index] = b; _press(b, true)
-			elif ev.position.x < s.x * 0.42 and ev.position.y > s.y * 0.35 and joy_id == -1:
+			elif ev.position.x < s.x * 0.42 and ev.position.y > s.y * 0.35:
+				# the left thumb always gets the stick, even if an old touch never reported lifting
+				# (otherwise it would fall through to looking)
+				if joy_id != -1 and joy_id != ev.index: _move(Vector2.ZERO)
 				joy_id = ev.index; joy_o = ev.position; joy_v = Vector2.ZERO
-			elif look_id == -1:
+				if look_id == ev.index: look_id = -1
+			else:
 				if game.dlg != null: _press("interact", true); _press("interact", false); return
-				look_id = ev.index; look_last = ev.position
+				var now := Time.get_ticks_msec()
+				# a second tap close behind a quick first one is the right mouse button, held while it's down
+				if now - tap_t < 350 and ev.position.distance_to(tap_p) < minf(s.x, s.y) * 0.2 and alt_id == -1:
+					alt_id = ev.index; tap_t = -100000; _press("alt", true)
+				look_id = ev.index; look_last = ev.position; look_start = ev.position; look_t = now
 		else:
 			if held.has(ev.index):
 				_press(held[ev.index], false); held.erase(ev.index)
 			if ev.index == joy_id: joy_id = -1; joy_v = Vector2.ZERO; _move(Vector2.ZERO)
+			if ev.index == alt_id: alt_id = -1; _press("alt", false)
+			elif ev.index == look_id:
+				var now := Time.get_ticks_msec()
+				if now - look_t < 250 and ev.position.distance_to(look_start) < minf(s.x, s.y) * 0.05:
+					tap_t = now; tap_p = ev.position
 			if ev.index == look_id: look_id = -1
 		pad.queue_redraw()
 	elif ev is InputEventScreenDrag:
@@ -158,6 +173,7 @@ func _release_all() -> void:
 	for i in held: _press(held[i], false)
 	held.clear()
 	if joy_id != -1: joy_id = -1; _move(Vector2.ZERO)
+	if alt_id != -1: alt_id = -1; _press("alt", false)
 	look_id = -1
 
 func _process(_dt: float) -> void:
