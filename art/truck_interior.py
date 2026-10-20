@@ -99,19 +99,20 @@ def seg(x0, y0, x1, y1, w, col):
 	m = np.hypot(px - t * dx, py - t * dy) < w
 	at[m] = col
 def rect(x0, y0, x1, y1, col): at[y0:y1, x0:x1] = col
-def dial(cx, cy, r, val):
+def dial(cx, cy, r, val, needle=True):
 	disc(cx, cy, r + 5, hexc("#3a3a3a")); disc(cx, cy, r, hexc("#0d0d0d"))
 	for k in range(11):
 		a = math.radians(225 - k * 27)
 		ln = 0.22 if k % 2 == 0 else 0.12
 		seg(cx + math.cos(a) * r * (1 - ln), cy - math.sin(a) * r * (1 - ln), cx + math.cos(a) * r * 0.92, cy - math.sin(a) * r * 0.92, max(1.2, r * 0.03), hexc("#e8e4d8"))
-	a = math.radians(225 - val * 270)
-	seg(cx, cy, cx + math.cos(a) * r * 0.8, cy - math.sin(a) * r * 0.8, max(1.5, r * 0.045), hexc("#e0301e"))
+	if needle:                       # (the big two get live needles in the game)
+		a = math.radians(225 - val * 270)
+		seg(cx, cy, cx + math.cos(a) * r * 0.8, cy - math.sin(a) * r * 0.8, max(1.5, r * 0.045), hexc("#e0301e"))
 	disc(cx, cy, r * 0.09, hexc("#2a2a2a"))
 # the cluster (0,0)-(512,200): two big dials in the middle, two pairs of small ones either side
 rect(0, 0, 512, 200, hexc("#101010"))
 for cx, cy, r, v in ((128 + 72, 100, 70, 0.35), (384 - 72, 100, 70, 0.22)):
-	dial(cx, cy, r, v)
+	dial(cx, cy, r, v, needle=False)
 for i, cx in enumerate((42, 98, 414, 470)):
 	for j, cy in enumerate((52, 148)):
 		dial(cx, cy, 30, 0.2 + 0.15 * ((i + j) % 3))
