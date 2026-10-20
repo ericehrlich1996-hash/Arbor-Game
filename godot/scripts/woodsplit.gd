@@ -488,6 +488,66 @@ func _aim_hit() -> Dictionary:
 		best = {p = o + d * tt2}
 	return best
 
+## which way the split will run for a hit (the same rule _impact uses)
+func _split_dir(pc: Dictionary, h: Dictionary, cam_f: Vector3) -> float:
+	if pc.crack >= 0.0: return pc.crack
+	if pc.a1 - pc.a0 > TAU - 0.01:
+		if pc.check >= 0.0 and absf((h.l as Vector2).dot(Vector2(-sin(pc.check), cos(pc.check)))) < 0.06: return pc.check
+		return atan2(cam_f.z, cam_f.x)
+	var span: float = pc.a1 - pc.a0
+	return clampf(h.a, pc.a0 + span * 0.3, pc.a1 - span * 0.3)
+
+## the aim mark: a little blade-shaped line on the top of the wood where the axe head will land, laid the
+## way the split will run; green for a great spot, yellow for an off-centre one, red off the wood
+var aim_mark: MeshInstance3D
+var aim_mat: StandardMaterial3D
+func _update_aim_mark() -> void:
+	if aim_mark == null:
+		aim_mat = StandardMaterial3D.new()
+		aim_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		aim_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		aim_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		aim_mat.no_depth_test = true
+		aim_mat.render_priority = 2
+		var mb := MeshBuilder.new()
+		var w := Color.WHITE
+		# the edge: a thin bar along +x, pointed at both ends, with a dot in the middle
+		var L := 0.13; var W := 0.011
+		var pts := [Vector3(-L - 0.02, 0, 0), Vector3(-L, 0, -W), Vector3(L, 0, -W), Vector3(L + 0.02, 0, 0), Vector3(L, 0, W), Vector3(-L, 0, W)]
+		var ids := []
+		for p in pts: ids.append(mb.v(p, Vector3.UP, w))
+		var c := mb.v(Vector3.ZERO, Vector3.UP, w)
+		for k in range(pts.size()): mb.tri(c, ids[k], ids[(k + 1) % pts.size()])
+		var dot := []
+		for k in range(10): dot.append(mb.v(Vector3(cos(k * TAU / 10), 0, sin(k * TAU / 10)) * 0.024, Vector3.UP, w))
+		var c2 := mb.v(Vector3(0, 0.0005, 0), Vector3.UP, w)
+		for k in range(10): mb.tri(c2, dot[k], dot[(k + 1) % 10])
+		aim_mark = mb.instance(); aim_mark.material_override = aim_mat
+		aim_mark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		hub.add_child(aim_mark)
+	var vis := active and swing < 0.0 and recoil <= 0.0 and not pieces.is_empty()
+	aim_mark.visible = vis
+	if not vis: return
+	var h := _aim_hit()
+	var cam_f: Vector3 = -game.player.cam.global_transform.basis.z; cam_f.y = 0
+	if cam_f.length() < 0.01: cam_f = Vector3.FORWARD
+	cam_f = cam_f.normalized()
+	var a := atan2(cam_f.z, cam_f.x)
+	var col := Color(1.0, 0.35, 0.3, 0.85)
+	var y := 0.0
+	if h.has("pc"):
+		var pc: Dictionary = h.pc
+		a = _split_dir(pc, h, cam_f)
+		var good := false
+		if pc.crack >= 0.0: good = absf((h.l as Vector2).dot(Vector2(-sin(pc.crack), cos(pc.crack)))) < 0.05
+		elif pc.a1 - pc.a0 > TAU - 0.01: good = h.r / pc.R < 0.3 or (pc.check >= 0.0 and a == pc.check)
+		else: good = true
+		col = Color(0.45, 1.0, 0.45, 0.9) if good else Color(1.0, 0.85, 0.3, 0.9)
+	var pulse := 1.0 + sin(t * 6.0) * 0.08
+	aim_mat.albedo_color = col
+	var b := Basis(Vector3.UP, -a).scaled(Vector3.ONE * pulse)
+	aim_mark.global_transform = Transform3D(b, (h.p as Vector3) + Vector3(0, 0.006 + y, 0))
+
 func _toughness(pc: Dictionary) -> float:
 	var frac: float = (pc.a1 - pc.a0) / TAU
 	return pow(pc.R / 0.2, 1.3) * (1.7 if pc.knot else 1.0) * (0.45 + 0.55 * sqrt(frac))
@@ -665,7 +725,9 @@ func step(dt: float) -> void:
 	if carrying and carry_node:
 		carry_node.position = Vector3(0, -0.66 + sin(p.bob) * 0.01, -0.62)
 		_hold_round_hands()
-	if not active: return
+	if not active:
+		if aim_mark: aim_mark.visible = false
+		return
 	# step away if you walk off
 	if Input.get_vector("move_left", "move_right", "move_fwd", "move_back").length() > 0.5:
 		stop_chopping(); return
@@ -679,6 +741,7 @@ func step(dt: float) -> void:
 			swing = -1.0
 			if recoil <= 0.0: recoil = 0.22
 	_pose_axe(dt)
+	_update_aim_mark()
 	# camera shake
 	shake = maxf(0.0, shake - dt * 3.5)
 	p.cam.h_offset = (randf() - 0.5) * 0.04 * shake

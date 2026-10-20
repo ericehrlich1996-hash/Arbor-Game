@@ -1916,8 +1916,20 @@ func _hubchop() -> void:
 			var full: bool = pc.a1 - pc.a0 > TAU - 0.01
 			var off: Vector2 = pc.off
 			var aimp: Vector3 = ws.block_c + Vector3(off.x, pc.h, off.y) + (Vector3.ZERO if full else Vector3(cos(mid), 0, sin(mid)) * pc.R * 0.5)
+			if rnd == 0 and guard == 1:
+				look_at_point(aimp + Vector3(pc.R * 0.75, 0, 0))
+				await wait(0.1)
+				note("aim_mark_off", [ws.aim_mark.visible, ws.aim_mat.albedo_color])
+				await shot("chop-aim-off")
+				look_at_point(aimp + Vector3(pc.R * 1.8, 0, 0.1))
+				await wait(0.1)
+				note("aim_mark_miss", [ws.aim_mark.visible, ws.aim_mat.albedo_color])
+				await shot("chop-aim-miss")
 			look_at_point(aimp)
 			await wait(0.05)
+			if rnd == 0 and guard == 1:
+				note("aim_mark_centre", [ws.aim_mark.visible, ws.aim_mat.albedo_color])
+				await shot("chop-aim")
 			ws.press()
 			await wait(0.42 if guard % 3 else 0.7)
 			if rnd == 0 and guard == 1: await shot("chop-windup")
@@ -2961,7 +2973,9 @@ func _storm_preview() -> void:
 		["falls", Vector3(s * 4, 0.5, rz - 1.0), Vector3(-s * 3, 0.0, rz + 8.0)],
 		["under", Vector3(s * 1.0, -1.6, rz - 9.0), Vector3(0, -0.5, rz + 6.0)],
 		["sheriff", Vector3(s * 40, 1.8, rz - 2.0), Vector3(s * 44, 1.3, rz + 4.0)],
-		["roots", Vector3(s * 44, 2.5, rz + 15.0), Vector3(s * 39, 0.8, rz + 9.0)]]
+		["roots", Vector3(s * 44, 2.5, rz - 4.0), Vector3(s * 39, 0.8, rz + 7.7)],
+		["fallsup", Vector3(s * 3.0, 1.6, rz + 1.5), Vector3(0, 7.0, rz + 14.0)],
+		["mountain", Vector3(-s * 30, 2.0, rz - 6.0), Vector3(s * 10, 4.0, rz + 10.0)]]
 	var only := OS.get_environment("STORM_VIEWS")
 	for v in views:
 		if only != "" and not only.split(",").has(v[0]): continue

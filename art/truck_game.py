@@ -12,8 +12,8 @@ from mathutils import Vector, Matrix
 A = sys.argv[sys.argv.index("--") + 1:]
 SRC, OUT = A[0], A[1]
 PREV = A[2] if len(A) > 2 else ""
-BODY_TRIS = 150000          # a computer's budget (phones would want ~40k)
-WHEEL_TRIS = 6000
+BODY_TRIS = int(os.environ.get("BODY_TRIS", "0"))     # 0 = keep Meshy's full mesh (150000 was a computer budget, ~40k for phones)
+WHEEL_TRIS = int(os.environ.get("WHEEL_TRIS", "0"))
 bpy.ops.wm.open_mainfile(filepath=SRC)
 body = bpy.data.objects["truck_body"]; inter = bpy.data.objects["truck_interior"]
 for o in list(bpy.data.objects):
@@ -59,6 +59,7 @@ sel_faces(body, wheel_any)
 bpy.ops.object.mode_set(mode="EDIT"); bpy.ops.mesh.delete(type="FACE"); bpy.ops.object.mode_set(mode="OBJECT")
 
 def decimate(ob, tris):
+	if tris <= 0: return
 	bpy.context.view_layer.objects.active = ob
 	for o in bpy.data.objects: o.select_set(o is ob)
 	m = ob.modifiers.new("d", "DECIMATE"); m.ratio = min(1.0, tris / max(1, len(ob.data.polygons)))
