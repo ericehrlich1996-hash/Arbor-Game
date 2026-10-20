@@ -251,6 +251,7 @@ func step(dt: float) -> void:
 	# the fish
 	var fp: Vector3 = hp
 	var fdir := fdir_s
+	var line_from := Vector3.ZERO
 	if not f.is_empty() and (st == "fight" or f.has("pos")):
 		if int(f.get("uid", -2)) != fish_uid: _new_fish(f); last_fp = hook_point(f.get("pos", lure))
 		if st == "fight":
@@ -258,7 +259,7 @@ func step(dt: float) -> void:
 			fp = hook_point(w)
 			var ang: float = float(f.ang) + PI / 2.0 * signf(float(f.run) + 0.001)
 			fdir = Vector3(sin(ang), 0, cos(ang)) if absf(float(f.run)) > 0.5 else (game.player.global_position - w).normalized()
-			_line(Vector3(w.x, wy, w.z) + (game.player.global_position - w).normalized() * 3.0, fp + Vector3(0.0, 0.02, 0))
+			line_from = Vector3(w.x, wy, w.z) + (game.player.global_position - w).normalized() * 3.0
 		else:
 			var p: Vector3 = f.pos
 			fp = hook_point(p)
@@ -286,6 +287,10 @@ func step(dt: float) -> void:
 		var yaw: float = yaw_s
 		var wig := sin(t * (14.0 if st == "fight" else 6.0)) * (0.16 if st == "fight" else 0.07)
 		fish_node.global_transform = Transform3D(Basis(Vector3.UP, yaw + wig).scaled(Vector3.ONE * 1.5), fp)      # a touch bigger than life, so you can read it
+		# hooked: the line runs into its mouth
+		if st == "fight" and fish_node.get_child_count() > 0:
+			var mi := fish_node.get_child(0) as Node3D
+			_line(line_from, fish_node.global_transform * (mi.transform * (mi.get_meta("mouth", Vector3(0.46, 0, 0)) as Vector3)))
 	elif fish_node:
 		fish_node.visible = false
 	# the school wanders round near the lure

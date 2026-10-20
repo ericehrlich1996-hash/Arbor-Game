@@ -68,6 +68,7 @@ var music: AudioStreamPlayer
 var music_k := 0.0
 var under: Underwater
 var reel_snd: AudioStreamPlayer
+var strain_snd: AudioStreamPlayer
 var drag_snd: AudioStreamPlayer
 var line_out := 0.0               # how fast the fish is taking line (m/s), for the drag
 var _creak_t := 0.0
@@ -102,6 +103,7 @@ func setup(g) -> void:
 	_build_ui()
 	reel_snd = AudioStreamPlayer.new(); reel_snd.stream = Sfx.sounds.get("reel"); reel_snd.volume_db = -80; add_child(reel_snd)
 	drag_snd = AudioStreamPlayer.new(); drag_snd.stream = Sfx.sounds.get("drag"); drag_snd.volume_db = -80; add_child(drag_snd)
+	strain_snd = AudioStreamPlayer.new(); strain_snd.stream = Sfx.sounds.get("strain"); strain_snd.volume_db = -80; add_child(strain_snd)
 	under = Underwater.new(); under.name = "Underwater"; add_child(under)
 	under.setup(self)
 	music = AudioStreamPlayer.new(); music.name = "Music"
@@ -529,14 +531,18 @@ func step(dt: float) -> void:
 ## line - louder and higher the harder it pulls - and the rod creaking when it's close to breaking
 func _reel_sounds(dt: float) -> void:
 	var winding: bool = rod.visible and reel_held and (state == "wait" or state == "fight" or state == "snag")
-	var reel_v := 0.0; var drag_v := 0.0
+	var reel_v := 0.0; var drag_v := 0.0; var strain_v := 0.0
 	if winding:
-		reel_v = 0.55
-		reel_snd.pitch_scale = clampf(1.15 - tension * 0.35, 0.7, 1.2) if state == "fight" else 1.15
+		# soft clicks; they slow as the reel labours against a fish
+		reel_v = 0.4
+		reel_snd.pitch_scale = clampf(1.1 - tension * 0.3, 0.75, 1.1) if state == "fight" else 1.1
 	if rod.visible and state == "fight":
 		var buzz := clampf(line_out / 2.0, 0.0, 1.0) * clampf(0.35 + tension, 0.0, 1.2)
-		var strain := clampf((tension - 0.75) / 0.4, 0.0, 1.0)
-		drag_v = maxf(buzz, strain * 0.6)
+		drag_v = buzz
+		# in the red: the line itself strains, a whine that climbs and grows as it nears breaking
+		if tension >= 1.0:
+			strain_v = 0.35 + clampf((tension - 1.0) / 0.3, 0.0, 1.0) * 0.45
+			strain_snd.pitch_scale = 0.95 + clampf((tension - 1.0) / 0.3, 0.0, 1.0) * 0.3
 		drag_snd.pitch_scale = 0.85 + clampf(tension, 0.0, 1.3) * 0.35
 		_creak_t -= dt
 		if tension > 0.95 and _creak_t <= 0.0:
@@ -544,7 +550,7 @@ func _reel_sounds(dt: float) -> void:
 			Sfx.play("creak", 0.35 + (tension - 0.95) * 1.5, randf_range(1.3, 1.6))
 	else:
 		line_out = 0.0
-	for e in [[reel_snd, reel_v], [drag_snd, drag_v]]:
+	for e in [[reel_snd, reel_v], [drag_snd, drag_v], [strain_snd, strain_v]]:
 		var p: AudioStreamPlayer = e[0]; var v: float = e[1]
 		if p.stream == null: continue
 		if v > 0.01 and not p.playing: p.play()
@@ -652,8 +658,19 @@ func _rod_mb() -> MeshBuilder:
 
 ## a fish to hold up: body, tail, fins, an eye, coloured dark on top and pale underneath
 ## the fish as a ready-to-place mesh, its real length: a modelled one from models/fish/<species>.glb when
-## there is one (built 1 m long, nose along +x), otherwise the one put together in code below
+## there is one (built 1 m long, nose along +x), otherwise the one put together in code below.
+## Its "mouth" meta is where the line goes in, in the mesh's own space
 static var _fish_meshes := {}
+static var _fish_mouths := {}
+static func _find_mouth(m: Mesh) -> Vector3:
+	var vs: PackedVector3Array = m.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var mx := -INF
+	for v in vs: mx = maxf(mx, v.x)
+	var ys := []
+	for v in vs:
+		if v.x > mx - 0.02: ys.append(v.y)
+	ys.sort()
+	return Vector3(mx - 0.015, ys[ys.size() / 2] if not ys.is_empty() else 0.0, 0.0)
 func fish_mesh(name: String, cm: float) -> MeshInstance3D:
 	var key := name.to_lower().replace(" ", "_")
 	if not _fish_meshes.has(key):
@@ -666,10 +683,16 @@ func fish_mesh(name: String, cm: float) -> MeshInstance3D:
 			if not found.is_empty(): m = (found[0] as MeshInstance3D).mesh
 			inst.free()
 		_fish_meshes[key] = m
+		if m: _fish_mouths[key] = _find_mouth(m)
 	var mesh: Mesh = _fish_meshes[key]
-	if mesh == null: return _fish_model(name, cm).instance()
+	var L := clampf(cm / 100.0, 0.12, 1.3)
+	if mesh == null:
+		var built := _fish_model(name, cm).instance()
+		built.set_meta("mouth", Vector3(0.46 * L, -0.02 * L, 0.0))
+		return built
 	var mi := MeshInstance3D.new(); mi.mesh = mesh
-	mi.scale = Vector3.ONE * clampf(cm / 100.0, 0.12, 1.3)
+	mi.scale = Vector3.ONE * L
+	mi.set_meta("mouth", _fish_mouths[key])
 	return mi
 
 func _fish_model(name: String, cm: float) -> MeshBuilder:

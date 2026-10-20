@@ -162,7 +162,8 @@ func _build() -> void:
 	for i in range(12): _noise(b, 0.025, 1400, 3, 0.35 * (1.0 - i / 14.0), "bandpass", i * 0.055)
 	sounds.woodpecker = _wav(b)
 	# the fishing reel: the soft ticking whir of winding line in, and the angry buzz of the drag as a fish takes line
-	sounds.reel = _ratchet_loop(34.0, 1700.0, 0.9, 0.3)
+	sounds.reel = _ratchet_loop(12.0, 2300.0, 0.55, 0.012)          # soft, separate clicks, barely any whir
+	sounds.strain = _strain_loop()
 	sounds.drag = _ratchet_loop(120.0, 3100.0, 0.5, 0.22)
 
 ## a bird call: a few quick whistled sweeps, each variant a different song
@@ -308,6 +309,28 @@ func _ratchet_loop(rate: float, band: float, click: float, whir: float) -> Audio
 		for i in range(n):
 			var y := flt.run(raw[i])
 			if pass_i == 1: b[i] = y * 1.4
+	return _wav(b, true)
+
+## a taut line singing under too much load: a thin whine that wavers, over a faint high hiss (1 s, whole
+## numbers of cycles of everything, so it loops without a seam)
+func _strain_loop() -> AudioStreamWAV:
+	var b := _buf(1.0)
+	var n := b.size()
+	var raw := PackedFloat32Array(); raw.resize(n)
+	for i in range(n): raw[i] = randf() * 2 - 1
+	var flt := Biquad.new("bandpass", 2600.0, 9.0, RATE)
+	var hiss := PackedFloat32Array(); hiss.resize(n)
+	for pass_i in range(2):
+		for i in range(n):
+			var y := flt.run(raw[i])
+			if pass_i == 1: hiss[i] = y
+	var ph := 0.0; var ph2 := 0.0
+	for i in range(n):
+		var t := float(i) / RATE
+		ph += (740.0 + 9.0 * sin(t * TAU * 6.0)) / RATE          # the whine, with a nervous vibrato
+		ph2 += 1480.0 / RATE
+		var flutter := 0.75 + 0.25 * sin(t * TAU * 11.0) * sin(t * TAU * 3.0)
+		b[i] = (sin(ph * TAU) * 0.22 + sin(ph2 * TAU) * 0.06) * flutter + hiss[i] * 0.5
 	return _wav(b, true)
 
 func _grit_loop(freq: float) -> AudioStreamWAV:

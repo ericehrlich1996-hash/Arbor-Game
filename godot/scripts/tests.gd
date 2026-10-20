@@ -2874,3 +2874,30 @@ func _earl_bones() -> void:
 				var ang: float = e.skel.get_bone_global_pose(i).basis.get_rotation_quaternion().angle_to(e.skel.get_bone_global_rest(i).basis.get_rotation_quaternion())
 				most[b] = maxf(float(most.get(b, 0.0)), snappedf(rad_to_deg(ang), 0.1))
 		note(st, most)
+
+## hooked fish underwater: where the line meets each one (it should run into the mouth), mid-fight
+func _dock_fight() -> void:
+	await wait(1.0)
+	var c := Career.load(); c.rod = true; Career.save(c)
+	g._start()
+	var lc: Vector3 = (g.lake_logs[0] as WoodPiece).center_world()
+	var sz: float = g.world._shore_z(lc.x + 12.0)
+	var beach := Vector3(lc.x + 12.0, 0, sz - 1.5)
+	g.player.teleport(Vector3(beach.x, g.world.H(beach.x, beach.z) + 0.05, beach.z))
+	look_at_point(Vector3(beach.x, g.world.H(beach.x, beach.z) + 1.0, beach.z + 20.0))
+	await wait(0.4)
+	g.equip("rod")
+	g.fishing.press(true); await wait(0.7); g.fishing.press(false)
+	await wait(2.5)
+	for n in ["Bluegill", "Largemouth bass", "Northern pike", "Rock bass"]:
+		g.fishing.fish = {name = n, len = {"Bluegill": 22.0, "Largemouth bass": 46.0, "Northern pike": 80.0, "Rock bass": 26.0}[n], kg = 1.0, str = 0.2, spd = 1.0,
+			pos = g.fishing.lure, phase = "bite", nibbles = 0, next = 5.0, uid = n.hash()}
+		await wait(0.3)
+		g.fishing._strike()
+		for k in range(3):
+			await wait(0.9)
+			await _uwgrab("fight-%s-%d" % [n.replace(" ", "_"), k])
+		note(n, g.fishing.state)
+		g.fishing._lost("test")
+		g.fishing.state = "wait"
+		await wait(0.5)
