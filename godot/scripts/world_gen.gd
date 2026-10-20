@@ -561,9 +561,9 @@ var _edge := FastNoiseLite.new()
 func forestness(x: float, z: float) -> float:
 	if _edge.seed != seed + 5: _edge.seed = seed + 5; _edge.frequency = 0.035
 	if job == "storm":
-		# woods right up to the road's shoulders, open over the creek
-		var dd := minf(absf(z - road_z) - 6.0, creek_d(x, z) - 3.5) + _edge.get_noise_2d(x, z) * 3.0
-		return clampf((dd + 1.0) / 7.0, 0.0, 1.0)
+		# a mown verge and a strip of rough meadow either side of the road, then the woods; open along the creek
+		var dd := minf(absf(z - road_z) - 12.0, creek_d(x, z) - 6.0) + _edge.get_noise_2d(x, z) * 4.0
+		return clampf((dd + 2.0) / 9.0, 0.0, 1.0)
 	var dx := maxf(maxf(-46.0 - x, x - 46.0), 0.0)
 	var dz := maxf(maxf(-48.0 - z, z - 52.0), 0.0)
 	var d := Vector2(dx, dz).length()
@@ -1156,7 +1156,12 @@ func _build_falls(root: Node3D) -> void:
 	var grad := Gradient.new(); grad.set_color(0, Color(1, 1, 1, 0.22)); grad.set_color(1, Color(1, 1, 1, 0.0))
 	mist.color_ramp = grad
 	var qm := QuadMesh.new(); qm.size = Vector2(1.3, 1.3)
+	var puff := GradientTexture2D.new()
+	puff.fill = GradientTexture2D.FILL_RADIAL; puff.fill_from = Vector2(0.5, 0.5); puff.fill_to = Vector2(1.0, 0.5)
+	var pg := Gradient.new(); pg.set_color(0, Color(1, 1, 1, 1)); pg.set_color(1, Color(1, 1, 1, 0)); puff.gradient = pg
+	puff.width = 64; puff.height = 64
 	var mm := StandardMaterial3D.new(); mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mm.albedo_texture = puff
 	mm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; mm.vertex_color_use_as_albedo = true
 	mm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES; mm.albedo_color = Color(0.94, 0.96, 0.96)
 	qm.material = mm
@@ -1171,10 +1176,12 @@ func _build_falls(root: Node3D) -> void:
 		var u := r.randf()
 		var hor := 1.0 - pow(1.0 - u, 2.2)
 		var p := Vector3(lerpf(lip.x, foot.x, hor), lerpf(lip.y, foot.y, pow(u, 1.6)), lerpf(lip.z, foot.z, hor))
-		var off := across * r.randf_range(-3.4, 3.4) + face_n * r.randf_range(0.6, 1.6)
+		var a := r.randf_range(-3.4, 3.4)
+		var behind := absf(a) < 1.7                         # right behind the sheet: smaller, and further back
+		var off := across * a + face_n * (r.randf_range(1.3, 2.2) if behind else r.randf_range(0.6, 1.6))
 		var q := p + off
 		var gy := H(q.x, q.z)
-		var sz := r.randf_range(0.7, 1.7)
+		var sz := r.randf_range(0.45, 0.85) if behind else r.randf_range(0.7, 1.7)
 		rk.blob(q.x, maxf(q.y - 0.4, gy + sz * 0.3), q.z, sz, wet if absf((off.dot(across))) < 1.6 else grey, r, 1.2)
 	for k in range(14):
 		var a := r.randf() * TAU
@@ -1230,7 +1237,7 @@ func _build_cruiser(root: Node3D) -> void:
 	for sz: float in [-1.0, 1.0]:
 		mb.box(0.32, 1.35, sz * 0.835, 0.95, 0.4, 0.02, glass)
 		mb.box(-0.72, 1.35, sz * 0.835, 0.9, 0.4, 0.02, glass)
-		mb.sphere(-0.2, 0.86, sz * 0.94, 0.14, 0.14, 0.02, gold, 10, 4)             # the star on the door
+		mb.sphere(-0.82, 0.9, sz * 0.94, 0.12, 0.12, 0.02, gold, 10, 4)             # the star on the back door
 		for wx: float in [1.5, -1.5]:
 			mb.push(Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(wx, 0.36, sz * 0.82)))
 			mb.cyl(0, -0.13, 0, 0.36, 0.36, 0.26, tire, 14, true)
@@ -1257,7 +1264,7 @@ func _build_cruiser(root: Node3D) -> void:
 	for sz: float in [-1.0, 1.0]:
 		var lbl := Label3D.new(); lbl.text = "SHERIFF"; lbl.font_size = 64; lbl.pixel_size = 0.0042
 		lbl.modulate = Color.html("#2f3a2e"); lbl.outline_size = 0
-		lbl.transform = xf * Transform3D(Basis(Vector3.UP, PI if sz > 0 else 0.0), Vector3(0.45, 0.98, sz * 0.935))
+		lbl.transform = xf * Transform3D(Basis(Vector3.UP, 0.0 if sz > 0 else PI), Vector3(0.42, 1.0, sz * 0.955))
 		root.add_child(lbl)
 	_static_box(root, Vector3(c.x, gy + 0.9, c.z), Vector3(1.9, 1.8, 5.0), float(c.yaw) + PI / 2)
 

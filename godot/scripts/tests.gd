@@ -2954,15 +2954,130 @@ func _storm_preview() -> void:
 	var cam := Camera3D.new(); cam.fov = 60; g.level_root.add_child(cam); cam.make_current()
 	var views := [
 		["arrive", Vector3(s * 56, 2.4, rz - 1.0), Vector3(s * 25, 1.0, rz)],
-		["high", Vector3(s * 48, 16.0, rz - 22.0), Vector3(s * 20, 0.0, rz + 2.0)],
+		["high", Vector3(s * 34, 22.0, rz - 3.0), Vector3(s * 12, 0.0, rz + 2.0)],
+		["fallsclose", Vector3(s * 2.5, 1.7, rz + 3.6), Vector3(-s * 3.5, -1.5, rz + 8.5)],
+		["door", Vector3(s * 45.5, 1.2, rz + 9.5), Vector3(s * 45.5, 0.9, rz + 5.2)],
 		["bridge", Vector3(s * 14, 2.2, rz - 3.0), Vector3(-s * 6, 1.5, rz + 6.0)],
 		["falls", Vector3(s * 4, 0.5, rz - 1.0), Vector3(-s * 3, 0.0, rz + 8.0)],
 		["under", Vector3(s * 1.0, -1.6, rz - 9.0), Vector3(0, -0.5, rz + 6.0)],
 		["sheriff", Vector3(s * 40, 1.8, rz - 2.0), Vector3(s * 44, 1.3, rz + 4.0)],
 		["roots", Vector3(s * 44, 2.5, rz + 15.0), Vector3(s * 39, 0.8, rz + 9.0)]]
+	var only := OS.get_environment("STORM_VIEWS")
 	for v in views:
+		if only != "" and not only.split(",").has(v[0]): continue
 		var at: Vector3 = v[1]; var to: Vector3 = v[2]
-		cam.global_position = Vector3(at.x, w.H(at.x, at.z) + at.y, at.z) if v[0] != "under" else Vector3(at.x, w.road_y() + at.y, at.z)
+		cam.global_position = Vector3(at.x, w.H(at.x, at.z) + at.y, at.z) if not ["under", "fallsclose", "high"].has(v[0]) else Vector3(at.x, w.road_y() + at.y, at.z)
 		cam.look_at(Vector3(to.x, w.road_y() + to.y, to.z))
 		await wait(0.5)
 		await shot("storm-" + v[0])
+
+## the whole storm job, scripted: talk to the sheriff, limb all four trees, buck the trunks, chip the brush,
+## carry the rounds off the road, get paid
+func _storm_job() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(2.0)
+	g.talk_to_earl()
+	for i in range(20):
+		await wait(0.05)
+		if g.dlg != null: g.advance_dialog()
+	note("talked", g.objs.talk)
+	g.update_objectives()
+	note("counts_start", g.counts)
+	for st in g.storm_pieces:
+		if is_instance_valid(st):
+			for id in st.limbs.duplicate(): Lumber.limb_off(g, st, id)
+	await wait(1.5)
+	var guard := 0
+	while guard < 120:
+		guard += 1
+		var trunks: Array = g.pieces().filter(func(b): return b.kind == "trunk" and b.mass > Wood.LIFT_MAX * 0.92)
+		if trunks.is_empty(): break
+		var b: WoodPiece = trunks[0]
+		var r := Wood.r_at(b.T, b.span.y - 0.3)
+		var L := clampf(52.0 / (Wood.RHO * PI * r * r), 0.25, 2.0)
+		var y := b.span.y - L
+		if y <= b.span.x + 0.1: y = (b.span.x + b.span.y) / 2
+		var c := {kind = "piece", type = "kerf", piece = b, part = {trunk = true}, e = Vector3(0, y, 0), f = Vector3.RIGHT, n = Vector3.UP, s = 1.0, exit = 1.0, done = true}
+		Lumber.buck(g, b, c)
+		await wait(0.1)
+	await wait(2.0)
+	g.update_objectives()
+	note("counts_after_buck", g.counts)
+	g.toggle_chipper()
+	await wait(0.8)
+	var hop: Vector3 = g.chipper.hopper_world() + (g.chipper.global_transform.basis * Vector3(0, 0, -1.6))
+	for b in g.pieces().filter(func(b): return b.kind == "limb" or b.kind == "wedge" or (b.kind == "trunk" and b.brushy())):
+		await _carry_to(b, hop)
+		look_at_point(g.chipper.hopper_world())
+		await wait(0.1)
+		g.interact()
+		await wait(0.2)
+	var tt := 0.0
+	while (g.haul.feeding != null or not g.haul.feed_queue.is_empty()) and tt < 120:
+		await wait(0.5); tt += 0.5
+	g.update_objectives()
+	note("counts_after_chip", g.counts)
+	note("limbed", g.objs.limbed)
+	# every round on the road: carry it to the nearest shoulder
+	var rz: float = g.world.road_z
+	for pass_i in range(3):
+		for b in g.pieces().filter(func(b): return b.kind == "trunk" and not g.in_pile(b)):
+			var c: Vector3 = b.center_world()
+			var side := 1.0 if c.z > rz else -1.0
+			var dest := Vector3(c.x, 0, rz + side * 7.0)
+			await _carry_to(b, dest - Vector3(0, 0, side * 1.5))
+			look_at_point(dest + Vector3(0, 0.3, 0))
+			g.haul.drop_all()
+			await wait(0.2)
+		await wait(1.0)
+	await wait(2.0)
+	for b in g.pieces().filter(func(b): return b.kind == "trunk" and not g.in_pile(b)):
+		var c: Vector3 = b.center_world()
+		note("left", [snappedf(c.x, 0.1), snappedf(c.y - g.world.H(c.x, c.z), 0.1), snappedf(c.z - rz, 0.1), snappedf(b.mass, 0.1), g.haul.liftable(b), b.mode])
+	g.update_objectives()
+	note("counts_cleared", g.counts)
+	note("done_frac", snappedf(g.done_frac, 0.01))
+	note("objs", g.objs)
+	await shot("storm-cleared")
+	var e: Vector3 = g.earl.global_position + Vector3(1.5, 0, 0)
+	g.player.teleport(Vector3(e.x, g.world.H(e.x, e.z) + 0.05, e.z))
+	g.talk_to_earl()
+	for i in range(20):
+		await wait(0.05)
+		if g.dlg != null: g.advance_dialog()
+	await wait(0.5)
+	note("paid", g.objs.paid)
+	await shot("storm-summary")
+
+## the storm job's frame cost on the phone settings (and the Earl job's, for comparison: run mobile_perf)
+func _storm_perf() -> void:
+	await _mobile_perf()
+
+## what each part of the storm scene costs to draw: hide one at a time and see what the frame drops by
+func _storm_cost() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(3.0)
+	var measure := func() -> Array:
+		var dc := 0.0; var tri := 0.0
+		for k in range(4):
+			await get_tree().process_frame
+			dc += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+			tri += Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
+		return [int(dc / 4), int(tri / 4000)]
+	var base: Array = await measure.call()
+	note("all", base)
+	var groups := {}
+	for c in g.level_root.get_children():
+		if not (c is Node3D) or not (c as Node3D).visible: continue
+		var key: String = c.get_class() + ":" + String(c.name).rstrip("0123456789@").left(14)
+		if c is WoodPiece: key = "WoodPiece"
+		if not groups.has(key): groups[key] = []
+		groups[key].append(c)
+	note("groups", groups.size())
+	for key in groups:
+		for c in groups[key]: (c as Node3D).visible = false
+		var m: Array = await measure.call()
+		for c in groups[key]: (c as Node3D).visible = true
+		if base[0] - m[0] > 6 or base[1] - m[1] > 8: note(key + " x%d" % groups[key].size(), [base[0] - m[0], base[1] - m[1]])

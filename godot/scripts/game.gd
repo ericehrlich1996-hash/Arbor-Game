@@ -355,6 +355,8 @@ func set_detail(d: int) -> void:
 	var k := 1.0 if d == 1 else 0.55
 	RenderingServer.global_shader_parameter_set(&"detail_k", k)
 	if level_root == null: return
+	# down the long straight county road you'd see miles of woods: draw them shorter there, the haze hides it
+	if world != null and world.job == "storm": k *= 0.7
 	for n in level_root.find_children("*", "GeometryInstance3D", true, false):
 		if n.has_meta("vr"):
 			var vr: Vector2 = n.get_meta("vr")
@@ -1293,7 +1295,7 @@ func in_pile(b: WoodPiece) -> bool:
 	if world.job == "storm":
 		# off the road: in the ditch or the trees either side (not over the bridge, not dumped in the creek)
 		var c := b.center_world()
-		return absf(c.z - world.road_z) > 4.4 and world.creek_d(c.x, c.z) > 3.2
+		return absf(c.z - world.road_z) > 3.9 and world.creek_d(c.x, c.z) > 3.2      # (the asphalt is 7 m wide)
 	if trailer: return trailer.in_bed(b.center_world())
 	var p := world.pile
 	var c := b.center_world()
