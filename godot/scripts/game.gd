@@ -110,6 +110,7 @@ func _ready() -> void:
 	else:
 		if test_name.begins_with("hale"): job = Jobs.HALE
 		if test_name.begins_with("dock"): job = Jobs.DOCK
+		if test_name.begins_with("storm"): job = Jobs.STORM
 		new_level(randi() % 1000000)
 	Sfx.start_ambience()
 	_prewarm_shaders()
@@ -438,8 +439,12 @@ func new_level(variant: int) -> void:
 	timelapse = Timelapse.new(); timelapse.name = "Timelapse"; level_root.add_child(timelapse)
 	timelapse.setup(self)
 	var logs_job: bool = job.get("kind", "") == "logs"
-	objs = {talk = false, felled = logs_job, limbed = false, stacked = false, tarped = trailer == null or logs_job, hauled = not logs_job, paid = false}
+	var storm_job: bool = job.get("kind", "") == "storm"
+	objs = {talk = false, felled = logs_job or storm_job, limbed = false, stacked = false, tarped = trailer == null or logs_job, hauled = not logs_job, paid = false}
 	if logs_job: _spawn_lake_logs()
+	if storm_job:
+		_spawn_storm_trees()
+		if OS.get_environment("ARBOR_WEATHER") == "": weather.force("overcast")       # the grey morning after
 	called_pay = false; called_tarp = false
 	update_objectives()
 
@@ -447,6 +452,8 @@ func new_level(variant: int) -> void:
 func _build_path() -> void:
 	var s := world.s
 	var ctrl := [Vector2(s * 70, world.road_z - 1.8), Vector2(s * 40, world.road_z - 1.8), Vector2(s * 22, world.road_z - 1.6)]
+	if world.job == "storm":       # up the county road and pull up short of the trees
+		ctrl = [Vector2(s * 115, world.road_z - 1.7), Vector2(s * 95, world.road_z - 1.7), Vector2(s * 75, world.road_z - 1.7)]
 	for i in range(5): ctrl.append(world.drive[i])
 	path = WorldGen._spline(ctrl, 10)
 	path_len = [0.0]
@@ -952,6 +959,44 @@ func _spawn_lake_logs() -> void:
 		p.mass *= 3.0                    # a century in the lake: soaked through, far too heavy to lift or drag by hand
 		lake_logs.append(p)
 
+## the sheriff's job: the trees the storm put down across the road, lying where they fell, limbs and all
+## (the ones that would be underground broke off in the fall, the ones that hit the road are shortened)
+var storm_pieces: Array = []
+func _spawn_storm_trees() -> void:
+	storm_pieces = []
+	for t in world.storm_trees:
+		var T := Wood.make_tree_def(t)
+		var d3 := Vector3(t.dir.x, 0, t.dir.y).normalized()
+		var lay := Basis(Vector3.UP.cross(d3).normalized(), PI / 2)          # the wood's +y down the trunk, along d3
+		# roll it round its own axis so the crown spreads up and sideways rather than into the road
+		var best := lay; var best_sc := -1e9
+		for k in range(16):
+			var b := Basis(d3, TAU * k / 16.0) * lay
+			var sc := 0.0
+			for L in T.limbs:
+				var dy: float = (b * (L.dir as Vector3)).y
+				sc += dy * float(L.len) if dy > -0.2 else -3.0 * float(L.len)
+			if sc > best_sc: best_sc = sc; best = b
+		var y0: float = -0.3 if t.kind == "uproot" else float(t.snap) + 0.05
+		var p := WoodPiece.new(); p.T = T; p.kind = "trunk"; p.y0 = y0; p.y1 = T.H
+		p.ops = [{type = "clip", p = Vector3(0, y0, 0), n = Vector3.DOWN}]
+		for L in T.limbs:
+			var dw: Vector3 = best * (L.dir as Vector3)
+			var r_ax := Wood.r_at(T, float(L.y))
+			var off: float = (best * ((L.base as Vector3) - Vector3(0, float(L.y), 0))).y
+			if dw.y < -0.05:
+				var reach := (r_ax + off - 0.1) / (-dw.y * float(L.len))
+				if reach < 0.3: continue                    # snapped off underneath
+				if reach < 1.0: p.lt[L.id] = reach
+			p.limbs.append(L.id)
+		level_root.add_child(p)
+		var gy := world.H(t.x, t.z)
+		var butt := Vector3(t.x, gy, t.z) + d3 * (0.15 if t.kind == "uproot" else 1.0 + Wood.r_at(T, y0))
+		butt.y = maxf(world.H(butt.x, butt.z), world.road_y() if absf(butt.z - world.road_z) < 4.0 else -1e9) + Wood.r_at(T, y0 + 0.4) + 0.04
+		p.global_transform = Transform3D(best, butt - best * Vector3(0, y0, 0))
+		p.build()
+		storm_pieces.append(p)
+
 ## how many pieces of wood are still out in the water
 func logs_in_water() -> int:
 	if world.lake.is_empty(): return 0
@@ -1130,7 +1175,8 @@ func customer_sits_back() -> void:
 func payday() -> void:
 	var g := tree.grade
 	var total: int = job.pay
-	var rows := [["Job: haul, buck and load" if job.get("kind", "") == "logs" else "Job: drop, limb, chip and %s" % ("load" if trailer else "pile"), job.pay]]
+	var kind_txt: String = {"logs": "Job: haul, buck and load", "storm": "Job: clear the road (limb, chip, buck, move)"}.get(job.get("kind", ""), "Job: drop, limb, chip and %s" % ("load" if trailer else "pile"))
+	var rows := [[kind_txt, job.pay]]
 	var clean: bool = g.get("open", false) and not g.get("barber", false) and g.notch_pct >= 0.18 and g.notch_pct <= 0.45 and g.notch_angle >= 40 and g.hinge_pct >= 0.05 and g.hinge_pct <= 0.18 and g.dir_err < 15
 	if clean: rows.append(["Textbook felling (notch, hinge, aim)", 50]); total += 50
 	if g.get("barber", false): rows.append(["Barber chair (%s is shaken)" % job.who, -100]); total -= 100
@@ -1244,6 +1290,10 @@ func pieces() -> Array:
 	return level_root.get_children().filter(func(c): return c is WoodPiece and is_instance_valid(c) and c.mode != "gone" and not c.is_queued_for_deletion())
 
 func in_pile(b: WoodPiece) -> bool:
+	if world.job == "storm":
+		# off the road: in the ditch or the trees either side (not over the bridge, not dumped in the creek)
+		var c := b.center_world()
+		return absf(c.z - world.road_z) > 4.4 and world.creek_d(c.x, c.z) > 3.2
 	if trailer: return trailer.in_bed(b.center_world())
 	var p := world.pile
 	var c := b.center_world()
@@ -1282,7 +1332,16 @@ func update_objectives() -> void:
 	if objs.felled and rounds > 0:
 		buck_txt += " · %d/%d · %d%%" % [piled, rounds, int(floor(done_frac * 100.0))]
 		if heavy > 0: buck_txt += " · %d too heavy" % heavy
-	if job.get("kind", "") == "logs":
+	if job.get("kind", "") == "storm":
+		var off_txt := "Buck the trunks into rounds and get them all off the road"
+		if rounds > 0: off_txt += " · %d/%d · %d%%" % [piled, rounds, int(floor(done_frac * 100.0))]
+		if heavy > 0: off_txt += " · %d too heavy" % heavy
+		hud.set_objectives([
+			[objs.talk, "Talk to %s" % job.who],
+			[objs.limbed, "Limb the downed trees and chip the brush" + (" · %d left" % brush if not objs.limbed else "")],
+			[objs.stacked, off_txt],
+			[objs.paid, "Get paid"]])
+	elif job.get("kind", "") == "logs":
 		var wet := logs_in_water()
 		if not objs.hauled and wet == 0 and lake_logs.size() > 0:
 			objs.hauled = true
@@ -1426,7 +1485,7 @@ func _process(dt: float) -> void:
 	if phase == "title":
 		# a slow orbit over the yard, between the house and the dead ash
 		var a := clock * 0.04
-		var c := Vector3((world.tree.x + world.house.x) * 0.5, 0, (world.tree.z + world.house.z) * 0.5)
+		var c := Vector3(world.s * 28.0, 0, world.road_z) if world.house.is_empty() else Vector3((world.tree.x + world.house.x) * 0.5, 0, (world.tree.z + world.house.z) * 0.5)
 		title_cam.global_position = Vector3(c.x + sin(a) * 26, world.H(c.x, c.z) + 21, c.z + cos(a) * 26)
 		title_cam.look_at(Vector3(c.x, world.H(c.x, c.z) + 2, c.z))
 	elif phase == "intro":
@@ -1464,7 +1523,7 @@ func _process(dt: float) -> void:
 		if not objs.felled and (tree.t - tree.down_t > 5.0 or (is_instance_valid(tree.stem) and tree.stem.sleeping)):
 			objs.felled = true; update_objectives(); Sfx.play("ding")
 	# Earl heads for the porch once the saw's running near the tree
-	if objs.talk and not earl.get_meta("to_porch", false) and saw.on and player.global_position.distance_to(tree.global_position) < tree.T.H:
+	if objs.talk and not world.house.is_empty() and not earl.get_meta("to_porch", false) and saw.on and player.global_position.distance_to(tree.global_position) < tree.T.H:
 		earl.set_meta("to_porch", true)
 		var h: Dictionary = world.house
 		earl.go_to(Vector2(h.x + h.w * 0.18, h.z - h.d / 2 - 1.4))

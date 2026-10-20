@@ -38,6 +38,13 @@ var garage_roof_body: Node3D    # the roof's collision, dropped when it caves in
 var garage_crushed := false
 var trailer := {}               # Walter's utility trailer (Mrs. Hale's job): {x, z, yaw}
 var lake := {}                  # Mrs. Hale's lake out back: {cx, cz, rx, rz, y} (empty on other jobs)
+# the storm job: no house, just the county road, the bridge over the creek, a waterfall off the ridge beside
+# it, the sheriff's cruiser, and the trees the storm put down across the road
+var storm_trees: Array = []     # [{x, z (base), dir (Vector2), h, dbh, seed, kind: uproot|snap, snap, plate}]
+var bridge := {}                # {x0, x1, z, w, y}: the deck
+var falls := {}                 # {lip (Vector3), foot (Vector3), brook (Array of Vector2)}
+var cruiser := {}               # {x, z, yaw}
+var ridge := {}                 # {a, b (Vector2), r}
 
 func _pick(a: Array):
 	return a[rng.randi_range(0, a.size() - 1)]
@@ -51,7 +58,7 @@ func _noise(n: FastNoiseLite, x: float, z: float) -> float:
 ## each job's property is laid out the same every visit (picked to look good); only the job tree's
 ## exact spot and shape vary a little from visit to visit, from its own random numbers (trng), so the
 ## rest of the layout never shifts. Change a seed here to re-roll that property.
-const LAYOUT := {"earl": 202, "hale": 202, "dock": 202}
+const LAYOUT := {"earl": 202, "hale": 202, "dock": 202, "storm": 202}
 var trng := RandomNumberGenerator.new()
 
 static func layout_seed(job_id: String) -> int:
@@ -96,15 +103,19 @@ func setup(sd: int, job_id := "earl", variant := -1) -> void:
 			break
 	if job == "hale": _hale_layout()
 	if job == "dock": _dock_layout()
+	if job == "storm": _storm_layout()
 	old_man = Vector2(park.x - s * 3.2, park.z + 4.5)
-	mailbox = Vector2(drive[0].x + s * 2.4, road_z + 3.2)
+	if job == "storm": old_man = Vector2(s * 43.0, road_z + 3.4)       # the sheriff, by his cruiser
+	mailbox = Vector2(drive[0].x + s * 2.4, road_z + 3.2) if job != "storm" else Vector2(1e5, 1e5)
 	# background woods
 	for k in range(900):
 		var x := _range(-150, 150); var z := _range(-140, 150)
-		if (absf(x) < 48 and z > -46 and z < 54) or absf(z - road_z) < 10 or Vector2(x, z).length() > 175: continue
+		if job == "storm":
+			if absf(z - road_z) < 11 or creek_d(x, z) < 8 or Vector2(x, z).length() > 175: continue
+		elif (absf(x) < 48 and z > -46 and z < 54) or absf(z - road_z) < 10 or Vector2(x, z).length() > 175: continue
 		bg_trees.push_back({x = x, z = z, h = _range(11, 22), pine = rng.randf() < 0.35, r = _range(2.4, 4.2), c = rng.randf()})
 	for k in range(60):
-		if yard_trees.size() >= 5: break
+		if yard_trees.size() >= 5 or job == "storm": break
 		var x := _range(-44, 44); var z := _range(-40, 50)
 		var d_drive := 1e9
 		for p in drive: d_drive = minf(d_drive, Vector2(x, z).distance_to(p))
@@ -475,10 +486,84 @@ func _dock_layout() -> void:
 		var z := _shore_z(x) + 8.5 + float(k % 2) * 1.8                 # out where it's waist deep
 		logs.append({x = x, z = z, yaw = _range(-0.5, 0.5) + (PI / 2 if k % 2 else 0.0), len = _range(3.6, 4.6)})
 
+## The sheriff's call: the county road where it crosses the creek. Last night's storm put four trees down
+## across it on the near side of the bridge. A ridge on the far bank has a brook running along its top that
+## goes over as a waterfall into the creek, right beside the bridge. Everything sits round the road (z = road_z),
+## the bridge at x = 0, the work site on the s side of it.
+func _storm_layout() -> void:
+	house = {}; garage = {}
+	mown = false
+	shed = {x = s * 140.0, z = road_z + 60.0, w = 0.1, d = 0.1}        # (no shed out here; far off, for code that asks)
+	park = Vector3(s * 50.0, 0, road_z - 1.7)
+	drive = [Vector2(s * 62, road_z - 1.7), Vector2(s * 58, road_z - 1.7), Vector2(s * 55, road_z - 1.7), Vector2(s * 52, road_z - 1.7),
+		Vector2(s * 50, road_z - 1.7), Vector2(s * 49, road_z - 1.7)]
+	pile = {x = s * 27.0, z = road_z, w = 30.0, d = 8.6}                # the stretch of road to clear
+	flat = []
+	# no standing tree to drop on this job: the generic one stands off in the woods, out of the way
+	tree = {x = s * 75.0, z = road_z + 45.0, h = 16.0, dbh = 0.5, lean = 0.02, lean_dir = 0.0, seed = rng.randi_range(1, 1000000)}
+	bridge = {x0 = -12.5, x1 = 12.5, z = road_z, w = 8.6}
+	cruiser = {x = s * 45.5, z = road_z + 5.2, yaw = (PI if s > 0 else 0.0) + s * 0.14}      # nose toward the bridge
+	ridge = {a = Vector2(-s * 7.5, road_z + 9.0), b = Vector2(-s * 30.0, road_z + 34.0), r = 7.0}
+	var brook := [Vector2(-s * 4.9, road_z + 9.0), Vector2(-s * 8.0, road_z + 10.2), Vector2(-s * 12.5, road_z + 13.5),
+		Vector2(-s * 17.0, road_z + 19.0), Vector2(-s * 22.5, road_z + 25.0), Vector2(-s * 29.0, road_z + 33.0), Vector2(-s * 36.0, road_z + 41.0)]
+	falls = {brook = _spline(brook, 4)}
+	storm_trees = [
+		# the big one: an old ash pulled up by the roots, lying across both lanes
+		{x = s * 39.5, z = road_z + 9.8, dir = Vector2(s * -0.1, -1.0).normalized(), h = 19.0, dbh = 0.62, seed = 4101, kind = "uproot", plate = 1.9},
+		# snapped off at head height on the south side, the top flung across the road
+		{x = s * 30.5, z = road_z - 8.5, dir = Vector2(s * -0.06, 1.0).normalized(), h = 16.0, dbh = 0.46, seed = 4102, kind = "snap", snap = 2.4},
+		# broken off low, from the north side
+		{x = s * 22.5, z = road_z + 8.5, dir = Vector2(s * -0.12, -1.0).normalized(), h = 14.0, dbh = 0.38, seed = 4103, kind = "snap", snap = 0.55},
+		# a smaller one tipped over, root plate and all, just short of the bridge
+		{x = s * 15.5, z = road_z - 8.0, dir = Vector2(s * 0.05, 1.0).normalized(), h = 12.0, dbh = 0.3, seed = 4104, kind = "uproot", plate = 1.25}]
+	for t in storm_trees: t.lean = 0.0; t.lean_dir = 0.0
+
+## the storm job's creek runs north-south and passes under the road at x = 0, straight where the bridge is
+func creek_x(z: float) -> float:
+	var dz := z - road_z
+	return (4.0 * sin(dz / 23.0) + 2.5 * sin(dz / 9.0 + 1.0)) * smoothstep(9.0, 30.0, absf(dz))
+
+## points down the middle of the creek, 2 m apart, end to end
+func creek_line() -> Array:
+	var out := []
+	var u := -150.0
+	while u <= 150.0:
+		out.append(Vector2(creek_x(u), u) if job == "storm" else Vector2(u, creek_z(u)))
+		u += 2.0
+	return out
+
+## the point in the middle of the creek level with (x, z)
+func creek_mid(x: float, z: float) -> Vector2:
+	return Vector2(creek_x(z), z) if job == "storm" else Vector2(x, creek_z(x))
+
+## the storm job's ridge: a long rocky rise on the far bank (0 outside it, up to 1 along its spine)
+func _ridge_k(x: float, z: float) -> float:
+	if ridge.is_empty(): return 0.0
+	var a: Vector2 = ridge.a; var b: Vector2 = ridge.b
+	var p := Vector2(x, z); var ab := b - a
+	var t := clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+	var d := p.distance_to(a + ab * t)
+	return (1.0 - smoothstep(float(ridge.r) * 0.5, float(ridge.r), d)) * (1.0 - 0.3 * t)
+
+## how far (x, z) is from the brook running along the ridge top
+func _brook_d(x: float, z: float) -> float:
+	if falls.is_empty(): return 1e6
+	var best := 1e6
+	var pts: Array = falls.brook
+	for i in range(pts.size() - 1):
+		var a: Vector2 = pts[i]; var b: Vector2 = pts[i + 1]; var ab := b - a
+		var t := clampf((Vector2(x, z) - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+		best = minf(best, Vector2(x, z).distance_to(a + ab * t))
+	return best
+
 var _edge := FastNoiseLite.new()
 ## 0 on the mown lawn, 1 deep in the woods; the edge of the woods wanders
 func forestness(x: float, z: float) -> float:
 	if _edge.seed != seed + 5: _edge.seed = seed + 5; _edge.frequency = 0.035
+	if job == "storm":
+		# woods right up to the road's shoulders, open over the creek
+		var dd := minf(absf(z - road_z) - 6.0, creek_d(x, z) - 3.5) + _edge.get_noise_2d(x, z) * 3.0
+		return clampf((dd + 1.0) / 7.0, 0.0, 1.0)
 	var dx := maxf(maxf(-46.0 - x, x - 46.0), 0.0)
 	var dz := maxf(maxf(-48.0 - z, z - 52.0), 0.0)
 	var d := Vector2(dx, dz).length()
@@ -493,6 +578,7 @@ func forestness(x: float, z: float) -> float:
 	return f
 
 func _box_dist(x: float, z: float, b: Dictionary) -> float:
+	if b.is_empty(): return 1e6
 	return Vector2(maxf(absf(x - b.x) - b.w / 2, 0), maxf(absf(z - b.z) - b.d / 2, 0)).length()
 
 func _raw(x: float, z: float) -> float:
@@ -504,6 +590,7 @@ func creek_z(x: float) -> float:
 
 func creek_d(x: float, z: float) -> float:
 	if not lake.is_empty(): return 1e6          # no creek at the lake house
+	if job == "storm": return absf(x - creek_x(z)) * 0.85
 	return absf(z - creek_z(x)) * 0.85
 
 ## metres outside the lake's shore (negative out on the water)
@@ -524,13 +611,24 @@ func _smooth_h(x: float, z: float) -> float:
 			h = lerpf(h, shore, smoothstep(14.0, 2.0, ld))
 			if ld < 0.0: h = maxf(wy + 0.25 + ld * 0.14, wy - 3.0)
 	var cd := creek_d(x, z)
-	if cd < 8.0: h -= 1.35 * (1.0 - smoothstep(1.4, 8.0, cd))
+	if job == "storm":
+		# the ridge rises on the far bank; the creek runs in a ravine, its bed sloping gently south
+		var rk := _ridge_k(x, z)
+		h += 5.4 * rk
+		var bd := _brook_d(x, z)
+		if bd < 1.4 and rk > 0.05: h -= 0.45 * (1.0 - smoothstep(0.4, 1.4, bd))
+		var bed := _base - 2.9 + (z - road_z) * 0.012
+		var wide := lerpf(10.5, 4.2, smoothstep(0.05, 0.4, rk))        # a sheer bank under the ridge, a sloping one elsewhere
+		h = lerpf(h, bed, 1.0 - smoothstep(1.5, wide, cd))
+	elif cd < 8.0: h -= 1.35 * (1.0 - smoothstep(1.4, 8.0, cd))
 	for f in flat:
 		var d := Vector2(x - f.x, z - f.z).length()
 		if d < f.r * 1.6:
 			h = lerpf(h, _base, smoothstep(0, 1, clampf((f.r * 1.6 - d) / (f.r * 0.6), 0, 1)))
 	var dr := absf(z - road_z)
-	if dr < 9: h = lerpf(h, _base - 0.15, smoothstep(0, 1, clampf((9 - dr) / 5, 0, 1)))
+	var keep := 1.0
+	if job == "storm": keep = smoothstep(9.5, 12.0, absf(x))            # the bridge carries the road over the ravine
+	if dr < 9: h = lerpf(h, _base - 0.15, smoothstep(0, 1, clampf((9 - dr) / 5, 0, 1)) * keep)
 	return h
 
 ## what you stand on: the ground, or the porch deck and its steps (so Earl doesn't wade through them)
@@ -577,7 +675,8 @@ func build(root: Node3D) -> void:
 	_build_roads(root)
 	if lake.is_empty(): _build_creek(root)
 	else: _build_lake(root)
-	_build_house(root)
+	if not house.is_empty(): _build_house(root)
+	if job == "storm": _build_storm_site(root)
 	if not garage.is_empty(): _build_garage(root)
 	if job == "hale": _build_hale_yard(root)
 	if job == "dock": _build_dock_site(root)
@@ -726,18 +825,24 @@ func _ribbon(mb: MeshBuilder, path: Array, width: float, col: Color, lift: float
 
 func _build_roads(root: Node3D) -> void:
 	var mb := MeshBuilder.new()
-	var road := []
-	var x := -150.0
-	while x <= 150.0:
-		road.push_back(Vector2(x, road_z)); x += 3.0
-	_ribbon(mb, road, 7, Color.html("#3b3d40"), 0.05)
-	x = -150.0
-	while x < 150.0:
-		_ribbon(mb, [Vector2(x, road_z), Vector2(x + 3, road_z)], 0.14, Color.html("#c9a640"), 0.07, false); x += 6.0
-	_ribbon(mb, drive_path, 3.4, Color.html("#8f8676"), 0.06)
+	# the asphalt (on the storm job it stops at the bridge ends: the deck carries it over the ravine)
+	var spans := [[-150.0, 150.0]] if bridge.is_empty() else [[-150.0, float(bridge.x0) + 0.5], [float(bridge.x1) - 0.5, 150.0]]
+	for sp in spans:
+		var road := []
+		var x: float = sp[0]
+		while x < float(sp[1]):
+			road.push_back(Vector2(x, road_z)); x += 3.0
+		road.push_back(Vector2(float(sp[1]), road_z))
+		_ribbon(mb, road, 7, Color.html("#3b3d40"), 0.05)
+	var dx := -150.0
+	while dx < 150.0:
+		if bridge.is_empty() or dx + 3.0 < float(bridge.x0) or dx > float(bridge.x1):
+			_ribbon(mb, [Vector2(dx, road_z), Vector2(dx + 3, road_z)], 0.14, Color.html("#c9a640"), 0.07, false)
+		dx += 6.0
+	if job != "storm": _ribbon(mb, drive_path, 3.4, Color.html("#8f8676"), 0.06)
 	var r := RandomNumberGenerator.new(); r.seed = seed + 11
 	var gravel := Color.html("#8f8676")
-	for k in range(drive_path.size() - 1):
+	for k in range(drive_path.size() - 1 if job != "storm" else 0):
 		for m in range(6):
 			var t := r.randf(); var a: Vector2 = drive_path[k]; var b: Vector2 = drive_path[k + 1]
 			var gx := lerpf(a.x, b.x, t) + r.randf_range(-1.5, 1.5); var gz := lerpf(a.y, b.y, t) + r.randf_range(-1.5, 1.5)
@@ -752,6 +857,8 @@ func _build_roads(root: Node3D) -> void:
 	var tops: Array = []
 	var px := -150.0 + float(seed % 17)
 	while px < 150.0:
+		if job == "storm" and (absf(px) < 18.0 or absf(px - s * 30.0) < 26.0):
+			px += 38.0; continue                              # none where the trees came down, or by the bridge
 		var gy := H(px, pz)
 		pm.cyl(px, gy - 0.3, pz, 0.15, 0.11, 9.3, wood, 8, true)
 		pm.box(px, gy + 8.3, pz, 0.12, 0.14, 2.2, wood)
@@ -761,6 +868,7 @@ func _build_roads(root: Node3D) -> void:
 		tops.append(Vector3(px, gy + 8.52, pz))
 		px += 38.0
 	for i in range(tops.size() - 1):
+		if (tops[i + 1] as Vector3).x - (tops[i] as Vector3).x > 40.0: continue        # (a gap in the line: no wires across it)
 		for k: float in [-0.9, 0.0, 0.9]:
 			var a: Vector3 = tops[i] + Vector3(0, 0, k); var b: Vector3 = tops[i + 1] + Vector3(0, 0, k)
 			var prev := a
@@ -818,21 +926,26 @@ static func _window(mb: MeshBuilder, wx: float, wy: float, wz: float, f: float, 
 		mb.box(shx, wy, o + f * 0.03, 0.36, wh + 0.08, 0.04, shutter)
 		for k in range(5): mb.box(shx, wy - wh / 2 + 0.12 + k * (wh - 0.16) / 4.0, o + f * 0.055, 0.3, 0.025, 0.012, MeshBuilder.shade(shutter, 0.75))
 
+var _creek_mat: ShaderMaterial
 ## the creek: a ribbon of moving water down the carved channel, stones along it, and its sound
 func _build_creek(root: Node3D) -> void:
 	var mb := MeshBuilder.new()
-	var x := -150.0
 	var prev_l := -1; var prev_r := -1
-	while x <= 150.0:
-		var zc := creek_z(x)
-		var dz := (creek_z(x + 0.5) - creek_z(x - 0.5))
-		var side := Vector2(-dz, 1.0).normalized() * 3.4
-		var y := H(x, zc) + 0.55
-		var l := mb.v(Vector3(x - side.x, y, zc - side.y), Vector3.UP, Color(1, 1, 1), Vector2(x * 0.12, 0.0))
-		var rr := mb.v(Vector3(x + side.x, y, zc + side.y), Vector3.UP, Color(1, 1, 1), Vector2(x * 0.12, 1.0))
-		if prev_l >= 0: mb.quad(prev_l, l, rr, prev_r)
+	var line := creek_line()
+	var along := -150.0
+	for k in range(line.size()):
+		var c: Vector2 = line[k]
+		var dirv: Vector2 = (line[mini(k + 1, line.size() - 1)] - line[maxi(k - 1, 0)]).normalized()
+		var side := Vector2(-dirv.y, dirv.x) * 3.4
+		var y := H(c.x, c.y) + 0.55
+		var l := mb.v(Vector3(c.x - side.x, y, c.y - side.y), Vector3.UP, Color(1, 1, 1), Vector2(along * 0.12, 0.0))
+		var rr := mb.v(Vector3(c.x + side.x, y, c.y + side.y), Vector3.UP, Color(1, 1, 1), Vector2(along * 0.12, 1.0))
+		if prev_l >= 0:
+			# keep every quad facing up
+			if (mb.verts[rr] - mb.verts[l]).cross(mb.verts[prev_l] - mb.verts[l]).y < 0: mb.quad(prev_l, l, rr, prev_r)
+			else: mb.quad(prev_l, prev_r, rr, l)
 		prev_l = l; prev_r = rr
-		x += 2.0
+		along += 2.0
 	var mat := ShaderMaterial.new()
 	var sh := Shader.new()
 	sh.code = """
@@ -865,21 +978,380 @@ void fragment() {
 }
 """
 	mat.shader = sh
+	_creek_mat = mat
 	var mi := mb.instance(mat); mi.name = "Creek"
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(mi)
 	_build_underwater(root, "creek", [])
 	# the sound of running water, at a few spots along it
 	var r := RandomNumberGenerator.new(); r.seed = seed + 61
-	var gx := -140.0
-	while gx <= 140.0:
+	for k in range(5, line.size() - 5, 18):
+		var c: Vector2 = line[k]
 		var ap := AudioStreamPlayer3D.new()
 		ap.stream = Sfx.sounds.get("creek")
-		ap.position = Vector3(gx, H(gx, creek_z(gx)) + 0.5, creek_z(gx))
+		ap.position = Vector3(c.x, H(c.x, c.y) + 0.5, c.y)
 		ap.unit_size = 6.0; ap.max_distance = 45.0; ap.volume_db = -6.0; ap.bus = "Ambient"
 		ap.autoplay = ap.stream != null
 		root.add_child(ap)
-		gx += 35.0
+
+# ================================================================ the storm job's roadside
+func _build_storm_site(root: Node3D) -> void:
+	_build_bridge(root)
+	_build_falls(root)
+	_build_cruiser(root)
+	_build_storm_roots(root)
+	_build_storm_litter(root)
+
+## the road surface height (what the asphalt ribbon sits at, and the bridge deck)
+func road_y() -> float:
+	return _base - 0.15 + 0.05
+
+## a plain concrete county bridge: deck on girders, two piers either side of the water, abutments into the
+## banks, parapet walls with a steel rail, the road and its centre line carried across
+func _build_bridge(root: Node3D) -> void:
+	var b := bridge
+	var y := road_y()
+	b.y = y
+	var L: float = float(b.x1) - float(b.x0); var W: float = b.w; var z: float = b.z
+	var mb := MeshBuilder.new()
+	var conc := Color.html("#a19e96"); var conc_dk := Color.html("#7f7c75"); var asph := Color.html("#3b3d40"); var steel := Color.html("#8c9298")
+	mb.box(0, y - 0.35, z, L, 0.7, W, conc)
+	mb.box(0, y + 0.012, z, L, 0.02, 7.0, asph)
+	var xx: float = float(b.x0) + 1.0
+	while xx < float(b.x1) - 3.0:
+		mb.box(xx + 1.5, y + 0.026, z, 3.0, 0.004, 0.14, Color.html("#c9a640")); xx += 6.0
+	for g in [-2.8, 0.0, 2.8]: mb.box(0, y - 0.95, z + g, L - 1.0, 0.5, 0.4, conc_dk)
+	for sz: float in [-1.0, 1.0]:
+		var pz := z + sz * (W / 2 - 0.2)
+		mb.box(0, y + 0.4, pz, L, 0.8, 0.4, conc)
+		mb.box(0, y + 0.82, pz, L + 0.1, 0.05, 0.46, conc_dk)
+		var px: float = float(b.x0) + 0.5
+		while px <= float(b.x1) - 0.4:
+			mb.box(px, y + 1.03, pz, 0.09, 0.38, 0.09, steel); px += 2.0
+		mb.box(0, y + 1.2, pz, L, 0.09, 0.07, steel)
+		for ex: float in [float(b.x0), float(b.x1)]:
+			mb.box(ex, y + 0.55, pz, 0.6, 1.1, 0.6, conc_dk)                     # end posts
+	for sx: float in [-1.0, 1.0]:
+		var ax := sx * (L / 2 - 0.6)
+		mb.box(ax, y - 2.4, z, 1.2, 4.4, W + 0.6, conc_dk)                        # abutments
+		var px := sx * 6.2
+		var gy := H(px, z)
+		var top := y - 1.2
+		if top > gy: mb.box(px, (top + gy - 0.5) / 2.0, z, 0.9, top - gy + 0.5, W - 1.4, conc_dk)
+	var mi := mb.instance(); mi.name = "Bridge"
+	root.add_child(mi)
+	_static_box(root, Vector3(0, y - 0.35, z), Vector3(L, 0.7, W))
+	for sz: float in [-1.0, 1.0]: _static_box(root, Vector3(0, y + 0.6, z + sz * (W / 2 - 0.2)), Vector3(L, 1.2, 0.4))
+
+const FALLS_SHADER := """
+shader_type spatial;
+render_mode blend_mix, cull_disabled, depth_draw_opaque, specular_schlick_ggx;
+float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float n(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+void fragment() {
+	// streaks of water pouring down, faster as they fall, white where they break up
+	float v = UV.y;
+	float t = TIME;
+	float s1 = n(vec2(UV.x * 14.0, v * 2.0 - t * 2.4));
+	float s2 = n(vec2(UV.x * 31.0 + 3.0, v * 3.5 - t * 3.6));
+	float streak = smoothstep(0.35, 0.85, s1 * 0.6 + s2 * 0.5);
+	vec3 water = mix(vec3(0.42, 0.55, 0.52), vec3(0.88, 0.92, 0.9), streak);
+	float foam = smoothstep(0.55, 1.0, v) * (0.5 + 0.5 * n(vec2(UV.x * 9.0, v * 6.0 - t * 4.0)));
+	ALBEDO = mix(water, vec3(0.95, 0.97, 0.96), foam);
+	float edge = smoothstep(0.0, 0.12, UV.x) * smoothstep(0.0, 0.12, 1.0 - UV.x);
+	ALPHA = clamp((0.55 + streak * 0.4 + foam * 0.3) * edge, 0.0, 0.95);
+	ROUGHNESS = 0.3; SPECULAR = 0.4;
+	EMISSION = ALBEDO * 0.08;
+}
+"""
+const FOAM_SHADER := """
+shader_type spatial;
+render_mode blend_mix, cull_disabled, depth_draw_never, unshaded;
+float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float n(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+void fragment() {
+	vec2 c = UV - 0.5;
+	float r = length(c) * 2.0;
+	float a = atan(c.y, c.x);
+	float churn = n(vec2(a * 3.0, r * 6.0 - TIME * 1.8)) * 0.6 + n(vec2(a * 7.0 + 2.0, r * 11.0 - TIME * 2.6)) * 0.5;
+	ALBEDO = vec3(0.9, 0.94, 0.92);
+	ALPHA = clamp((1.0 - r) * 1.4, 0.0, 1.0) * smoothstep(0.35, 0.8, churn) * 0.85;
+}
+"""
+
+## the brook along the ridge top and its waterfall: it pours off the lip, over the rocks, into the creek
+## right by the bridge, churning up foam and spray, with a roar you can hear up the road
+func _build_falls(root: Node3D) -> void:
+	var r := RandomNumberGenerator.new(); r.seed = seed + 707
+	var brook: Array = falls.brook
+	# the brook: a narrow ribbon of the creek's water down its channel along the ridge
+	var bm := MeshBuilder.new()
+	var along := 0.0
+	var prev_l := -1; var prev_r := -1
+	for k in range(brook.size()):
+		var c: Vector2 = brook[k]
+		var dv: Vector2 = (brook[mini(k + 1, brook.size() - 1)] - brook[maxi(k - 1, 0)]).normalized()
+		var side := Vector2(-dv.y, dv.x) * 0.6
+		var y := H(c.x, c.y) + 0.3
+		if k == 0: y = H(c.x, c.y) + 0.22
+		var l := bm.v(Vector3(c.x - side.x, y, c.y - side.y), Vector3.UP, Color.WHITE, Vector2(along * 0.25, 0.0))
+		var rr := bm.v(Vector3(c.x + side.x, y, c.y + side.y), Vector3.UP, Color.WHITE, Vector2(along * 0.25, 1.0))
+		if prev_l >= 0: bm.quad(prev_l, prev_r, rr, l)
+		prev_l = l; prev_r = rr
+		if k < brook.size() - 1: along += c.distance_to(brook[k + 1])
+	var bmi := bm.instance(_creek_mat); bmi.name = "Brook"; bmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(bmi)
+	# the fall: from the lip out and down to the creek, widening as it drops
+	var lip2: Vector2 = brook[0]
+	var lip := Vector3(lip2.x, H(lip2.x, lip2.y) + 0.22, lip2.y)
+	var foot2 := Vector2(-s * 1.4, road_z + 8.0)
+	var wy := water_y(foot2.x, foot2.y)
+	if wy == INF: wy = H(foot2.x, foot2.y) + 0.55
+	var foot := Vector3(foot2.x, wy, foot2.y)
+	falls.lip = lip; falls.foot = foot
+	var dir := Vector2(foot.x - lip.x, foot.z - lip.z).normalized()
+	var across := Vector3(-dir.y, 0, dir.x)
+	var fm := MeshBuilder.new()
+	var rows := 16
+	var cols := 6
+	var grid := []
+	for i in range(rows + 1):
+		var u := float(i) / rows
+		var hor := 1.0 - pow(1.0 - u, 2.2)                  # it shoots out off the lip, then falls
+		var p := Vector3(lerpf(lip.x, foot.x, hor), lerpf(lip.y, foot.y, pow(u, 1.6)), lerpf(lip.z, foot.z, hor))
+		var wdt := lerpf(1.3, 2.6, u)
+		var row := []
+		for j in range(cols + 1):
+			var a := float(j) / cols
+			var q := p + across * (a - 0.5) * wdt + Vector3(0, sin(a * 9.0 + u * 5.0) * 0.06, 0)
+			row.append(fm.v(q, Vector3(dir.x, 0.3, dir.y).normalized(), Color.WHITE, Vector2(a, u + 0.001)))
+		grid.append(row)
+	for i in range(rows):
+		for j in range(cols): fm.quad(grid[i][j], grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1])
+	var fmat := ShaderMaterial.new(); var fsh := Shader.new(); fsh.code = FALLS_SHADER; fmat.shader = fsh
+	var fmi := fm.instance(fmat); fmi.name = "Waterfall"; fmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(fmi)
+	# churning foam where it lands
+	var foam := MeshBuilder.new()
+	var segs := 20
+	var ctr := foam.v(foot + Vector3(0, 0.03, 0), Vector3.UP, Color.WHITE, Vector2(0.5, 0.5))
+	var ring := []
+	for k in range(segs):
+		var a := TAU * k / segs
+		ring.append(foam.v(foot + Vector3(cos(a) * 2.8, 0.03, sin(a) * 2.2), Vector3.UP, Color.WHITE, Vector2(0.5 + cos(a) * 0.5, 0.5 + sin(a) * 0.5)))
+	for k in range(segs): foam.tri(ctr, ring[(k + 1) % segs], ring[k])
+	var fom := ShaderMaterial.new(); var fos := Shader.new(); fos.code = FOAM_SHADER; fom.shader = fos
+	var foi := foam.instance(fom); foi.name = "Foam"; foi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(foi)
+	# spray drifting up off the plunge
+	var mist := CPUParticles3D.new(); mist.name = "Spray"
+	mist.amount = 26; mist.lifetime = 2.4; mist.preprocess = 2.4
+	mist.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE; mist.emission_sphere_radius = 1.1
+	mist.direction = Vector3(0, 1, 0); mist.spread = 50.0
+	mist.initial_velocity_min = 0.4; mist.initial_velocity_max = 1.2
+	mist.gravity = Vector3(0, 0.15, 0)
+	mist.scale_amount_min = 0.8; mist.scale_amount_max = 1.8
+	var grad := Gradient.new(); grad.set_color(0, Color(1, 1, 1, 0.22)); grad.set_color(1, Color(1, 1, 1, 0.0))
+	mist.color_ramp = grad
+	var qm := QuadMesh.new(); qm.size = Vector2(1.3, 1.3)
+	var mm := StandardMaterial3D.new(); mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; mm.vertex_color_use_as_albedo = true
+	mm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES; mm.albedo_color = Color(0.94, 0.96, 0.96)
+	qm.material = mm
+	mist.mesh = qm
+	mist.position = foot + Vector3(0, 0.4, 0)
+	root.add_child(mist)
+	# rocks: the wet face behind the fall, boulders round the plunge, and the lip
+	var rk := MeshBuilder.new()
+	var grey := Color.html("#6f6c64"); var wet := Color.html("#4e4c46"); var moss := Color.html("#4f6a34")
+	var face_n := Vector3(-dir.x, 0, -dir.y)
+	for k in range(26):
+		var u := r.randf()
+		var hor := 1.0 - pow(1.0 - u, 2.2)
+		var p := Vector3(lerpf(lip.x, foot.x, hor), lerpf(lip.y, foot.y, pow(u, 1.6)), lerpf(lip.z, foot.z, hor))
+		var off := across * r.randf_range(-3.4, 3.4) + face_n * r.randf_range(0.6, 1.6)
+		var q := p + off
+		var gy := H(q.x, q.z)
+		var sz := r.randf_range(0.7, 1.7)
+		rk.blob(q.x, maxf(q.y - 0.4, gy + sz * 0.3), q.z, sz, wet if absf((off.dot(across))) < 1.6 else grey, r, 1.2)
+	for k in range(14):
+		var a := r.randf() * TAU
+		var q := foot + Vector3(cos(a) * r.randf_range(2.4, 4.4), 0, sin(a) * r.randf_range(2.0, 3.6))
+		var sz := r.randf_range(0.5, 1.3)
+		rk.blob(q.x, H(q.x, q.z) + sz * 0.25, q.z, sz, grey, r, 1.1)
+		if r.randf() < 0.5: rk.blob(q.x, H(q.x, q.z) + sz * 0.6, q.z, sz * 0.7, moss, r, 1.0)
+	for sd: float in [-1.0, 1.0]:
+		for k in range(3):
+			var q := lip + across * sd * r.randf_range(1.0, 2.2) - Vector3(dir.x, 0, dir.y) * r.randf_range(0.0, 2.5)
+			var sz := r.randf_range(0.6, 1.2)
+			rk.blob(q.x, H(q.x, q.z) + sz * 0.3, q.z, sz, grey, r, 1.1)
+			rk.blob(q.x, H(q.x, q.z) + sz * 0.62, q.z, sz * 0.75, moss, r, 1.0)
+	var rmi := rk.instance(); rmi.name = "FallsRocks"
+	root.add_child(rmi)
+	# the roar, and the brook chattering along the top
+	for e in [["falls", foot + Vector3(0, 1.5, 0), 10.0, 85.0, 2.0], ["creek", lip + Vector3(0, 0.3, 0), 4.0, 30.0, -6.0]]:
+		var ap := AudioStreamPlayer3D.new()
+		ap.stream = Sfx.sounds.get(e[0])
+		ap.position = e[1]; ap.unit_size = e[2]; ap.max_distance = e[3]; ap.volume_db = e[4]; ap.bus = "Ambient"
+		ap.autoplay = ap.stream != null
+		root.add_child(ap)
+
+const BEACON_SHADER := """
+shader_type spatial;
+render_mode unshaded;
+uniform vec3 col : source_color = vec3(1.0, 0.1, 0.1);
+uniform float phase = 0.0;
+void fragment() {
+	float t = fract(TIME * 1.7 + phase);
+	float on = step(t, 0.18) + step(0.32, t) * step(t, 0.5);       // a double flash
+	ALBEDO = col * (0.22 + 0.78 * clamp(on, 0.0, 1.0));
+}
+"""
+
+## the sheriff's cruiser on the shoulder: two-tone, a star on the doors, push bar, and the light bar going
+func _build_cruiser(root: Node3D) -> void:
+	var c := cruiser
+	var gy := H(c.x, c.z)
+	var mb := MeshBuilder.new()
+	var dark := Color.html("#2f3a2e"); var white := Color.html("#ecebe6"); var glass := Color.html("#1f2a33"); var tire := Color.html("#1c1c1c")
+	var chrome := Color.html("#b8bcbf"); var gold := Color.html("#c9a640")
+	var xf := Transform3D(Basis(Vector3.UP, float(c.yaw)), Vector3(c.x, gy, c.z))
+	mb.push(xf)
+	# body: front along +x
+	mb.bevel_box(0, 0.62, 0, 4.9, 0.62, 1.86, dark, 0.06)                          # lower body
+	mb.bevel_box(-0.15, 0.98, 0, 2.1, 0.12, 1.84, white, 0.03)                       # white door band
+	mb.bevel_box(1.55, 0.95, 0, 1.6, 0.08, 1.8, dark, 0.04)                          # hood
+	mb.bevel_box(-1.9, 0.95, 0, 1.0, 0.08, 1.8, dark, 0.04)                          # trunk
+	mb.bevel_box(-0.25, 1.32, 0, 2.3, 0.62, 1.66, white, 0.08)                       # cabin
+	mb.box(0.92, 1.32, 0, 0.06, 0.48, 1.5, glass)                                    # windshield
+	mb.box(-1.4, 1.32, 0, 0.06, 0.44, 1.5, glass)                                    # back window
+	for sz: float in [-1.0, 1.0]:
+		mb.box(0.32, 1.35, sz * 0.835, 0.95, 0.4, 0.02, glass)
+		mb.box(-0.72, 1.35, sz * 0.835, 0.9, 0.4, 0.02, glass)
+		mb.sphere(-0.2, 0.86, sz * 0.94, 0.14, 0.14, 0.02, gold, 10, 4)             # the star on the door
+		for wx: float in [1.5, -1.5]:
+			mb.push(Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(wx, 0.36, sz * 0.82)))
+			mb.cyl(0, -0.13, 0, 0.36, 0.36, 0.26, tire, 14, true)
+			mb.cyl(0, 0.12, 0, 0.2, 0.2, 0.03, chrome, 10, true)
+			mb.pop()
+	mb.box(2.47, 0.62, 0, 0.06, 0.2, 1.7, chrome)                                    # bumper
+	mb.box(2.62, 0.75, 0, 0.08, 0.5, 1.1, Color.html("#222222"))                       # push bar
+	for sz: float in [-1.0, 1.0]:
+		mb.box(2.46, 0.82, sz * 0.66, 0.04, 0.12, 0.3, Color.html("#f2f0dc"))         # headlights
+		mb.box(-2.46, 0.82, sz * 0.7, 0.04, 0.12, 0.26, Color.html("#8a1a14"))        # tail lights
+	mb.box(-0.15, 1.66, 0, 0.32, 0.08, 1.4, Color.html("#202020"))                    # light bar base
+	mb.pop()
+	var mi := mb.instance(); mi.name = "Cruiser"
+	root.add_child(mi)
+	for e in [[-1.0, Color(0.95, 0.1, 0.08), 0.0], [1.0, Color(0.1, 0.3, 1.0), 0.5]]:
+		var lb := MeshBuilder.new()
+		lb.push(xf)
+		lb.box(-0.15, 1.75, float(e[0]) * 0.36, 0.26, 0.12, 0.62, Color.WHITE)
+		lb.pop()
+		var lm := ShaderMaterial.new(); var ls := Shader.new(); ls.code = BEACON_SHADER; lm.shader = ls
+		lm.set_shader_parameter("col", e[1]); lm.set_shader_parameter("phase", e[2])
+		var lmi := lb.instance(lm); lmi.name = "Beacon"
+		root.add_child(lmi)
+	for sz: float in [-1.0, 1.0]:
+		var lbl := Label3D.new(); lbl.text = "SHERIFF"; lbl.font_size = 64; lbl.pixel_size = 0.0042
+		lbl.modulate = Color.html("#2f3a2e"); lbl.outline_size = 0
+		lbl.transform = xf * Transform3D(Basis(Vector3.UP, PI if sz > 0 else 0.0), Vector3(0.45, 0.98, sz * 0.935))
+		root.add_child(lbl)
+	_static_box(root, Vector3(c.x, gy + 0.9, c.z), Vector3(1.9, 1.8, 5.0), float(c.yaw) + PI / 2)
+
+## where each downed tree came from: the torn-up root plate standing on edge over its hole, or the jagged
+## stump it snapped off at
+func _build_storm_roots(root: Node3D) -> void:
+	var r := RandomNumberGenerator.new(); r.seed = seed + 808
+	var mb := MeshBuilder.new()
+	var soil := Color.html("#4a3826"); var soil_dk := Color.html("#33271b"); var root_c := Color.html("#5e4a34"); var stone := Color.html("#7a766c")
+	var bark := Color.html("#6b5f52"); var raw := Color.html("#cdb98d")
+	for t in storm_trees:
+		var T := Wood.make_tree_def(t)
+		var d3 := Vector3(t.dir.x, 0, t.dir.y)
+		var gy := H(t.x, t.z)
+		var B := Vector3(t.x, gy, t.z)
+		if t.kind == "uproot":
+			var R: float = t.plate
+			var c := B - d3 * 0.35 + Vector3(0, R * 0.5, 0)
+			t.plate_c = c
+			# the hole it came out of, behind the plate
+			var hole := B - d3 * (R * 0.9)
+			for k in range(3):
+				mb.push(Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3(R * (1.0 - k * 0.22), 0.06, R * (0.85 - k * 0.2))), Vector3(hole.x, H(hole.x, hole.z) + 0.02 + k * 0.012, hole.z)))
+				mb.cyl(0, 0, 0, 1.0, 1.0, 0.5, soil_dk if k > 0 else soil, 14, true)
+				mb.pop()
+			# the plate itself: a lumpy disc of soil on edge, facing back along the trunk
+			var bz := d3
+			var bx := Vector3.UP.cross(bz).normalized()
+			var by := bz.cross(bx)
+			mb.push(Transform3D(Basis(bx, by, bz) * Basis.from_scale(Vector3(R, R * 0.92, 0.42)), c))
+			mb.blob(0, 0, 0, 1.0, soil, r, 1.4)
+			mb.pop()
+			# roots sticking out of it, radiating from the trunk's base, and stones caught in it
+			for k in range(16):
+				var a := TAU * k / 16.0 + r.randf_range(-0.2, 0.2)
+				var rad := Vector3(cos(a), sin(a), 0)
+				var p0 := c + Basis(bx, by, bz) * (rad * R * r.randf_range(0.15, 0.7)) - d3 * 0.3
+				var p1 := c + Basis(bx, by, bz) * (rad * R * r.randf_range(0.95, 1.35)) - d3 * r.randf_range(0.3, 0.9)
+				mb.tube(p0, p1, r.randf_range(0.03, 0.07), 0.012, root_c, 5)
+			for k in range(6):
+				var a := r.randf() * TAU
+				var p := c + Basis(bx, by, bz) * (Vector3(cos(a), sin(a), 0) * R * r.randf_range(0.2, 0.75)) - d3 * 0.4
+				mb.blob(p.x, p.y, p.z, r.randf_range(0.12, 0.28), stone, r, 1.0)
+			var sb := StaticBody3D.new(); var cs := CollisionShape3D.new(); var bs := BoxShape3D.new()
+			bs.size = Vector3(R * 1.8, R * 1.7, 0.7); cs.shape = bs; sb.add_child(cs)
+			sb.transform = Transform3D(Basis(bx, by, bz), c)
+			root.add_child(sb)
+		else:
+			# a jagged stump: bark up the sides, pale torn wood and long splinters on top
+			var sh: float = t.snap
+			var r0 := Wood.r_at(T, 0.2); var r1 := Wood.r_at(T, sh)
+			mb.cyl(B.x, gy - 0.3, B.z, r0 * 1.08, r1 * 1.02, sh + 0.3, bark, 14, false)
+			mb.cyl(B.x, gy + sh - 0.04, B.z, r1 * 1.0, r1 * 0.85, 0.08, raw, 14, true)
+			for k in range(9):
+				var a := TAU * k / 9.0 + r.randf_range(-0.3, 0.3)
+				var p := B + Vector3(cos(a) * r1 * r.randf_range(0.3, 0.9), sh, sin(a) * r1 * r.randf_range(0.3, 0.9))
+				var tip := p + Vector3(0, r.randf_range(0.15, 0.6), 0) + d3 * r.randf_range(0.05, 0.25)
+				mb.tube(p, tip, r.randf_range(0.03, 0.06), 0.004, raw if k % 3 else bark, 4)
+			var sb := StaticBody3D.new(); var cs := CollisionShape3D.new(); var cy := CylinderShape3D.new()
+			cy.radius = r0; cy.height = sh + 0.3; cs.shape = cy; sb.add_child(cs)
+			sb.position = Vector3(B.x, gy + (sh - 0.3) / 2.0, B.z)
+			root.add_child(sb)
+	var mi := mb.instance(); mi.name = "StormRoots"
+	root.add_child(mi)
+
+## what the storm left on the road: torn leaves and twigs everywhere, and puddles
+func _build_storm_litter(root: Node3D) -> void:
+	var r := RandomNumberGenerator.new(); r.seed = seed + 909
+	var mb := MeshBuilder.new()
+	var y0 := road_y() + 0.03
+	var leaf := [Color.html("#a8642a"), Color.html("#c8902e"), Color.html("#7a5a2a"), Color.html("#8a8a3a"), Color.html("#b84a24")]
+	for k in range(900):
+		var x := s * r.randf_range(8.0, 60.0); var z := road_z + r.randf_range(-6.0, 6.0)
+		if absf(x) < 12.6 and absf(z - road_z) < 3.6: continue
+		var y := (y0 if absf(z - road_z) < 3.6 else H(x, z) + 0.03)
+		if absf(x) < 12.6: y = road_y() + 0.03
+		var a := r.randf() * TAU; var sz := r.randf_range(0.05, 0.1)
+		var c: Color = leaf[r.randi() % leaf.size()]
+		var p0 := mb.v(Vector3(x + cos(a) * sz, y, z + sin(a) * sz), Vector3.UP, c)
+		var p1 := mb.v(Vector3(x + cos(a + 2.2) * sz * 0.6, y, z + sin(a + 2.2) * sz * 0.6), Vector3.UP, c)
+		var p2 := mb.v(Vector3(x + cos(a + 4.1) * sz * 0.6, y, z + sin(a + 4.1) * sz * 0.6), Vector3.UP, c)
+		mb.tri(p0, p1, p2)
+	for k in range(70):
+		var x := s * r.randf_range(10.0, 58.0); var z := road_z + r.randf_range(-4.5, 4.5)
+		var y := maxf(H(x, z), road_y()) + 0.04
+		var a := r.randf() * TAU; var ln := r.randf_range(0.3, 1.1)
+		mb.tube(Vector3(x, y, z), Vector3(x + cos(a) * ln, y + 0.02, z + sin(a) * ln), r.randf_range(0.008, 0.02), 0.005, Color.html("#4a3a2a"), 4)
+	for k in range(7):
+		var x := s * r.randf_range(14.0, 56.0); var z := road_z + r.randf_range(-2.8, 2.8)
+		mb.push(Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3(r.randf_range(0.6, 1.4), 1, r.randf_range(0.4, 0.9))), Vector3(x, road_y() + 0.022, z)))
+		mb.cyl(0, 0, 0, 1.0, 1.0, 0.004, Color.html("#4a5258"), 16, true, Color.html("#5c666e"))
+		mb.pop()
+	var mi := mb.instance(); mi.name = "StormLitter"; mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(mi)
 
 func _build_house(root: Node3D) -> void:
 	var mb := MeshBuilder.new()
@@ -1264,8 +1736,8 @@ void fragment() {
 ## the water surface over this spot, or INF if it's dry
 func water_y(x: float, z: float) -> float:
 	if not lake.is_empty(): return float(lake.y) if lake_d(x, z) < 0.0 else INF
-	var cz := creek_z(x)
-	if absf(z - cz) < 3.2: return H(x, cz) + 0.55
+	var c := creek_mid(x, z)
+	if Vector2(x, z).distance_to(c) < 3.2: return H(c.x, c.y) + 0.55
 	return INF
 
 ## what's under the surface: a silt-and-sand bed, tape grass and milfoil swaying, lily pad stems,
@@ -1298,19 +1770,23 @@ func _build_underwater(root: Node3D, kind: String, pads: Array) -> void:
 				if ids.has(a) and ids.has(b) and ids.has(c2) and ids.has(d): bed.quad(ids[a], ids[d], ids[c2], ids[b])
 	else:
 		var prev := []
-		var x := x0
-		while x <= x1:
-			var zc := creek_z(x)
+		var line := creek_line()
+		for i in range(line.size()):
+			var cm: Vector2 = line[i]
+			var dirv: Vector2 = (line[mini(i + 1, line.size() - 1)] - line[maxi(i - 1, 0)]).normalized()
+			var nrm2 := Vector2(-dirv.y, dirv.x)
 			var row := []
 			for k in range(7):
-				var z := zc - 3.3 + k * 1.1
-				var n := _bed_noise(x, z)
+				var q := cm + nrm2 * (-3.3 + k * 1.1)
+				var n := _bed_noise(q.x, q.y)
 				var c := pebble.lerp(sand, clampf(n, 0.0, 1.0) * 0.6).lerp(dark, clampf(n - 0.6, 0.0, 0.4) * 1.5)
-				row.append(bed.v(Vector3(x, H(x, z) + 0.025, z), Vector3.UP, c))
+				row.append(bed.v(Vector3(q.x, H(q.x, q.y) + 0.025, q.y), Vector3.UP, c))
 			if not prev.is_empty():
-				for k in range(6): bed.quad(prev[k], row[k], row[k + 1], prev[k + 1])
+				var up := (bed.verts[row[0]] - bed.verts[prev[0]]).cross(bed.verts[prev[1]] - bed.verts[prev[0]]).y
+				for k in range(6):
+					if up < 0: bed.quad(prev[k], row[k], row[k + 1], prev[k + 1])
+					else: bed.quad(prev[k], prev[k + 1], row[k + 1], row[k])
 			prev = row
-			x += 1.5
 	var bmat := ShaderMaterial.new(); var bsh := Shader.new(); bsh.code = BED_SHADER; bmat.shader = bsh
 	var bmi := bed.instance(bmat); bmi.name = "WaterBed"; bmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(bmi)
@@ -1360,7 +1836,11 @@ func _build_underwater(root: Node3D, kind: String, pads: Array) -> void:
 	var tries := 5200 if kind == "lake" else 2600
 	for k in range(tries):
 		var x := r.randf_range(x0, x1)
-		var z := r.randf_range(z0, z1) if kind == "lake" else creek_z(x) + r.randf_range(-3.0, 3.0)
+		var z := r.randf_range(z0, z1)
+		if kind != "lake":
+			var cm := creek_mid(x, r.randf_range(-150.0, 150.0)) if job == "storm" else creek_mid(x, 0.0)
+			if job == "storm": x = cm.x + r.randf_range(-3.0, 3.0); z = cm.y
+			else: z = cm.y + r.randf_range(-3.0, 3.0)
 		var wy := water_y(x, z)
 		if wy == INF: continue
 		var gy := H(x, z)

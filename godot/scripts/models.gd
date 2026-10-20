@@ -447,6 +447,106 @@ static func old_man(look := "earl") -> Dictionary:
 		P.cane = mb
 	return P
 
+## Sheriff Boone: a tan uniform shirt with a star and shoulder patches, dark trousers, a duty belt, a
+## campaign hat, aviator sunglasses and a grey moustache, a thermos cup of coffee where Earl has his cane.
+## Same parts and joints as Earl so he poses the same way.
+static func sheriff() -> Dictionary:
+	var P := {}
+	var r := RandomNumberGenerator.new(); r.seed = 6161
+	var skin := h("#d9a17e"); var tan := h("#c2a878"); var tan_dk := h("#9c8458"); var pants := h("#3b3428"); var belt := h("#1f1b16")
+	var hat := h("#8a6a40"); var hat_dk := h("#5e4728"); var gold := h("#d6b048"); var grey := h("#b9b4ab"); var dkC := h("#202020")
+	var boot := h("#1e1a16"); var patch := h("#3e5a38")
+	var mb := MeshBuilder.new()
+	# the uniform shirt: broad chest, a little belly over the belt
+	plaid(mb, [[0.1, 0.205, 0.16], [0.22, 0.23, 0.18], [0.36, 0.235, 0.17], [0.48, 0.22, 0.15], [0.55, 0.17, 0.12], [0.59, 0.07, 0.07]], tan, tan_dk, 20, 1)
+	for sx: float in [-1.0, 1.0]:
+		mb.sphere(sx * 0.2, 0.5, 0, 0.088, 0.082, 0.104, tan, 10, 6)
+		mb.box(sx * 0.2, 0.555, 0, 0.11, 0.015, 0.06, tan_dk)                                        # epaulettes
+		mb.box(sx * 0.095, 0.4, 0.165, 0.09, 0.075, 0.012, tan_dk)                                     # pocket flaps
+		mb.sphere(sx * 0.095, 0.385, 0.173, 0.008, 0.008, 0.005, gold, 5, 3)
+	mb.box(0, 0.33, 0.172, 0.01, 0.42, 0.006, tan_dk)                                                  # placket
+	for k in range(4): mb.sphere(0, 0.18 + k * 0.1, 0.176, 0.008, 0.008, 0.005, tan_dk, 5, 3)
+	mb.cyl(0, 0.54, 0, 0.078, 0.072, 0.05, tan_dk, 12, false)                                         # collar
+	for sx: float in [-1.0, 1.0]:
+		mb.push(Transform3D(Basis(Vector3.FORWARD, sx * 0.5), Vector3(sx * 0.05, 0.57, 0.07)))
+		mb.box(0, 0, 0, 0.07, 0.015, 0.06, tan)
+		mb.pop()
+	# the star over the left pocket, and a name bar over the right
+	for k in range(5):
+		var a := TAU * k / 5.0
+		mb.push(Transform3D(Basis(Vector3.BACK, a), Vector3(0.095, 0.47, 0.178)))
+		mb.box(0, 0.022, 0, 0.016, 0.044, 0.008, gold)
+		mb.pop()
+	mb.sphere(0.095, 0.47, 0.18, 0.014, 0.014, 0.006, gold, 8, 3)
+	mb.box(-0.095, 0.45, 0.176, 0.07, 0.015, 0.006, h("#202020"))
+	# trousers seat, and the duty belt with its buckle, radio and cuff case
+	plaid(mb, [[-0.14, 0.2, 0.15], [0.0, 0.215, 0.165], [0.1, 0.215, 0.168]], pants, MeshBuilder.shade(pants, 0.9), 20, 1)
+	mb.cyl(0, 0.08, 0, 0.222, 0.222, 0.06, belt, 20, false)
+	mb.box(0, 0.08, 0.222, 0.06, 0.045, 0.012, h("#c8c8c0"))
+	mb.box(0.2, 0.06, 0.08, 0.05, 0.11, 0.07, belt)                                                    # radio
+	mb.box(0.205, 0.13, 0.09, 0.012, 0.06, 0.012, belt)
+	mb.box(-0.21, 0.07, 0.03, 0.045, 0.07, 0.06, belt)                                                 # cuff case
+	mb.box(-0.14, 0.07, 0.17, 0.05, 0.06, 0.04, belt)                                                  # flashlight holder
+	P.torso = mb
+	# head: weathered, a grey moustache, aviators, campaign hat
+	mb = MeshBuilder.new()
+	mb.cyl(0, -0.02, 0, 0.065, 0.062, 0.1, skin, 10, false)
+	mb.sphere(0, 0.165, 0, 0.11, 0.128, 0.116, skin, 16, 10)
+	mb.sphere(0, 0.09, 0.03, 0.09, 0.06, 0.09, MeshBuilder.shade(skin, 0.96), 12, 6)                    # jaw
+	for sx: float in [-1.0, 1.0]:
+		mb.sphere(sx * 0.11, 0.16, -0.005, 0.02, 0.035, 0.025, MeshBuilder.shade(skin, 0.95), 8, 5)      # ears
+		mb.sphere(sx * 0.042, 0.176, 0.104, 0.032, 0.022, 0.012, dkC, 10, 5)                             # aviator lenses
+		mb.tube(Vector3(sx * 0.074, 0.18, 0.1), Vector3(sx * 0.108, 0.175, 0.02), 0.004, 0.004, gold, 4)
+		mb.tube(Vector3(sx * 0.02, 0.203, 0.108), Vector3(sx * 0.07, 0.205, 0.098), 0.007, 0.006, grey, 5)   # brows
+	mb.tube(Vector3(-0.012, 0.188, 0.112), Vector3(0.012, 0.188, 0.112), 0.004, 0.004, gold, 4)
+	mb.sphere(0, 0.148, 0.12, 0.024, 0.028, 0.028, h("#cf8f70"), 10, 6)                                  # nose
+	for sx: float in [-1.0, 1.0]:
+		mb.tube(Vector3(0, 0.118, 0.118), Vector3(sx * 0.058, 0.098, 0.1), 0.016, 0.009, grey, 6)         # moustache
+	mb.box(0, 0.088, 0.108, 0.04, 0.006, 0.01, h("#a0604e"))                                             # a straight-line mouth
+	# grey hair round the back and sides under the hat
+	for k in range(9):
+		var a := -1.6 + k * 0.4
+		mb.sphere(sin(a) * 0.104, 0.2, -cos(a) * 0.1, 0.03, 0.04, 0.03, grey, 6, 4)
+	# campaign hat: a wide flat brim, a tall crown pinched into four dents, a band
+	mb.cyl(0, 0.245, 0, 0.215, 0.215, 0.016, hat, 24, true)
+	mb.cyl(0, 0.253, 0, 0.122, 0.112, 0.03, hat_dk, 18, false)                                          # band
+	mb.cyl(0, 0.26, 0, 0.122, 0.09, 0.1, hat, 18, true)
+	for k in range(4):
+		var a := PI / 4 + k * PI / 2
+		mb.sphere(cos(a) * 0.055, 0.36, sin(a) * 0.055, 0.03, 0.02, 0.03, MeshBuilder.shade(hat, 0.82), 6, 3)
+	mb.sphere(0, 0.255, 0.122, 0.016, 0.016, 0.006, gold, 8, 3)                                          # hat badge
+	P.head = mb
+	# arms: short uniform sleeves over the forearms, a wristwatch
+	mb = MeshBuilder.new()
+	plaid(mb, [[0.04, 0.068, 0.072], [-0.12, 0.064, 0.066], [-0.22, 0.06, 0.062]], tan, tan_dk, 12, 1)
+	mb.cyl(0, -0.25, 0, 0.056, 0.054, 0.05, skin, 10, false)
+	mb.sphere(0, -0.3, 0, 0.054, 0.03, 0.056, skin, 10, 5)
+	mb.box(0, -0.06, 0.07, 0.07, 0.07, 0.008, patch)                                                    # shoulder patch
+	P.upper = mb
+	mb = MeshBuilder.new()
+	mb.cyl(0, -0.22, 0, 0.05, 0.05, 0.22, skin, 10, false)
+	mb.cyl(0, -0.24, 0, 0.038, 0.038, 0.025, dkC, 10, false)                                           # watch strap
+	mb.box(0, -0.24, 0.035, 0.03, 0.025, 0.01, h("#c8c8c0"))
+	mb.cyl(0, -0.27, 0, 0.034, 0.038, 0.04, skin, 10, false)
+	mb.sphere(0, -0.31, 0.005, 0.047, 0.056, 0.036, skin, 10, 6)
+	mb.tube(Vector3(0.03, -0.29, 0.02), Vector3(0.045, -0.33, 0.04), 0.014, 0.011, skin, 6)
+	P.fore = mb
+	# legs: dark trousers with a stripe down the side, black boots
+	mb = MeshBuilder.new()
+	plaid(mb, [[0.04, 0.09, 0.09], [-0.4, 0.08, 0.08], [-0.74, 0.074, 0.074]], pants, MeshBuilder.shade(pants, 0.92), 12, 1)
+	for sx: float in [-1.0, 1.0]: mb.box(sx * 0.082, -0.35, 0, 0.01, 0.75, 0.02, tan_dk)
+	mb.bevel_box(0, -0.82, 0.0, 0.12, 0.12, 0.17, boot, 0.03)
+	mb.sphere(0, -0.84, 0.08, 0.062, 0.05, 0.08, boot, 10, 6)
+	mb.box(0, -0.885, 0.04, 0.13, 0.03, 0.29, h("#121212"))
+	P.leg = mb
+	# a thermos-lid cup of coffee in the hand
+	mb = MeshBuilder.new()
+	mb.cyl(0, -0.1, 0.05, 0.04, 0.045, 0.1, h("#5a6a72"), 12, true)
+	mb.cyl(0, -0.0, 0.05, 0.036, 0.036, 0.004, h("#3a2414"), 12, true)
+	mb.tube(Vector3(0.045, -0.04, 0.05), Vector3(0.07, -0.06, 0.05), 0.008, 0.008, h("#5a6a72"), 5)
+	P.cane = mb
+	return P
+
 ## Mrs. Hale: cardigan over a blouse, pleated skirt, pearls, glasses, grey hair up in a bun, sensible shoes,
 ## and a mug of lemonade where Earl has his cane. Same parts and joints as Earl so she poses the same way.
 static func old_lady() -> Dictionary:

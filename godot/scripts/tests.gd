@@ -2939,3 +2939,30 @@ func _earl_wave() -> void:
 	cam.global_position = e.global_position + Vector3(0, 1.2, 0) + b.z * 3.4; cam.look_at(e.global_position + Vector3(0, 1.2, 0))
 	await wait(0.3)
 	await shot("talk")
+
+## the storm job's scene from a few angles: the road of downed trees, the bridge, the waterfall, the sheriff
+func _storm_preview() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(2.5)                 # let the trees settle
+	g.hud.visible = false
+	var w = g.world
+	var s: float = w.s
+	var rz: float = w.road_z
+	note("pieces", g.storm_pieces.size())
+	for p in g.storm_pieces: note("piece", [snappedf(p.center_world().x, 0.1), snappedf(p.center_world().y - w.H(p.center_world().x, p.center_world().z), 0.01), snappedf(p.center_world().z - rz, 0.1), p.limbs.size(), int(p.mass)])
+	var cam := Camera3D.new(); cam.fov = 60; g.level_root.add_child(cam); cam.make_current()
+	var views := [
+		["arrive", Vector3(s * 56, 2.4, rz - 1.0), Vector3(s * 25, 1.0, rz)],
+		["high", Vector3(s * 48, 16.0, rz - 22.0), Vector3(s * 20, 0.0, rz + 2.0)],
+		["bridge", Vector3(s * 14, 2.2, rz - 3.0), Vector3(-s * 6, 1.5, rz + 6.0)],
+		["falls", Vector3(s * 4, 0.5, rz - 1.0), Vector3(-s * 3, 0.0, rz + 8.0)],
+		["under", Vector3(s * 1.0, -1.6, rz - 9.0), Vector3(0, -0.5, rz + 6.0)],
+		["sheriff", Vector3(s * 40, 1.8, rz - 2.0), Vector3(s * 44, 1.3, rz + 4.0)],
+		["roots", Vector3(s * 44, 2.5, rz + 15.0), Vector3(s * 39, 0.8, rz + 9.0)]]
+	for v in views:
+		var at: Vector3 = v[1]; var to: Vector3 = v[2]
+		cam.global_position = Vector3(at.x, w.H(at.x, at.z) + at.y, at.z) if v[0] != "under" else Vector3(at.x, w.road_y() + at.y, at.z)
+		cam.look_at(Vector3(to.x, w.road_y() + to.y, to.z))
+		await wait(0.5)
+		await shot("storm-" + v[0])

@@ -122,8 +122,8 @@ func water_at(p: Vector3) -> float:
 	var w: WorldGen = game.world
 	if not w.lake.is_empty():
 		return float(w.lake.y) if w.lake_d(p.x, p.z) < -0.4 else INF
-	var cz := w.creek_z(p.x)
-	if absf(p.z - cz) < 2.9: return w.H(p.x, cz) + 0.55
+	var c: Vector2 = w.creek_mid(p.x, p.z)
+	if Vector2(p.x, p.z).distance_to(c) < 2.9: return w.H(c.x, c.y) + 0.55
 	return INF
 
 func _where() -> String:

@@ -113,6 +113,13 @@ func _clear(x: float, z: float, pad: float) -> bool:
 	if Vector2(x, z).distance_to(Vector2(w.pile.x, w.pile.z)) < 4 + pad: return false
 	if Vector2(x, z).distance_to(Vector2(w.tree.x, w.tree.z)) < w.tree.h + 4 + pad: return false
 	if Vector2(x, z).distance_to(Vector2(w.mailbox.x, w.mailbox.y)) < 2 + pad: return false
+	if w.job == "storm":
+		# keep the bridge ends, the waterfall's lip, the brook, the cruiser and the downed trees' roots clear
+		if absf(x) < 16.0 and absf(z - w.road_z) < 9.0 + pad: return false
+		if w._brook_d(x, z) < 2.5 + pad: return false
+		if Vector2(x, z).distance_to(Vector2(w.cruiser.x, w.cruiser.z)) < 5.0 + pad: return false
+		for t in w.storm_trees:
+			if Vector2(x, z).distance_to(Vector2(t.x, t.z)) < 4.5 + pad: return false
 	return true
 
 ## remember a round footprint so later things keep out of it
@@ -238,15 +245,23 @@ func _place_underbrush() -> void:
 				_add("flower%d" % (rng.randi() % 2), px, pz, yaw, rng.randf_range(0.8, 1.3))
 		x += 1.7
 	# stones and ferns crowding the creek banks (if there is a creek)
-	var cx := -150.0 if w.creek_d(0.0, w.creek_z(0.0)) < 1e5 else 1e9
-	while cx < 150.0:
-		cx += rng.randf_range(1.2, 3.0)
+	var line: Array = w.creek_line() if w.creek_d(0.0, 0.0) < 1e5 else []
+	var u := 0.0
+	while line.size() > 2 and u < line.size() - 1.5:
+		u += rng.randf_range(0.6, 1.5)               # (line points are 2 m apart)
+		var i := mini(int(u), line.size() - 2)
+		var c: Vector2 = (line[i] as Vector2).lerp(line[i + 1], u - i)
+		var dv: Vector2 = (line[i + 1] - line[i]).normalized()
+		var nv := Vector2(-dv.y, dv.x)
+		if w.job == "storm" and absf(c.y - w.road_z) < 6.0: continue          # under the bridge
 		var side := -1.0 if rng.randf() < 0.5 else 1.0
-		var cz := w.creek_z(cx) + side * rng.randf_range(2.6, 4.2)
-		_add("rock%d" % (rng.randi() % 3), cx, cz, rng.randf() * TAU, rng.randf_range(0.6, 1.4), Color.WHITE, 0.1)
-		if rng.randf() < 0.25: _add("rock%d" % (rng.randi() % 3), cx + 0.5, w.creek_z(cx) + rng.randf_range(-1.5, 1.5), rng.randf() * TAU, rng.randf_range(0.4, 0.8), Color.WHITE, 0.05)
-		var fz := w.creek_z(cx) + side * rng.randf_range(4.2, 7.5)
-		if rng.randf() < 0.8: _add("fern%d" % (rng.randi() % 3), cx, fz, rng.randf() * TAU, rng.randf_range(1.0, 1.6))
+		var q := c + nv * side * rng.randf_range(2.6, 4.2)
+		_add("rock%d" % (rng.randi() % 3), q.x, q.y, rng.randf() * TAU, rng.randf_range(0.6, 1.4), Color.WHITE, 0.1)
+		if rng.randf() < 0.25:
+			var q2 := c + nv * rng.randf_range(-1.5, 1.5) + dv * 0.5
+			_add("rock%d" % (rng.randi() % 3), q2.x, q2.y, rng.randf() * TAU, rng.randf_range(0.4, 0.8), Color.WHITE, 0.05)
+		var f := c + nv * side * rng.randf_range(4.2, 7.5)
+		if rng.randf() < 0.8: _add("fern%d" % (rng.randi() % 3), f.x, f.y, rng.randf() * TAU, rng.randf_range(1.0, 1.6))
 	# autumn at the lake house: maple leaves drifted all over the lawn
 	if w.job == "hale":
 		for k in range(1400):

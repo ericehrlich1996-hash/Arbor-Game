@@ -149,6 +149,7 @@ func _build() -> void:
 	# the woods: a soft wind loop, songbirds, a woodpecker now and then
 	sounds.wind = _wind_loop()
 	sounds.creek = _creek_loop()
+	sounds.falls = _falls_loop()
 	sounds.rain = _rain_loop()
 	# an axe cutting the air
 	b = _buf(0.35); _noise(b, 0.3, 700, 0.9, 0.35, "bandpass"); _noise(b, 0.2, 1800, 1.2, 0.15, "bandpass", 0.06); sounds.whoosh = _wav(b)
@@ -237,6 +238,22 @@ func _creek_loop() -> AudioStreamWAV:
 		b[i] = b[i] * k + b[b.size() - fade + i] * (1 - k)
 	var w := _wav(b.slice(0, b.size() - fade), true)
 	return w
+
+## a waterfall: a steady low roar under a bright hiss of spray (3 s, ends crossfaded into a seamless loop)
+func _falls_loop() -> AudioStreamWAV:
+	var b := _buf(3.0)
+	var lo := Biquad.new("lowpass", 380, 0.7, RATE)
+	var hi := Biquad.new("bandpass", 2400, 0.8, RATE)
+	var mid := Biquad.new("bandpass", 900, 0.7, RATE)
+	for i in range(b.size()):
+		var t := float(i) / RATE
+		var swell := 0.85 + 0.15 * sin(TAU * t / 3.0)
+		b[i] = (lo.run(randf() * 2 - 1) * 0.9 + mid.run(randf() * 2 - 1) * 0.35 + hi.run(randf() * 2 - 1) * 0.22) * swell
+	var fade := 3000
+	for i in range(fade):
+		var k := float(i) / fade
+		b[i] = b[i] * k + b[b.size() - fade + i] * (1 - k)
+	return _wav(b.slice(0, b.size() - fade), true)
 
 func _wind_loop() -> AudioStreamWAV:
 	var b := _buf(6.0)

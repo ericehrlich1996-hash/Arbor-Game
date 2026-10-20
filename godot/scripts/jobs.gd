@@ -95,7 +95,36 @@ const DOCK := {
 	hit_garage = "",
 }
 
-const LIST := [EARL, HALE, DOCK]
+const STORM := {
+	id = "storm", n = 4, title = "Storm damage at the Mill Creek bridge", pay = 1100, unlock = 3, look = "sheriff", who = "Sheriff Boone", kind = "storm",
+	text = "Sheriff's call. Last night's storm put four trees down across County Rd 9, right in front of the Mill Creek bridge. One's out roots and all. Sheriff Boone's holding the road shut. Limb them, chip the brush, buck the trunks and get every round off the road.",
+	tree_word = "downed trees", bark_tint = Color(0.92, 0.9, 0.86),
+	talk = [
+		"You the tree outfit? Good. Sheriff Boone. I've been parked on this road since four this morning.",
+		"Storm came through about two. Put four of 'em down right here, our side of the bridge. Nobody gets across to Mill Creek till they're gone.",
+		"That big ash pulled up roots and all. The one on the south side snapped off like a pencil. Mind the springy limbs, they'll bite.",
+		"Limb 'em, run the brush through your chipper, cut the trunks into rounds and get every last piece off the asphalt. Roll 'em in the ditch, I don't care. Just off my road.",
+		"County pays eleven hundred. I'll sign the voucher myself the minute that road's open.",
+		"And stay off that bridge rail. Creek's up after all that rain, and the falls are louder than my mother-in-law."],
+	idle = [
+		"Dispatch says the school bus needs this road by three. No pressure.",
+		"Fella in a minivan tried to go around through the ditch. He's still in the ditch.",
+		"Thirty-one years with the county and the weather's still the worst criminal I've got.",
+		"They call that waterfall the Widow's Veil. Don't ask me why. Nobody ever tells me why.",
+		"I'd help, but I'm management.",
+		"Earl called the station to tell me you're 'not the worst.' I put it in the log.",
+		"Coffee's cold. Coffee's always cold. That's police work."],
+	porch = "I'll be by the cruiser keeping the road shut. Holler if you need traffic stopped.",
+	fell = ["That's the way.", "Atta boy.", "Heard that one from here."],
+	barber = "",
+	done = "Well, would you look at that. Asphalt! Come on over and I'll sign you off.",
+	paid = ["Road's open. I'll radio it in.", "Here's the county's eleven hundred. Voucher's signed. Don't lose it, they'll make me fill it out again.",
+		"Next time something big comes down in this county, I'm calling you first."],
+	hit_house = "",
+	hit_garage = "",
+}
+
+const LIST := [EARL, HALE, DOCK, STORM]
 
 ## the job list for the computer, open or locked by how many jobs you've done
 static func board(jobs_done: int) -> Array:

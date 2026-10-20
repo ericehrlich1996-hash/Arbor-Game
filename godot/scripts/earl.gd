@@ -34,7 +34,7 @@ var last_bark := 0.0
 func setup(w: WorldGen, at: Vector2, look := "earl") -> void:
 	world = w
 	position = Vector3(at.x, w.H(at.x, at.y), at.y)
-	var P := Models.old_lady() if look == "hale" else Models.old_man(look)
+	var P := Models.old_lady() if look == "hale" else (Models.sheriff() if look == "sheriff" else Models.old_man(look))
 	var M := modeled("res://models/%s.glb" % look)       # the Blender model (art/<look>.py), if there is one
 	if not M.is_empty(): P = M
 	n_hip = Node3D.new(); add_child(n_hip)
