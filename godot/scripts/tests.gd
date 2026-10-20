@@ -2901,3 +2901,41 @@ func _dock_fight() -> void:
 		g.fishing._lost("test")
 		g.fishing.state = "wait"
 		await wait(0.5)
+
+## Earl's wave, frozen at a few moments, close up from the front and the side
+func _earl_wave() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(0.5)
+	g.hud.visible = false
+	var e = g.earl
+	e.walk_to = null
+	e.set_process(false)
+	var cam := Camera3D.new(); cam.fov = 30; g.level_root.add_child(cam); cam.make_current()
+	var b: Basis = e.global_transform.basis
+	for v in [["front", 0.0], ["34", 0.6]]:
+		var fwd: Vector3 = (b.z * cos(v[1]) + b.x * sin(v[1])).normalized()
+		var tgt: Vector3 = e.global_position + Vector3(0, 1.3, 0)
+		cam.global_position = tgt + fwd * 3.2
+		cam.look_at(tgt)
+		for k in [0, 1]:
+			e.state = "wave"; e.talking = false; e.t = 0.2 + k * 0.2
+			e._pose()
+			await wait(0.3)
+			await shot("wave-%s-%d" % [v[0], k])
+	e.state = "idle"; e._pose()
+	var ht: Vector3 = e.global_position + Vector3(0, 1.62, 0)
+	cam.global_position = ht + b.z * 1.1; cam.look_at(ht)
+	await wait(0.3)
+	await shot("wave-face")
+	for v in [["side", PI / 2], ["34", 0.7]]:
+		var fwd: Vector3 = (b.z * cos(v[1]) + b.x * sin(v[1])).normalized()
+		var tgt: Vector3 = e.global_position + Vector3(0, 0.95, 0)
+		cam.global_position = tgt + fwd * 4.2; cam.look_at(tgt)
+		e.state = "walk"; e.t = PI / 12.0; e._pose()
+		await wait(0.3)
+		await shot("walk-%s" % v[0])
+	e.state = "idle"; e.talking = true; e.t = 0.5; e._pose()
+	cam.global_position = e.global_position + Vector3(0, 1.2, 0) + b.z * 3.4; cam.look_at(e.global_position + Vector3(0, 1.2, 0))
+	await wait(0.3)
+	await shot("talk")

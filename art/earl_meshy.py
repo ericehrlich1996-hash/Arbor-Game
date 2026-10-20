@@ -2,6 +2,7 @@
 # (same bone names and joints as art/earl.py), keeps the old walking stick, and trims the textures for phones.
 # Run: blender -b --factory-startup -P earl_meshy.py -- <meshy.glb> <old earl.glb (for the cane)> <out.glb> [preview_dir]
 import bpy, sys, math, os
+import numpy as np
 from mathutils import Vector
 A = sys.argv[sys.argv.index("--") + 1:]
 SRC, OLD, OUT = A[0], A[1], A[2]
@@ -33,6 +34,51 @@ for n in list(nt.nodes):
 	if n.type == "TEX_IMAGE" and "metallic" in n.image.name: nt.nodes.remove(n)
 	elif n.type == "SEPARATE_COLOR": nt.nodes.remove(n)
 bs.inputs["Metallic"].default_value = 0.0; bs.inputs["Roughness"].default_value = 0.85
+
+# ---------------------------------------------------------------- cheer him up
+# Meshy painted a downturned, open mouth under the moustache. Paint it out with the beard round it and draw
+# a small smile in its place: worked out in 3D for each texel of the mouth, so it follows the face
+def cheer_up():
+	img = [n.image for n in nt.nodes if n.type == "TEX_IMAGE" and "normal" not in n.image.name][0]
+	W, H = img.size; px = np.array(img.pixels[:], dtype=np.float32).reshape(H, W, 4)
+	me = body.data; me.calc_loop_triangles(); uv = me.uv_layers.active.data
+	pos, idx = [], []
+	for t in me.loop_triangles:
+		P = [gam(me.vertices[i].co) for i in t.vertices]
+		c = (P[0] + P[1] + P[2]) / 3
+		if not (abs(c.x) < 0.085 and 1.56 < c.y < 1.62 and c.z > 0.08): continue
+		U = np.array([uv[l].uv[:] for l in t.loops]) * [W, H]
+		x0, x1 = int(np.floor(U[:, 0].min())), int(np.ceil(U[:, 0].max())); y0, y1 = int(np.floor(U[:, 1].min())), int(np.ceil(U[:, 1].max()))
+		den = (U[1, 1] - U[2, 1]) * (U[0, 0] - U[2, 0]) + (U[2, 0] - U[1, 0]) * (U[0, 1] - U[2, 1])
+		if abs(den) < 1e-9: continue
+		for yy in range(y0, y1 + 1):
+			for xx in range(x0, x1 + 1):
+				X, Y = xx + 0.5, yy + 0.5
+				a = ((U[1, 1] - U[2, 1]) * (X - U[2, 0]) + (U[2, 0] - U[1, 0]) * (Y - U[2, 1])) / den
+				b = ((U[2, 1] - U[0, 1]) * (X - U[2, 0]) + (U[0, 0] - U[2, 0]) * (Y - U[2, 1])) / den
+				cc = 1 - a - b
+				if min(a, b, cc) < -0.05: continue
+				p = P[0] * a + P[1] * b + P[2] * cc
+				pos.append((p.x, p.y)); idx.append((yy % H, xx % W))
+	pos = np.array(pos); idx = np.array(idx)
+	col = px[idx[:, 0], idx[:, 1], :3]
+	red = (col[:, 0] - col[:, 1] > 0.22) & (col[:, 0] - col[:, 2] > 0.22) & (pos[:, 1] < 1.607)
+	beard = (col.min(1) > 0.72) & (col.max(1) - col.min(1) < 0.12)
+	bcol = np.median(col[beard], axis=0) if beard.any() else np.array([0.92, 0.91, 0.88])
+	new = col.copy()
+	new[red] = bcol * (0.97 + 0.03 * np.random.rand(red.sum(), 1))
+	# the smile: corners turned up, a dark line with a little pink lower lip under the middle
+	x, y = pos[:, 0], pos[:, 1]
+	curve = 1.5795 + 6.0 * x * x
+	half = 0.0026 * np.clip(1.0 - (np.abs(x) / 0.036) ** 4, 0.0, 1.0)
+	line = (np.abs(y - curve) < half) & (np.abs(x) < 0.036)
+	lip = (y < curve - half) & (y > curve - half - 0.004 * np.clip(1 - (x / 0.02) ** 2, 0, 1)) & (np.abs(x) < 0.02)
+	new[lip] = np.array([0.86, 0.47, 0.44])
+	new[line] = np.array([0.40, 0.14, 0.12])
+	px[idx[:, 0], idx[:, 1], :3] = new
+	img.pixels[:] = px.ravel()
+	print("MOUTH texels", len(pos), "red painted out", int(red.sum()), "smile", int(line.sum()))
+cheer_up()
 for im in bpy.data.images:
 	t = TEX // 2 if "normal" in im.name else TEX
 	if im.size[0] > t: im.scale(t, t)
@@ -59,7 +105,7 @@ LIMB["head"] = (Vector((0, 1.5, 0)), Vector((0, 1.85, 0)))
 def seg_d(p, a, b):
 	ab = b - a; t = max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared)); return (p - (a + ab * t)).length
 def ramp(x, a, b): return max(0.0, min(1.0, (x - a) / (b - a)))
-def weights(g):
+def weights(g, nrm):
 	"""nearest bones, but a limb only pulls on what's that limb: the arms on what's out past the side of the
 	body (wider at the belt, where the pouch and buckle reach out), the legs on what's below the seat"""
 	w = {}
@@ -69,6 +115,8 @@ def weights(g):
 			sx = 1 if n.endswith("_l") else -1
 			lo = 0.205 if g.y < 1.02 else 0.15
 			x *= ramp(g.x * sx, lo, lo + 0.055) * ramp(1.53 - g.y, 0.0, 0.06)   # nothing above the shoulders: hat, ears
+			# beside the chest, the bib and shirt side face out (or forward/back); the arm's inner side faces in
+			if 0.95 < g.y < 1.4 and g.x * sx < 0.195 and (nrm.x * sx > 0.15 or abs(nrm.z) > 0.6): x = 0.0
 		if n.startswith("leg"):
 			sx = 1 if n.endswith("_l") else -1
 			x *= ramp(0.9 - g.y, 0.0, 0.12) * ramp(g.x * sx, -0.02, 0.04)
@@ -77,11 +125,56 @@ def weights(g):
 	top = sorted(w.items(), key=lambda kv: -kv[1])[:3]
 	tot = sum(x for _, x in top) or 1.0
 	return [(n, x / tot) for n, x in top if x > 0]
+# the arms by bone heat (Blender works out from the surface itself what belongs to each arm), everything else
+# by the rules above; the two are blended so the shoulder still rolls smoothly into the chest
+ARM_BONES = [n for n in LIMB if n.startswith(("upper", "fore"))]
+# (on a sealed voxel copy: Meshy's surface has seams the heat solver can't cope with), then copied back
+proxy = body.copy(); proxy.data = body.data.copy(); proxy.name = "proxy"; bpy.context.collection.objects.link(proxy)
+for vg in list(proxy.vertex_groups): proxy.vertex_groups.remove(vg)
+rm = proxy.modifiers.new("vox", "REMESH"); rm.mode = "VOXEL"; rm.voxel_size = 0.007
+bpy.context.view_layer.objects.active = proxy; bpy.ops.object.select_all(action="DESELECT"); proxy.select_set(True)
+bpy.ops.object.modifier_apply(modifier="vox")
+print("PROXY verts", len(proxy.data.vertices))
+bpy.ops.object.select_all(action="DESELECT"); proxy.select_set(True); rig.select_set(True); bpy.context.view_layer.objects.active = rig
+bpy.ops.object.parent_set(type="ARMATURE_AUTO")
+print("PROXY groups", [vg.name for vg in proxy.vertex_groups])
+dt = body.modifiers.new("dt", "DATA_TRANSFER"); dt.object = proxy
+dt.use_vert_data = True; dt.data_types_verts = {"VGROUP_WEIGHTS"}; dt.vert_mapping = "POLYINTERP_NEAREST"
+dt.layers_vgroup_select_src = "ALL"; dt.layers_vgroup_select_dst = "NAME"
+bpy.context.view_layer.objects.active = body; bpy.ops.object.select_all(action="DESELECT"); body.select_set(True)
+bpy.ops.object.datalayout_transfer(modifier="dt")
+bpy.ops.object.modifier_apply(modifier="dt")
+bpy.data.objects.remove(proxy)
+heat = {}
+for v in body.data.vertices:
+	h = {}
+	for ge in v.groups:
+		nm = body.vertex_groups[ge.group].name
+		if nm in ARM_BONES and ge.weight > 0.001: h[nm] = ge.weight
+	heat[v.index] = h
+for vg in list(body.vertex_groups): body.vertex_groups.remove(vg)
 groups = {b[0]: body.vertex_groups.new(name=b[0]) for b in BONES}
 for v in body.data.vertices:
-	for n, x in weights(gam(v.co)): groups[n].add([v.index], x, "REPLACE")
-body.parent = rig
-md = body.modifiers.new("rig", "ARMATURE"); md.object = rig
+	g = gam(v.co)
+	rule = dict(weights(g, gam(v.normal)))
+	h = heat[v.index]
+	arm_h = sum(h.values())
+	if g.y < 1.53 and arm_h > 0.0:
+		# heat decides how much is arm; the rules share out the rest (torso, legs, head)
+		rest = {k: x for k, x in rule.items() if k not in ARM_BONES}
+		rt = sum(rest.values())
+		w = {k: x * arm_h for k, x in h.items()}
+		if rt > 0: w.update({k: x / rt * (1.0 - arm_h) for k, x in rest.items()})
+		else: w["torso"] = 1.0 - arm_h
+	else:
+		w = {k: x for k, x in rule.items() if k not in ARM_BONES} or {"torso": 1.0}
+	top = sorted(w.items(), key=lambda kv: -kv[1])[:4]
+	tot = sum(x for _, x in top) or 1.0
+	for n, x in top:
+		if x > 0.0: groups[n].add([v.index], x / tot, "REPLACE")
+if not any(m.type == "ARMATURE" for m in body.modifiers):
+	md = body.modifiers.new("rig", "ARMATURE"); md.object = rig
+print("HEAT arm verts", sum(1 for h in heat.values() if sum(h.values()) > 0.05))
 body.data.calc_loop_triangles(); print("EARL TRIS", len(body.data.loop_triangles))
 
 bpy.ops.object.select_all(action="DESELECT")

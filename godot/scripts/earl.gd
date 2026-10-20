@@ -206,7 +206,8 @@ func _pose() -> void:
 	for side in [1.0, -1.0]:
 		var up: Vector3; var fo: Vector3
 		if state == "wave" and side > 0:
-			up = Vector3(-0.2, 0, side * 2.5); fo = Vector3(0, 0, side * (0.5 + sin(t * 8) * 0.45))
+			# upper arm out and up beside the head, elbow bent, the hand waving from the elbow
+			up = Vector3(-0.25, 0, side * 1.95); fo = Vector3(0, 0, side * (0.95 + sin(t * 8) * 0.35))
 		elif talking and side > 0:
 			up = Vector3(-0.6 - sin(t * 3) * 0.3, 0, side * -0.35); fo = Vector3(-0.9, 0, 0)
 		else:
