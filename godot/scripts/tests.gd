@@ -2974,7 +2974,6 @@ func _storm_preview() -> void:
 		["under", Vector3(s * 1.0, -1.6, rz - 9.0), Vector3(0, -0.5, rz + 6.0)],
 		["sheriff", Vector3(s * 40, 1.8, rz - 2.0), Vector3(s * 44, 1.3, rz + 4.0)],
 		["roots", Vector3(s * 44, 2.5, rz - 4.0), Vector3(s * 39, 0.8, rz + 7.7)],
-		["fallsup", Vector3(s * 3.0, 1.6, rz + 1.5), Vector3(0, 7.0, rz + 14.0)],
 		["mountain", Vector3(-s * 30, 2.0, rz - 6.0), Vector3(s * 10, 4.0, rz + 10.0)]]
 	var only := OS.get_environment("STORM_VIEWS")
 	for v in views:

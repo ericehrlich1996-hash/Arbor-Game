@@ -111,7 +111,7 @@ func setup(sd: int, job_id := "earl", variant := -1) -> void:
 	for k in range(900):
 		var x := _range(-150, 150); var z := _range(-140, 150)
 		if job == "storm":
-			if absf(z - road_z) < 11 or creek_d(x, z) < 8 or Vector2(x, z).length() > 175: continue
+			if absf(z - road_z) < 11 or creek_d(x, z) < 8 or Vector2(x, z).length() > 175 or _cliff_k(x, z) > 0.3: continue
 		elif (absf(x) < 48 and z > -46 and z < 54) or absf(z - road_z) < 10 or Vector2(x, z).length() > 175: continue
 		bg_trees.push_back({x = x, z = z, h = _range(11, 22), pine = rng.randf() < 0.35, r = _range(2.4, 4.2), c = rng.randf()})
 	for k in range(60):
@@ -503,20 +503,36 @@ func _storm_layout() -> void:
 	tree = {x = s * 75.0, z = road_z + 45.0, h = 16.0, dbh = 0.5, lean = 0.02, lean_dir = 0.0, seed = rng.randi_range(1, 1000000)}
 	bridge = {x0 = -12.5, x1 = 12.5, z = road_z, w = 8.6}
 	cruiser = {x = s * 45.5, z = road_z + 5.2, yaw = (PI if s > 0 else 0.0) + s * 0.14}      # nose toward the bridge
-	ridge = {a = Vector2(-s * 7.5, road_z + 9.0), b = Vector2(-s * 30.0, road_z + 34.0), r = 7.0}
-	var brook := [Vector2(-s * 4.9, road_z + 9.0), Vector2(-s * 8.0, road_z + 10.2), Vector2(-s * 12.5, road_z + 13.5),
-		Vector2(-s * 17.0, road_z + 19.0), Vector2(-s * 22.5, road_z + 25.0), Vector2(-s * 29.0, road_z + 33.0), Vector2(-s * 36.0, road_z + 41.0)]
+	ridge = {}
+	# the brook comes down a cleft in the mountain and pours off the face into the pool by the bridge
+	var brook := [Vector2(0.0, road_z + FALLS_LIP_DZ), Vector2(-s * 0.6, road_z + 20.0), Vector2(-s * 2.0, road_z + 27.0),
+		Vector2(-s * 4.5, road_z + 35.0), Vector2(-s * 8.0, road_z + 44.0)]
 	falls = {brook = _spline(brook, 4)}
 	storm_trees = [
 		# the big one: an old ash pulled up by the roots, lying across both lanes
-		{x = s * 39.5, z = road_z + 9.8, dir = Vector2(s * -0.1, -1.0).normalized(), h = 19.0, dbh = 0.62, seed = 4101, kind = "uproot", plate = 1.9},
+		{x = s * 39.5, z = road_z + 7.7, dir = Vector2(s * -0.1, -1.0).normalized(), h = 19.0, dbh = 0.62, seed = 4101, kind = "uproot", plate = 1.9},
 		# snapped off at head height on the south side, the top flung across the road
 		{x = s * 30.5, z = road_z - 8.5, dir = Vector2(s * -0.06, 1.0).normalized(), h = 16.0, dbh = 0.46, seed = 4102, kind = "snap", snap = 2.4},
 		# broken off low, from the north side
-		{x = s * 22.5, z = road_z + 8.5, dir = Vector2(s * -0.12, -1.0).normalized(), h = 14.0, dbh = 0.38, seed = 4103, kind = "snap", snap = 0.55},
+		{x = s * 22.5, z = road_z + 7.5, dir = Vector2(s * -0.12, -1.0).normalized(), h = 14.0, dbh = 0.38, seed = 4103, kind = "snap", snap = 0.55},
 		# a smaller one tipped over, root plate and all, just short of the bridge
 		{x = s * 15.5, z = road_z - 8.0, dir = Vector2(s * 0.05, 1.0).normalized(), h = 12.0, dbh = 0.3, seed = 4104, kind = "uproot", plate = 1.25}]
 	for t in storm_trees: t.lean = 0.0; t.lean_dir = 0.0
+
+## the storm job: a mountain rises off the road's north shoulder all the way along; the creek starts in a
+## plunge pool at its foot right beside the bridge, fed by the falls out of a cleft in the face
+const MOUNT_D := 8.4            # where the slope starts, metres from the road's centre line
+const CREEK_END_DZ := 10.0      # the creek's head (the plunge pool), metres north of the road
+const FALLS_LIP_DZ := 15.0      # where the falls come off the face
+func _mount_h(x: float, z: float) -> float:
+	if job != "storm": return 0.0
+	var d := z - road_z
+	if d < MOUNT_D - 1.0: return 0.0
+	var calm := smoothstep(12.0, 22.0, absf(x))           # keep it regular round the bridge and the falls
+	var d0 := MOUNT_D + (_noise(_nA, x / 17.0, 3.1) - 0.5) * 2.4 * calm
+	var face := 14.0 + (_noise(_nB, x / 23.0, 7.7) - 0.5) * 5.0 * calm
+	var bumps := (_noise(_nC, x / 4.0, z / 4.0) - 0.5) * 1.6 * smoothstep(d0 + 1.0, d0 + 4.0, d)
+	return face * smoothstep(d0, d0 + 4.5, d) + 20.0 * smoothstep(d0 + 4.5, d0 + 45.0, d) + bumps
 
 ## the storm job's creek runs north-south and passes under the road at x = 0, straight where the bridge is
 func creek_x(z: float) -> float:
@@ -527,7 +543,8 @@ func creek_x(z: float) -> float:
 func creek_line() -> Array:
 	var out := []
 	var u := -150.0
-	while u <= 150.0:
+	var u1 := road_z + CREEK_END_DZ if job == "storm" else 150.0
+	while u <= u1 + 0.01:
 		out.append(Vector2(creek_x(u), u) if job == "storm" else Vector2(u, creek_z(u)))
 		u += 2.0
 	return out
@@ -556,6 +573,12 @@ func _brook_d(x: float, z: float) -> float:
 		best = minf(best, Vector2(x, z).distance_to(a + ab * t))
 	return best
 
+## 1 on the steep rock face of the storm job's mountain, 0 off it
+func _cliff_k(x: float, z: float) -> float:
+	if job != "storm" or z - road_z < MOUNT_D - 1.0: return 0.0
+	var a := _mount_h(x, z - 1.0); var b := _mount_h(x, z + 1.0)
+	return smoothstep(0.55, 1.1, (b - a) / 2.0)
+
 var _edge := FastNoiseLite.new()
 ## 0 on the mown lawn, 1 deep in the woods; the edge of the woods wanders
 func forestness(x: float, z: float) -> float:
@@ -563,7 +586,9 @@ func forestness(x: float, z: float) -> float:
 	if job == "storm":
 		# a mown verge and a strip of rough meadow either side of the road, then the woods; open along the creek
 		var dd := minf(absf(z - road_z) - 12.0, creek_d(x, z) - 6.0) + _edge.get_noise_2d(x, z) * 4.0
-		return clampf((dd + 2.0) / 9.0, 0.0, 1.0)
+		var fo := clampf((dd + 2.0) / 9.0, 0.0, 1.0)
+		if z - road_z > MOUNT_D - 1.0: fo *= 1.0 - _cliff_k(x, z)      # bare rock on the face
+		return fo
 	var dx := maxf(maxf(-46.0 - x, x - 46.0), 0.0)
 	var dz := maxf(maxf(-48.0 - z, z - 52.0), 0.0)
 	var d := Vector2(dx, dz).length()
@@ -590,7 +615,10 @@ func creek_z(x: float) -> float:
 
 func creek_d(x: float, z: float) -> float:
 	if not lake.is_empty(): return 1e6          # no creek at the lake house
-	if job == "storm": return absf(x - creek_x(z)) * 0.85
+	if job == "storm":
+		var ze := road_z + CREEK_END_DZ
+		if z > ze: return Vector2(x - creek_x(ze), z - ze).length() * 0.85      # round the head of the pool
+		return absf(x - creek_x(z)) * 0.85
 	return absf(z - creek_z(x)) * 0.85
 
 ## metres outside the lake's shore (negative out on the water)
@@ -612,13 +640,13 @@ func _smooth_h(x: float, z: float) -> float:
 			if ld < 0.0: h = maxf(wy + 0.25 + ld * 0.14, wy - 3.0)
 	var cd := creek_d(x, z)
 	if job == "storm":
-		# the ridge rises on the far bank; the creek runs in a ravine, its bed sloping gently south
-		var rk := _ridge_k(x, z)
-		h += 5.4 * rk
+		# the mountain on the north side; the creek runs south from its foot in a ravine, its bed sloping gently
+		var mh := _mount_h(x, z)
+		h += mh
 		var bd := _brook_d(x, z)
-		if bd < 1.4 and rk > 0.05: h -= 0.45 * (1.0 - smoothstep(0.4, 1.4, bd))
+		if z - road_z > FALLS_LIP_DZ - 0.5: h -= 1.3 * (1.0 - smoothstep(0.6, 2.2, bd)) * smoothstep(FALLS_LIP_DZ - 0.5, FALLS_LIP_DZ + 1.5, z - road_z)
 		var bed := _base - 2.9 + (z - road_z) * 0.012
-		var wide := lerpf(10.5, 4.2, smoothstep(0.05, 0.4, rk))        # a sheer bank under the ridge, a sloping one elsewhere
+		var wide := lerpf(10.5, 4.2, smoothstep(0.5, 3.0, mh))         # a sheer bank into the mountain, a sloping one elsewhere
 		h = lerpf(h, bed, 1.0 - smoothstep(1.5, wide, cd))
 	elif cd < 8.0: h -= 1.35 * (1.0 - smoothstep(1.4, 8.0, cd))
 	for f in flat:
@@ -791,6 +819,11 @@ func _build_terrain(root: Node3D) -> void:
 			if cdist < 9.0:
 				c = c.lerp(Color.html("#4f6a2c"), (1.0 - smoothstep(3.5, 9.0, cdist)) * 0.7)      # moss on the banks
 				c = c.lerp(Color.html("#5a4a36"), 1.0 - smoothstep(1.5, 4.0, cdist))             # wet mud and stones at the water
+			if job == "storm":
+				var ck := _cliff_k(x, z)
+				if ck > 0.0:
+					var rock := Color.html("#6d6a62").lerp(Color.html("#57554e"), _noise(_nB, x / 3.0, z / 3.0)).lerp(Color.html("#56653a"), smoothstep(0.6, 0.85, _noise(_nA, x / 7.0, z / 7.0)) * 0.6)
+					c = c.lerp(rock, ck)
 			row.push_back(mb.v(Vector3(x, y, z), normal_at(x, z), c))
 		ids.push_back(row)
 	for j in range(N):
@@ -1001,6 +1034,7 @@ func _build_storm_site(root: Node3D) -> void:
 	_build_cruiser(root)
 	_build_storm_roots(root)
 	_build_storm_litter(root)
+	_build_mountain_rocks(root)
 
 ## the road surface height (what the asphalt ribbon sits at, and the bridge deck)
 func road_y() -> float:
@@ -1081,6 +1115,28 @@ void fragment() {
 }
 """
 
+## crags and boulders all along the mountain's face, and a scree of fallen rock at its foot
+func _build_mountain_rocks(root: Node3D) -> void:
+	var r := RandomNumberGenerator.new(); r.seed = seed + 909
+	var mb := MeshBuilder.new()
+	var grey := Color.html("#6f6c64"); var dark := Color.html("#55534c"); var moss := Color.html("#55683a")
+	var x := -150.0
+	while x < 150.0:
+		x += r.randf_range(2.5, 4.5)
+		if absf(x) < 4.5: continue                                 # the falls bring their own
+		for k in range(2):
+			var z := road_z + MOUNT_D + r.randf_range(0.5, 6.0)
+			var sz := r.randf_range(0.45, 1.2)
+			var c := grey.lerp(dark, r.randf())
+			mb.blob(x + r.randf_range(-0.8, 0.8), H(x, z) - sz * 0.15, z, sz, c, r, 1.15)
+			if r.randf() < 0.35: mb.blob(x, H(x, z) + sz * 0.55, z + 0.3, sz * 0.6, moss, r, 1.0)
+		if r.randf() < 0.55:
+			var z2 := road_z + MOUNT_D + r.randf_range(-0.3, 0.8)
+			var s2 := r.randf_range(0.3, 0.7)
+			mb.blob(x + r.randf_range(-1.0, 1.0), H(x, z2) + s2 * 0.25, z2, s2, grey, r, 1.0)
+	var mi := mb.instance(); mi.name = "MountainRocks"
+	root.add_child(mi)
+
 ## the brook along the ridge top and its waterfall: it pours off the lip, over the rocks, into the creek
 ## right by the bridge, churning up foam and spray, with a roar you can hear up the road
 func _build_falls(root: Node3D) -> void:
@@ -1106,7 +1162,7 @@ func _build_falls(root: Node3D) -> void:
 	# the fall: from the lip out and down to the creek, widening as it drops
 	var lip2: Vector2 = brook[0]
 	var lip := Vector3(lip2.x, H(lip2.x, lip2.y) + 0.22, lip2.y)
-	var foot2 := Vector2(-s * 1.4, road_z + 8.0)
+	var foot2 := Vector2(0.0, road_z + CREEK_END_DZ - 1.2)
 	var wy := water_y(foot2.x, foot2.y)
 	if wy == INF: wy = H(foot2.x, foot2.y) + 0.55
 	var foot := Vector3(foot2.x, wy, foot2.y)
@@ -1744,6 +1800,7 @@ void fragment() {
 func water_y(x: float, z: float) -> float:
 	if not lake.is_empty(): return float(lake.y) if lake_d(x, z) < 0.0 else INF
 	var c := creek_mid(x, z)
+	if job == "storm" and z > road_z + CREEK_END_DZ + 0.5: return INF
 	if Vector2(x, z).distance_to(c) < 3.2: return H(c.x, c.y) + 0.55
 	return INF
 
