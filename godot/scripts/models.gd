@@ -9,7 +9,7 @@ const FRONT_AXLE := 1.62
 const REAR_AXLE := -1.58
 const TRACK := 0.86
 const HITCH := Vector3(0, 0.5, -2.95)
-const EYE := Vector3(0.40, 1.50, -0.20)
+const EYE := Vector3(0.38, 1.55, -0.20)          # the driver's eye, on the bench seat behind the wheel
 
 static func h(s: String) -> Color: return Color.html(s)
 static func sh(c: Color, k: float) -> Color: return MeshBuilder.shade(c, k)

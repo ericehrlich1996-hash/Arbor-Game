@@ -23,7 +23,55 @@ var _mirror_n := 0
 var mirror_div := 3             # redraw the mirror every Nth frame
 var _last_pos := Vector3.ZERO
 
-const BED_FLOOR_Y := 0.8
+static var BED_FLOOR_Y := 0.8         # (the Meshy truck's bed sits lower: set in setup)
+
+## the modelled truck (art/truck_interior.py + art/truck_game.py): its body, cab interior and a wheel, already in
+## this truck's frame. Where it's missing, the truck is built in code (Models.truck) as before.
+const MODEL := "res://models/truck.glb"
+const M_WHEEL_R := 0.466
+const M_TRACK := 0.80
+const M_BED_Y := 0.665
+# the two big dials on the new dash (they're painted without needles; these are driven)
+const M_SPEEDO := Vector3(0.4194, 1.2153, 0.557)
+const M_TACH := Vector3(0.3456, 1.2153, 0.557)
+const M_DIAL_R := 0.045
+var modeled := false
+var _model_wheel: Mesh
+
+## the model's parts, ready to add: the body recoloured to this truck's paint and on the game's paint, chrome
+## and lamp shaders, the interior as it comes, and the wheel
+func _load_model(c1: Color) -> Dictionary:
+	if not ResourceLoader.exists(MODEL): return {}
+	var root: Node = (load(MODEL) as PackedScene).instantiate()
+	var out := {}
+	for mi in root.find_children("*", "MeshInstance3D", true, false):
+		out[String(mi.name).to_lower()] = (mi as MeshInstance3D).mesh
+	root.free()
+	if not (out.has("body") and out.has("interior") and out.has("wheel")): return {}
+	var src: Mesh = out.body
+	var body := ArrayMesh.new()
+	for si in src.get_surface_count():
+		var arr: Array = src.surface_get_arrays(si)
+		var mname := String(src.surface_get_material(si).resource_name).to_lower() if src.surface_get_material(si) else ""
+		var n: int = (arr[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+		var cols: PackedColorArray = arr[Mesh.ARRAY_COLOR] if arr[Mesh.ARRAY_COLOR] != null else PackedColorArray()
+		if cols.size() != n:
+			cols = PackedColorArray(); cols.resize(n); cols.fill(Color(0.2, 0.2, 0.2))
+		var mat: Material = Mats.vcol
+		if mname.begins_with("paint"):
+			cols.fill(c1); mat = Mats.truck_paint
+		elif mname.begins_with("chrome"): mat = Mats.truck_chrome
+		elif mname.begins_with("lamp"): mat = Mats.lamp
+		arr[Mesh.ARRAY_COLOR] = cols
+		body.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		body.surface_set_material(body.get_surface_count() - 1, mat)
+	var wsrc: Mesh = out.wheel
+	var wheel := ArrayMesh.new()
+	for si in wsrc.get_surface_count():
+		var arr: Array = wsrc.surface_get_arrays(si)
+		wheel.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		wheel.surface_set_material(wheel.get_surface_count() - 1, Mats.vcol if arr[Mesh.ARRAY_COLOR] != null else wsrc.surface_get_material(si))
+	return {body = body, interior = out.interior, wheel = wheel}
 
 func setup(rng: RandomNumberGenerator) -> void:
 	collision_layer = 4
@@ -35,36 +83,50 @@ func setup(rng: RandomNumberGenerator) -> void:
 	continuous_cd = true
 	var m := Models.truck(rng)
 	paint = m
-	var mesh := ArrayMesh.new()
-	for part in [[m.paint, Mats.truck_paint], [m.chrome, Mats.truck_chrome], [m.dark, Mats.vcol], [m.lamps, Mats.lamp]]:
-		var mb: MeshBuilder = part[0]
-		if mb.is_empty(): continue
-		mb.commit(mesh)
-		mesh.surface_set_material(mesh.get_surface_count() - 1, part[1])
-	var body := MeshInstance3D.new(); body.mesh = mesh; body.name = "Body"; add_child(body)
+	var M := _load_model(m.c1)
+	modeled = not M.is_empty()
+	if modeled:
+		var body := MeshInstance3D.new(); body.mesh = M.body; body.name = "Body"; add_child(body)
+		var cab := MeshInstance3D.new(); cab.mesh = M.interior; cab.name = "Interior"; add_child(cab)
+		cab.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_model_wheel = M.wheel
+		BED_FLOOR_Y = M_BED_Y
+	else:
+		var mesh := ArrayMesh.new()
+		for part in [[m.paint, Mats.truck_paint], [m.chrome, Mats.truck_chrome], [m.dark, Mats.vcol], [m.lamps, Mats.lamp]]:
+			var mb: MeshBuilder = part[0]
+			if mb.is_empty(): continue
+			mb.commit(mesh)
+			mesh.surface_set_material(mesh.get_surface_count() - 1, part[1])
+		var body := MeshInstance3D.new(); body.mesh = mesh; body.name = "Body"; add_child(body)
+		BED_FLOOR_Y = 0.8
 	driver = _driver_mb().instance(); driver.name = "Driver"; driver.visible = false; add_child(driver)
-	var tg: MeshInstance3D = m.tailgate.instance(Mats.vcol_glass); tg.name = "Tailgate"
-	tg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(tg)
+	if not modeled:
+		var tg: MeshInstance3D = m.tailgate.instance(Mats.vcol_glass); tg.name = "Tailgate"
+		tg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(tg)
 	_build_gauges()
-	var gl: MeshInstance3D = m.glass.instance(Mats.truck_glass); gl.name = "Glass"
-	gl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(gl)
+	if not modeled:
+		var gl: MeshInstance3D = m.glass.instance(Mats.truck_glass); gl.name = "Glass"
+		gl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(gl)
 	# collision: front clip, cab, bed floor, bed walls, tailgate, chassis
 	_box(Vector3(0, 0.95, 1.62), Vector3(2.0, 0.75, 1.9))
 	_box(Vector3(0, 1.35, 0.05), Vector3(2.0, 1.25, 1.46))
-	_box(Vector3(0, 0.55, -1.69), Vector3(1.9, 0.5, 1.9))           # bed floor, top at 0.8
+	_box(Vector3(0, BED_FLOOR_Y - 0.25, -1.69), Vector3(1.9, 0.5, 1.9))           # bed floor
 	for sx in [-1.0, 1.0]:
 		_box(Vector3(sx * 0.97, 1.05, -1.69), Vector3(0.1, 0.6, 1.9))
 	_box(Vector3(0, 1.05, -0.73), Vector3(1.9, 0.6, 0.06))
 	_box(Vector3(0, 1.0, -2.62), Vector3(2.0, 0.62, 0.08))
 	_box(Vector3(0, 0.5, -2.85), Vector3(2.0, 0.2, 0.3))             # rear bumper
 	# wheels
-	var wmesh := Models.wheel().commit()
+	var wmesh: Mesh = _model_wheel if modeled else Models.wheel().commit()
+	var wr := M_WHEEL_R if modeled else Models.WHEEL_R
+	var trk := M_TRACK if modeled else Models.TRACK
 	for w in [[1, Models.FRONT_AXLE, true], [-1, Models.FRONT_AXLE, true], [1, Models.REAR_AXLE, false], [-1, Models.REAR_AXLE, false]]:
 		var vw := VehicleWheel3D.new()
-		vw.position = Vector3(w[0] * Models.TRACK, Models.WHEEL_R + 0.2, w[1])
-		vw.wheel_radius = Models.WHEEL_R
+		vw.position = Vector3(w[0] * trk, wr + 0.2, w[1])
+		vw.wheel_radius = wr
 		vw.wheel_rest_length = 0.2
 		vw.suspension_travel = 0.2
 		vw.suspension_stiffness = 46.0
@@ -75,7 +137,8 @@ func setup(rng: RandomNumberGenerator) -> void:
 		vw.wheel_roll_influence = 0.05
 		vw.use_as_steering = w[2]
 		vw.use_as_traction = not w[2]
-		var wm := MeshInstance3D.new(); wm.mesh = wmesh; wm.material_override = Mats.vcol
+		var wm := MeshInstance3D.new(); wm.mesh = wmesh
+		if not modeled: wm.material_override = Mats.vcol
 		if w[0] > 0: wm.rotation.y = PI
 		vw.add_child(wm)
 		add_child(vw)
@@ -98,7 +161,7 @@ func setup(rng: RandomNumberGenerator) -> void:
 	mirror_cam.cull_mask = 1             # no grass, ferns or flowers in the mirror: you'd never see them
 	mirror_vp.add_child(mirror_cam)
 	mirror_quad = MeshInstance3D.new()
-	var qm := QuadMesh.new(); qm.size = Vector2(0.37, 0.12)
+	var qm := QuadMesh.new(); qm.size = Vector2(0.2, 0.045) if modeled else Vector2(0.37, 0.12)
 	mirror_quad.mesh = qm
 	var mm := StandardMaterial3D.new()
 	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -106,7 +169,7 @@ func setup(rng: RandomNumberGenerator) -> void:
 	mm.uv1_scale = Vector3(-1, 1, 1)     # a mirror shows the world flipped left-right
 	mm.uv1_offset = Vector3(1, 0, 0)
 	mirror_quad.material_override = mm
-	mirror_quad.position = Vector3(0, 1.79, 0.468)
+	mirror_quad.position = Vector3(0, 1.709, 0.603) if modeled else Vector3(0, 1.79, 0.468)
 	mirror_quad.rotation.y = PI          # glass faces the driver (−Z)
 	mirror_quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mirror_quad)
@@ -182,6 +245,19 @@ var _tach_a := 0.0
 var _rpm := 0.0
 var _thr := 0.0
 func _build_gauges() -> void:
+	if modeled:
+		for e in [[M_SPEEDO, true], [M_TACH, false]]:
+			var pivot := Node3D.new(); pivot.position = e[0]
+			var nm := MeshBuilder.new()
+			var L := M_DIAL_R * 0.82
+			nm.box(0, L * 0.42, 0, 0.0028, L * 1.0, 0.0015, Color("#e0301e"))
+			nm.cyl(0, -0.001, 0, 0.0045, 0.0045, 0.003, Color("#2a2a2a"), 10, true)
+			var mi := nm.instance(); pivot.add_child(mi)
+			add_child(pivot)
+			if e[1]: speedo_needle = pivot
+			else: tach_needle = pivot
+		_set_needles(0.0, 0.0)
+		return
 	var mb := MeshBuilder.new()
 	var ink := Color("#1a1a1a"); var red := Color("#c0392b")
 	for g in [[0.52, 60.0, 10.0, 20.0], [0.28, 5.0, 1.0, 1.0]]:

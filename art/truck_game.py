@@ -12,8 +12,8 @@ from mathutils import Vector, Matrix
 A = sys.argv[sys.argv.index("--") + 1:]
 SRC, OUT = A[0], A[1]
 PREV = A[2] if len(A) > 2 else ""
-BODY_TRIS = 60000
-WHEEL_TRIS = 2400
+BODY_TRIS = 150000          # a computer's budget (phones would want ~40k)
+WHEEL_TRIS = 6000
 bpy.ops.wm.open_mainfile(filepath=SRC)
 body = bpy.data.objects["truck_body"]; inter = bpy.data.objects["truck_interior"]
 for o in list(bpy.data.objects):
@@ -90,7 +90,7 @@ for wx, wz in (FRONT, REAR):
 cls[(x > 0.17) & (x < 0.93) & (ay < 0.31) & (z < -0.05) & (nr[:, 2] > 0.6)] = DARK
 # chrome: the front and rear bumpers, the grille, the side mirrors
 cls[(x < -0.885) & (z < -0.105) & (z > -0.24)] = CHROME
-cls[(x > 0.9) & (z < -0.12) & (z > -0.25)] = CHROME
+cls[(x > 0.855) & (z < -0.133) & (z > -0.207)] = CHROME        # the rear bumper bar, under the tailgate
 cls[(x < -0.9) & (z >= -0.105) & (z < 0.09) & (ay < 0.24)] = CHROME
 cls[(ay > 0.355) & (z > 0.06) & (z < 0.26) & (x > -0.42) & (x < -0.2)] = CHROME
 # lamps: headlights either side of the grille, the tail lights in the rear corners
