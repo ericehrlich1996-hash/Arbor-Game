@@ -46,6 +46,7 @@ func setup(rng: RandomNumberGenerator) -> void:
 	var tg: MeshInstance3D = m.tailgate.instance(Mats.vcol_glass); tg.name = "Tailgate"
 	tg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(tg)
+	_build_gauges()
 	var gl: MeshInstance3D = m.glass.instance(Mats.truck_glass); gl.name = "Glass"
 	gl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(gl)
@@ -167,6 +168,86 @@ func toggle_cam() -> void:
 func speed_mph() -> float:
 	return linear_velocity.length() * 2.237
 
+# ---------------------------------------------------------------- the gauges
+## The two dials on the dash, either side of the column (the body is built mirrored, so they're at +x here):
+## the speedometer (0 to 60 mph) on the left and the tachometer (0 to 5,000 rpm) on the right, as you sit.
+## Each gets its tick marks and numbers, and a red needle that's turned every frame.
+const GAUGE_Y := 1.2
+const GAUGE_Z := 0.41               # just in front of the dial faces (they face back toward the seat)
+const SWEEP := 4.71                  # 270 degrees, from lower left round to lower right
+var speedo_needle: Node3D
+var tach_needle: Node3D
+var _speedo_a := 0.0
+var _tach_a := 0.0
+var _rpm := 0.0
+var _thr := 0.0
+func _build_gauges() -> void:
+	var mb := MeshBuilder.new()
+	var ink := Color("#1a1a1a"); var red := Color("#c0392b")
+	for g in [[0.52, 60.0, 10.0, 20.0], [0.28, 5.0, 1.0, 1.0]]:
+		var gx: float = g[0]; var top: float = g[1]; var step: float = g[2]; var lab: float = g[3]
+		var n := int(round(top / step))
+		for k in range(n * 2 + 1):
+			var th := -SWEEP / 2.0 + SWEEP * k / (n * 2)
+			var major := k % 2 == 0
+			var ln := 0.014 if major else 0.008
+			var r := 0.06 - ln / 2.0
+			mb.push(Transform3D(Basis(Vector3.BACK, th), Vector3(gx, GAUGE_Y, GAUGE_Z + 0.003)))
+			mb.box(0, r, 0, 0.003 if major else 0.002, ln, 0.002, red if (gx < 0.4 and k >= n * 2 - 1) else ink)
+			mb.pop()
+		var v := 0.0
+		while v <= top + 0.001:
+			var th := -SWEEP / 2.0 + SWEEP * v / top
+			var lb := Label3D.new()
+			lb.text = str(int(v))
+			lb.font_size = 40; lb.pixel_size = 0.0004; lb.outline_size = 0
+			lb.modulate = ink
+			lb.position = Vector3(gx - sin(th) * 0.041, GAUGE_Y + cos(th) * 0.041, GAUGE_Z - 0.001)
+			lb.rotation = Vector3(0, PI, 0)                     # facing back at the driver
+			add_child(lb)
+			v += lab
+		var unit := Label3D.new()
+		unit.text = "MPH" if gx > 0.4 else "RPM x1000"
+		unit.font_size = 28; unit.pixel_size = 0.0004; unit.outline_size = 0; unit.modulate = Color("#555555")
+		unit.position = Vector3(gx, GAUGE_Y - 0.03, GAUGE_Z - 0.001); unit.rotation = Vector3(0, PI, 0)
+		add_child(unit)
+	var faces := mb.instance(); faces.name = "GaugeMarks"; faces.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(faces)
+	for gx: float in [0.52, 0.28]:
+		var pivot := Node3D.new(); pivot.position = Vector3(gx, GAUGE_Y, GAUGE_Z - 0.003)
+		var nm := MeshBuilder.new()
+		nm.box(0, 0.024, 0, 0.0035, 0.058, 0.002, red)
+		nm.box(0, -0.006, 0, 0.0035, 0.014, 0.002, red)
+		nm.cyl(0, -0.002, 0, 0.007, 0.007, 0.004, Color("#2a2a2a"), 10, true)
+		var mi := nm.instance(); mi.rotation = Vector3(PI / 2, 0, 0)       # the cap's cylinder faces the driver
+		mi.rotation = Vector3.ZERO
+		pivot.add_child(mi)
+		add_child(pivot)
+		if gx > 0.4: speedo_needle = pivot
+		else: tach_needle = pivot
+	_set_needles(0.0, 0.0)
+
+func _set_needles(mph: float, rpm: float) -> void:
+	if speedo_needle: speedo_needle.rotation = Vector3(0, 0, -SWEEP / 2.0 + SWEEP * clampf(mph / 60.0, 0.0, 1.0))
+	if tach_needle: tach_needle.rotation = Vector3(0, 0, -SWEEP / 2.0 + SWEEP * clampf(rpm / 5000.0, 0.0, 1.0))
+
+## the engine's revs: idling when you're in the cab, climbing through three gears as the truck picks up speed,
+## a bit higher with your foot down; off when you're out of it
+func _gauges_step(dt: float) -> void:
+	var mph := absf(linear_velocity.dot(global_transform.basis.z)) * 2.237
+	var want := 0.0
+	if driving:
+		var gears := [[0.0, 11.0], [11.0, 21.0], [21.0, 40.0]]
+		var gear: Array = gears[0]
+		for gr in gears:
+			if mph >= gr[0]: gear = gr
+		var frac := clampf((mph - float(gear[0])) / (float(gear[1]) - float(gear[0])), 0.0, 1.0)
+		want = 750.0 + frac * 3300.0 + absf(_thr) * (500.0 if mph < 1.0 else 350.0) + sin(Time.get_ticks_msec() * 0.031) * 25.0
+		if mph > 0.5 and float(gear[0]) > 0.0: want = maxf(want, 1500.0)
+	_rpm = lerpf(_rpm, want, minf(1.0, dt * 6.0))
+	_speedo_a = lerpf(_speedo_a, mph, minf(1.0, dt * 8.0))
+	_set_needles(_speedo_a, _rpm)
+
 ## you, behind the wheel: only drawn from the chase camera (in the cab you're looking out of your own eyes)
 var driver: MeshInstance3D
 
@@ -211,6 +292,7 @@ func _physics_process(dt: float) -> void:
 	var v := linear_velocity.dot(fwd)
 	if driving:
 		var thr := Input.get_axis("move_back", "move_fwd")
+		_thr = thr
 		var st := Input.get_axis("move_right", "move_left")
 		steering = move_toward(steering, st * (0.55 if absf(v) < 6 else 0.3), dt * 2.0)
 		var want_brake := Input.is_action_pressed("jump")
@@ -240,6 +322,7 @@ func _physics_process(dt: float) -> void:
 			_still_t = 0.0
 
 func _process(dt: float) -> void:
+	_gauges_step(dt)
 	# the rear-view mirror is a second render of the world: only refresh it every third frame
 	if mirror_live:
 		_mirror_n += 1

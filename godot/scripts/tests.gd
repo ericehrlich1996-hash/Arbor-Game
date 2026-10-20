@@ -3102,3 +3102,21 @@ func _earl_wave_twist() -> void:
 		e._pose()
 		await wait(0.3)
 		await shot("twist-" + c[0])
+
+## the gauges working: idling, then foot down, looking down at them through the wheel
+func _gauges() -> void:
+	await wait(1.0)
+	g._start()
+	g.enter_truck()
+	await wait(1.0)
+	var t: Truck = g.truck
+	t.look_pitch = -0.12; t.look_yaw = -0.04
+	await wait(0.5)
+	note("idle", [snappedf(t.speed_mph(), 0.1), int(t._rpm)])
+	await shot("gauges-idle")
+	Input.action_press("move_fwd")
+	for k in range(4):
+		await wait(1.0)
+		note("driving", [snappedf(t.speed_mph(), 0.1), int(t._rpm), snappedf(t.speedo_needle.rotation.z, 0.01)])
+	await shot("gauges-driving")
+	Input.action_release("move_fwd")

@@ -125,12 +125,14 @@ static func truck(rng: RandomNumberGenerator) -> Dictionary:
 	for sx in [-0.45, 0.35]: D.tube(Vector3(sx, yb + 0.05, 0.84), Vector3(sx + 0.4, yb + 0.12, 0.78), 0.008, 0.008, black, 4)
 	# ---------------- interior (the dash, gauges, wheel, bench seat)
 	D.box(0, 1.06, 0.66, 1.9, 0.18, 0.26, dash); D.bevel_box(0, 1.16, 0.6, 1.88, 0.05, 0.34, MeshBuilder.shade(dash, 1.15), 0.02)
-	D.bevel_box(-0.4, 1.13, 0.5, 0.5, 0.16, 0.08, MeshBuilder.shade(dash, 0.8), 0.02)
+	# the gauge pod: up behind the top of the wheel where you can see it, under a little hood
+	D.bevel_box(-0.4, 1.2, 0.47, 0.5, 0.17, 0.1, MeshBuilder.shade(dash, 0.8), 0.02)
+	D.bevel_box(-0.4, 1.29, 0.445, 0.52, 0.03, 0.12, MeshBuilder.shade(dash, 0.9), 0.012)
 	for gx in [-0.52, -0.28]:
-		D.push(Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(gx, 1.1, 0.455)))
+		D.push(Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(gx, 1.2, 0.42)))
 		D.cyl(0, 0, 0, 0.07, 0.07, 0.01, h("#e8e2cc"), 16, true)
 		D.pop()
-		D.box(gx, 1.13, 0.445, 0.006, 0.06, 0.004, h("#c0392b"))
+		# (the needles are their own nodes, driven by the truck: see Truck._build_gauges)
 	D.box(0.35, 1.03, 0.53, 0.45, 0.08, 0.02, h("#6a6f75"))
 	var cx := -0.4; var cy := 1.12; var czw := 0.38; var r := 0.19
 	D.push(Transform3D(Basis(Vector3.RIGHT, -0.42), Vector3(cx, cy, czw)))
