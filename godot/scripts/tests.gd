@@ -3081,3 +3081,24 @@ func _storm_cost() -> void:
 		var m: Array = await measure.call()
 		for c in groups[key]: (c as Node3D).visible = true
 		if base[0] - m[0] > 6 or base[1] - m[1] > 8: note(key + " x%d" % groups[key].size(), [base[0] - m[0], base[1] - m[1]])
+
+## trying forearm/upper-arm twists for Earl's wave: each candidate posed directly on the pivots, close up
+func _earl_wave_twist() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(0.5)
+	g.hud.visible = false
+	var e = g.earl
+	e.walk_to = null
+	e.set_process(false)
+	var cam := Camera3D.new(); cam.fov = 30; g.level_root.add_child(cam); cam.make_current()
+	var b: Basis = e.global_transform.basis
+	var tgt: Vector3 = e.global_position + Vector3(0, 1.55, 0)
+	cam.global_position = tgt + b.z * 2.6 + b.x * 0.4; cam.look_at(tgt)
+	var cands := [["base", 0.0, 0.0], ["fo+", 0.0, 1.3], ["fo-", 0.0, -1.3], ["up+", 1.3, 0.0], ["up-", -1.3, 0.0], ["up-fo-", -0.8, -0.8]]
+	for c in cands:
+		e.state = "wave"; e.talking = false; e.t = 0.0
+		e.wave_twist = Vector2(c[1], c[2])
+		e._pose()
+		await wait(0.3)
+		await shot("twist-" + c[0])
