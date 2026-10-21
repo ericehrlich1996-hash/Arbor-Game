@@ -509,6 +509,8 @@ func _step_intro(dt: float) -> void:
 	var speed: float = (d - I.d) / maxf(dt, 1e-3)
 	I.d = d
 	_place_on_path(d)
+	truck.scripted_speed = absf(speed) if I.t < INTRO_DRIVE else 0.0
+	truck.scripted_engine = I.t < INTRO_DRIVE + 0.6
 	chipper.trail(dt)
 	for w in truck.wheels:
 		var wm: Node3D = w.get_child(0)
@@ -560,6 +562,7 @@ func _step_intro(dt: float) -> void:
 
 func end_intro() -> void:
 	if phase != "intro": return
+	truck.scripted_speed = -1.0; truck.scripted_engine = false
 	if intro.get("eng"): intro.eng.stop()
 	Sfx.play("slam")
 	_place_on_path(path_len[path_len.size() - 1])

@@ -309,10 +309,13 @@ func _set_needles(mph: float, rpm: float) -> void:
 
 ## the engine's revs: idling when you're in the cab, climbing through three gears as the truck picks up speed,
 ## a bit higher with your foot down; off when you're out of it
+var scripted_speed := -1.0       # m/s while the intro drive slides the truck along the road (physics reads 0 then); -1 = off
+var scripted_engine := false     # the engine's running in the intro (idling once it's parked)
 func _gauges_step(dt: float) -> void:
 	var mph := absf(linear_velocity.dot(global_transform.basis.z)) * 2.237
+	if scripted_speed >= 0.0: mph = scripted_speed * 2.237
 	var want := 0.0
-	if driving:
+	if driving or scripted_engine:
 		var gears := [[0.0, 11.0], [11.0, 21.0], [21.0, 40.0]]
 		var gear: Array = gears[0]
 		for gr in gears:

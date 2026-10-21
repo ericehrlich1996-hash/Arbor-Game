@@ -17,6 +17,7 @@ var world: WorldGen
 var display := NAME             # the name in the dialogue box
 var idle_lines: Array = IDLE
 var state := "wave"
+const WAVES := false                     # the waving arm is off: he just stands there (state "wave" poses like idle)
 var wave_twist := Vector2(0.0, -1.3)    # palm toward you: turns the upper arm (x) and forearm (y) about their length while waving
 var t := 0.0
 var talking := false
@@ -206,7 +207,7 @@ func _pose() -> void:
 	n_head.rotation = Vector3(sin(t * 9) * 0.08 if talking else -0.05, sin(t * 0.7) * 0.15, 0)
 	for side in [1.0, -1.0]:
 		var up: Vector3; var fo: Vector3
-		if state == "wave" and side > 0:
+		if WAVES and state == "wave" and side > 0:
 			# upper arm out and up beside the head, elbow bent, the hand waving from the elbow
 			up = Vector3(-0.25, wave_twist.x, side * 1.95); fo = Vector3(0, wave_twist.y, side * (0.95 + sin(t * 8) * 0.35))
 		elif talking and side > 0:

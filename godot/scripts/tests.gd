@@ -388,6 +388,8 @@ func _intro() -> void:
 		while g.intro.t < t and g.phase == "intro": await get_tree().process_frame
 		await shot("intro-%04.1f" % t)
 		note("intro_t", [t, g.truck.global_position, g.chipper.coupler_world().distance_to(g.truck.hitch_world())])
+		note("intro_gauges", [t, snappedf(g.truck._speedo_a, 0.1), int(g.truck._rpm)])
+		note("intro_gauges", [t, snappedf(g.truck._speedo_a, 0.1), int(g.truck._rpm)])
 	while g.phase == "intro": await wait(0.2)
 	await wait(0.5)
 	note("phase", g.phase)
