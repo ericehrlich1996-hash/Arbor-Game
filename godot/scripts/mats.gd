@@ -31,6 +31,7 @@ var lamp: StandardMaterial3D
 var truck_paint: ShaderMaterial    # faded paint eaten through with rust, grime low down
 var truck_chrome: ShaderMaterial
 var truck_glass: StandardMaterial3D
+var truck_tex: ShaderMaterial      # the textured Meshy truck: its own colour, metal/roughness and normal maps, with a little rust
 
 const RUST_SHADER := """
 shader_type spatial;
@@ -70,6 +71,58 @@ void fragment() {
 }
 """
 
+## the Meshy truck's textures, as painted, with the old truck's wear on top: rust low down on the paint (round the
+## arches and along the sills), a little dulling; none of it once the truck's been fixed up. The chrome stays chrome.
+const TEX_RUST_SHADER := """
+shader_type spatial;
+uniform sampler2D albedo_tex : source_color, filter_linear_mipmap, repeat_disable;
+uniform sampler2D orm_tex : hint_default_white, filter_linear_mipmap, repeat_disable;
+uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap, repeat_disable;
+uniform bool has_orm = false;
+uniform bool has_normal = false;
+uniform float rust = 1.0;
+varying vec3 lp;
+float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+float n3(vec3 p) {
+	vec3 i = floor(p); vec3 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y),
+		mix(mix(h3(i + vec3(0,0,1)), h3(i + vec3(1,0,1)), f.x), mix(h3(i + vec3(0,1,1)), h3(i + vec3(1,1,1)), f.x), f.y), f.z);
+}
+float fbm(vec3 p) { float v = 0.0; float a = 0.5; for (int i = 0; i < 4; i++) { v += a * n3(p); p = p * 2.07 + 3.1; a *= 0.5; } return v; }
+void vertex() { lp = VERTEX; }
+void fragment() {
+	// Meshy's atlas is hundreds of tiny islands: deep mip levels blend neighbouring islands' colours together,
+	// so never go more than a level or two down
+	vec2 tsz = vec2(textureSize(albedo_tex, 0));
+	float lod = clamp(log2(max(length(dFdx(UV * tsz)), length(dFdy(UV * tsz)))), 0.0, 1.5);
+	vec3 base = textureLod(albedo_tex, UV, lod).rgb;
+	vec3 orm = has_orm ? textureLod(orm_tex, UV, lod).rgb : vec3(1.0, 0.6, 0.0);
+	float metal = orm.b;
+	float rough = orm.g;
+	if (has_normal) { NORMAL_MAP = textureLod(normal_tex, UV, lod).rgb; }
+	// paint only (not the chrome, the glass or the tyres): rust creeping up from the sills and arches
+	// painted body panels only: not the chrome, not the black rubber, chassis and trim, nothing under the sills
+	// and nothing inside the cab
+	float lum = dot(base, vec3(0.3, 0.5, 0.2));
+	float in_cab = step(abs(lp.x), 0.72) * step(0.6, lp.y) * step(lp.y, 1.95) * step(-0.62, lp.z) * step(lp.z, 0.8);
+	float paint = (1.0 - smoothstep(0.35, 0.6, metal)) * smoothstep(0.1, 0.2, lum) * smoothstep(0.42, 0.55, lp.y) * (1.0 - in_cab);
+	float low = 1.0 - smoothstep(0.5, 1.0, lp.y);
+	float m = fbm(lp * 2.3) * 0.75 + low * 0.55 + (n3(lp * 22.0) - 0.5) * 0.14;
+	float r = smoothstep(0.86 - rust * 0.12, 0.93 - rust * 0.1, m) * paint * smoothstep(0.0, 0.2, rust);
+	float pit = step(0.985, n3(lp * 52.0)) * rust * paint * 0.7;
+	r = max(r, pit);
+	vec3 rc = mix(vec3(0.22, 0.09, 0.04), vec3(0.5, 0.24, 0.09), n3(lp * 9.0));
+	float halo = smoothstep(0.8 - rust * 0.12, 0.86 - rust * 0.1, m) * (1.0 - r) * paint * smoothstep(0.0, 0.2, rust);
+	vec3 col = mix(base, base * 0.7 + vec3(0.03, 0.02, 0.01), halo * 0.6);
+	col = mix(col, rc, r);
+	col = mix(col, vec3(dot(col, vec3(0.3, 0.5, 0.2))), 0.12 * rust * paint);      // a little sun-faded
+	ALBEDO = col;
+	METALLIC = metal * (1.0 - r);
+	ROUGHNESS = mix(clamp(rough + 0.12 * rust * paint, 0.0, 1.0), 0.95, r);
+	SPECULAR = 0.4;
+}
+"""
+
 var truck_rust := 1.0
 
 ## how rusty the old truck is (1 = as found; fixing it up brings this down)
@@ -77,6 +130,7 @@ func set_truck_rust(k: float) -> void:
 	truck_rust = k
 	truck_paint.set_shader_parameter("rust", 1.0 * k)
 	truck_chrome.set_shader_parameter("rust", 0.6 * k)
+	if truck_tex: truck_tex.set_shader_parameter("rust", k)
 	# fixed up: glossy fresh paint, bright chrome, clean glass
 	truck_paint.set_shader_parameter("shine", lerpf(0.22, 0.45, k))
 	truck_chrome.set_shader_parameter("shine", lerpf(0.15, 0.35, k))
@@ -118,6 +172,8 @@ func _ready() -> void:
 	truck_paint = ShaderMaterial.new(); truck_paint.shader = rsh
 	truck_chrome = ShaderMaterial.new(); truck_chrome.shader = rsh
 	truck_chrome.set_shader_parameter("metal", 0.55); truck_chrome.set_shader_parameter("shine", 0.35)
+	var tsh := Shader.new(); tsh.code = TEX_RUST_SHADER
+	truck_tex = ShaderMaterial.new(); truck_tex.shader = tsh
 	set_truck_rust(1.0)
 	glass = vcol.duplicate()
 	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA

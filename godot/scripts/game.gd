@@ -1503,7 +1503,7 @@ func _process(dt: float) -> void:
 	if not player.in_truck:
 		aim = compute_aim()
 		var l := truck.bed_local(player.global_position)
-		on_bed = absf(l.x) < 1.0 and l.z > -2.7 and l.z < -0.7 and l.y > 0.5
+		on_bed = absf(l.x) < 1.0 and l.z > -2.7 and l.z < -0.7 and l.y > Truck.BED_FLOOR_Y - 0.15
 	else:
 		aim = {}
 	_step_dialog(dt)

@@ -3135,3 +3135,42 @@ func _gauges() -> void:
 		note("driving", [snappedf(t.speed_mph(), 0.1), int(t._rpm), snappedf(t.speedo_needle.rotation.z, 0.01)])
 	await shot("gauges-driving")
 	Input.action_release("move_fwd")
+
+## the truck model in the game: round the outside as found (rusty) and fixed up, the wheels on the ground, the cab
+func _truck_look() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(1.5)
+	g.hud.visible = false
+	var t: Truck = g.truck
+	note("modeled", [t.modeled, t.wheels.size(), Truck.BED_FLOOR_Y])
+	for n in g.level_root.find_children("*", "CharacterBody3D", true, false): n.visible = false
+	if g.earl: g.earl.visible = false
+	g.player.visible = false
+	for n in g.level_root.get_children():
+		if n is Node3D and (String(n.name).to_lower().contains("crew") or String(n.name).to_lower().contains("worker")): n.visible = false
+	for w in t.wheels: note("wheel", [w.position, w.is_in_contact()])
+	var cam := Camera3D.new(); cam.fov = 45; g.level_root.add_child(cam); cam.make_current()
+	var views := [["front34", Vector3(3.6, 1.6, 5.4)], ["rear34", Vector3(-3.8, 2.0, -5.6)], ["side", Vector3(6.5, 1.0, 0.0)], ["wheel", Vector3(2.2, 0.7, 2.6)]]
+	for rust in [1.0, 0.0]:
+		Mats.set_truck_rust(rust)
+		for v in views:
+			cam.global_position = t.global_transform * v[1]
+			cam.look_at(t.global_transform * Vector3(0, 0.8 if v[0] != "wheel" else 0.45, 0.0 if v[0] != "wheel" else 1.4))
+			await wait(0.3)
+			await shot("truck-%s-%s" % [v[0], "rusty" if rust > 0.5 else "fixed"])
+	Mats.set_truck_rust(1.0)
+	g.player.visible = true
+	g.enter_truck()
+	await wait(1.0)
+	t.look_pitch = -0.12; t.look_yaw = -0.04
+	await wait(0.4)
+	await shot("truck-cab")
+	Input.action_press("move_fwd")
+	await wait(3.0)
+	note("driving", [snappedf(t.speed_mph(), 0.1), int(t._rpm)])
+	await shot("truck-cab-driving")
+	t.look_yaw = 0.0; t.look_pitch = 0.05
+	await wait(0.2)
+	await shot("truck-cab-mirror")
+	Input.action_release("move_fwd")

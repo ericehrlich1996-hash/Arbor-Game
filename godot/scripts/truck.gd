@@ -25,18 +25,20 @@ var _last_pos := Vector3.ZERO
 
 static var BED_FLOOR_Y := 0.8         # (the Meshy truck's bed sits lower: set in setup)
 
-## the modelled truck (art/truck_interior.py + art/truck_game.py): its body, cab interior and a wheel, already in
-## this truck's frame. Where it's missing, the truck is built in code (Models.truck) as before.
+## the modelled truck (art/truck_meshy2.py): Meshy's textured body, the new steering wheel and gauge faces, the
+## windshield glass and its four wheels, already in this truck's frame. Where it's missing, the truck is built in
+## code (Models.truck) as before.
 const MODEL := "res://models/truck.glb"
-const M_WHEEL_R := 0.466
-const M_TRACK := 0.80
-const M_BED_Y := 0.665
-# the two big dials on the new dash (they're painted without needles; these are driven)
-const M_SPEEDO := Vector3(0.4194, 1.2153, 0.557)
-const M_TACH := Vector3(0.3456, 1.2153, 0.557)
-const M_DIAL_R := 0.045
+const M_WHEEL_R := 0.38
+const M_TRACK := 0.804
+const M_BED_Y := 0.487
+# the two big dials on the gauge faces (they're painted without needles; these are driven)
+const M_SPEEDO := Vector3(0.3866, 1.3285, 0.667)
+const M_TACH := Vector3(0.3109, 1.3285, 0.667)
+const M_DIAL_R := 0.047
+const M_MIRROR := Vector3(-0.008, 1.739, 0.517)
 var modeled := false
-var _model_wheel: Mesh
+var _model_wheels := {}          # f1 / f0 / r1 / r0 (front or rear, on the +x or -x side)
 
 ## the model's parts, ready to add: the body recoloured to this truck's paint and on the game's paint, chrome
 ## and lamp shaders, the interior as it comes, and the wheel
@@ -47,7 +49,32 @@ func _load_model(c1: Color) -> Dictionary:
 	for mi in root.find_children("*", "MeshInstance3D", true, false):
 		out[String(mi.name).to_lower()] = (mi as MeshInstance3D).mesh
 	root.free()
-	if not (out.has("body") and out.has("interior") and out.has("wheel")): return {}
+	if not (out.has("body") and out.has("interior")): return {}
+	if out.has("wheel_f1"):
+		# Meshy's textured truck: the body on its own textures (through the rust shader), the wheels as they come
+		var tex_body: Mesh = out.body
+		var bm := ArrayMesh.new()
+		for si in tex_body.get_surface_count():
+			bm.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, tex_body.surface_get_arrays(si))
+			var sm := tex_body.surface_get_material(si) as StandardMaterial3D
+			if sm:
+				Mats.truck_tex.set_shader_parameter("albedo_tex", sm.albedo_texture)
+				if sm.metallic_texture:
+					Mats.truck_tex.set_shader_parameter("orm_tex", sm.metallic_texture); Mats.truck_tex.set_shader_parameter("has_orm", true)
+				if sm.normal_enabled and sm.normal_texture:
+					Mats.truck_tex.set_shader_parameter("normal_tex", sm.normal_texture); Mats.truck_tex.set_shader_parameter("has_normal", true)
+			bm.surface_set_material(si, Mats.truck_tex)
+		var res := {body = bm, interior = out.interior, wheels = {}}
+		for k in ["f1", "f0", "r1", "r0"]:
+			var wsrc: Mesh = out["wheel_" + k]
+			var wm := ArrayMesh.new()
+			for si in wsrc.get_surface_count():
+				wm.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, wsrc.surface_get_arrays(si))
+				wm.surface_set_material(si, Mats.truck_tex)
+			res.wheels[k] = wm
+		if out.has("glass"): res.glass = out.glass
+		return res
+	if not out.has("wheel"): return {}
 	var src: Mesh = out.body
 	var body := ArrayMesh.new()
 	for si in src.get_surface_count():
@@ -89,7 +116,11 @@ func setup(rng: RandomNumberGenerator) -> void:
 		var body := MeshInstance3D.new(); body.mesh = M.body; body.name = "Body"; add_child(body)
 		var cab := MeshInstance3D.new(); cab.mesh = M.interior; cab.name = "Interior"; add_child(cab)
 		cab.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_model_wheel = M.wheel
+		_model_wheels = M.wheels if M.has("wheels") else {f1 = M.wheel, f0 = M.wheel, r1 = M.wheel, r0 = M.wheel}
+		if M.has("glass"):
+			var gl := MeshInstance3D.new(); gl.mesh = M.glass; gl.name = "Glass"; gl.material_override = Mats.truck_glass
+			gl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(gl)
 		BED_FLOOR_Y = M_BED_Y
 	else:
 		var mesh := ArrayMesh.new()
@@ -113,14 +144,16 @@ func setup(rng: RandomNumberGenerator) -> void:
 	# collision: front clip, cab, bed floor, bed walls, tailgate, chassis
 	_box(Vector3(0, 0.95, 1.62), Vector3(2.0, 0.75, 1.9))
 	_box(Vector3(0, 1.35, 0.05), Vector3(2.0, 1.25, 1.46))
-	_box(Vector3(0, BED_FLOOR_Y - 0.25, -1.69), Vector3(1.9, 0.5, 1.9))           # bed floor
+	var bed_t := 0.5 if not modeled else 0.12                        # (the Meshy bed sits low: keep its floor clear of the road)
+	_box(Vector3(0, BED_FLOOR_Y - bed_t / 2.0, -1.69), Vector3(1.9, bed_t, 1.9))           # bed floor
 	for sx in [-1.0, 1.0]:
 		_box(Vector3(sx * 0.97, 1.05, -1.69), Vector3(0.1, 0.6, 1.9))
 	_box(Vector3(0, 1.05, -0.73), Vector3(1.9, 0.6, 0.06))
 	_box(Vector3(0, 1.0, -2.62), Vector3(2.0, 0.62, 0.08))
 	_box(Vector3(0, 0.5, -2.85), Vector3(2.0, 0.2, 0.3))             # rear bumper
 	# wheels
-	var wmesh: Mesh = _model_wheel if modeled else Models.wheel().commit()
+	var wmesh: Mesh = null if modeled else Models.wheel().commit()
+	var per_corner := modeled and M.has("wheels")
 	var wr := M_WHEEL_R if modeled else Models.WHEEL_R
 	var trk := M_TRACK if modeled else Models.TRACK
 	for w in [[1, Models.FRONT_AXLE, true], [-1, Models.FRONT_AXLE, true], [1, Models.REAR_AXLE, false], [-1, Models.REAR_AXLE, false]]:
@@ -137,9 +170,11 @@ func setup(rng: RandomNumberGenerator) -> void:
 		vw.wheel_roll_influence = 0.05
 		vw.use_as_steering = w[2]
 		vw.use_as_traction = not w[2]
-		var wm := MeshInstance3D.new(); wm.mesh = wmesh
+		var wm := MeshInstance3D.new()
+		if modeled: wm.mesh = _model_wheels[("f" if w[2] else "r") + ("1" if w[0] > 0 else "0")]
+		else: wm.mesh = wmesh
 		if not modeled: wm.material_override = Mats.vcol
-		if w[0] > 0: wm.rotation.y = PI
+		if w[0] > 0 and not per_corner: wm.rotation.y = PI
 		vw.add_child(wm)
 		add_child(vw)
 		wheels.append(vw)
@@ -161,7 +196,7 @@ func setup(rng: RandomNumberGenerator) -> void:
 	mirror_cam.cull_mask = 1             # no grass, ferns or flowers in the mirror: you'd never see them
 	mirror_vp.add_child(mirror_cam)
 	mirror_quad = MeshInstance3D.new()
-	var qm := QuadMesh.new(); qm.size = Vector2(0.2, 0.045) if modeled else Vector2(0.37, 0.12)
+	var qm := QuadMesh.new(); qm.size = Vector2(0.27, 0.075) if modeled else Vector2(0.37, 0.12)
 	mirror_quad.mesh = qm
 	var mm := StandardMaterial3D.new()
 	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -169,7 +204,7 @@ func setup(rng: RandomNumberGenerator) -> void:
 	mm.uv1_scale = Vector3(-1, 1, 1)     # a mirror shows the world flipped left-right
 	mm.uv1_offset = Vector3(1, 0, 0)
 	mirror_quad.material_override = mm
-	mirror_quad.position = Vector3(0, 1.709, 0.603) if modeled else Vector3(0, 1.79, 0.468)
+	mirror_quad.position = M_MIRROR if modeled else Vector3(0, 1.79, 0.468)
 	mirror_quad.rotation.y = PI          # glass faces the driver (−Z)
 	mirror_quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mirror_quad)
@@ -203,7 +238,7 @@ func bed_local(p: Vector3) -> Vector3:
 
 func in_bed(p: Vector3) -> bool:
 	var l := bed_local(p)
-	return absf(l.x) < 1.0 and l.z > -2.7 and l.z < -0.7 and l.y > 0.6 and l.y < 3.0
+	return absf(l.x) < 1.0 and l.z > -2.7 and l.z < -0.7 and l.y > BED_FLOOR_Y - 0.08 and l.y < 3.0
 
 func enter() -> void:
 	freeze = false
