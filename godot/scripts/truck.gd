@@ -42,8 +42,9 @@ var _model_wheels := {}          # f1 / f0 / r1 / r0 (front or rear, on the +x o
 
 ## the model's parts, ready to add: the body recoloured to this truck's paint and on the game's paint, chrome
 ## and lamp shaders, the interior as it comes, and the wheel
+const USE_MODEL := false        # the code-built square-body is the truck; the Meshy model stays on disk unused
 func _load_model(c1: Color) -> Dictionary:
-	if not ResourceLoader.exists(MODEL): return {}
+	if not USE_MODEL or not ResourceLoader.exists(MODEL): return {}
 	var root: Node = (load(MODEL) as PackedScene).instantiate()
 	var out := {}
 	for mi in root.find_children("*", "MeshInstance3D", true, false):
@@ -270,15 +271,50 @@ func speed_mph() -> float:
 ## The two dials on the dash, either side of the column (the body is built mirrored, so they're at +x here):
 ## the speedometer (0 to 60 mph) on the left and the tachometer (0 to 5,000 rpm) on the right, as you sit.
 ## Each gets its tick marks and numbers, and a red needle that's turned every frame.
-const GAUGE_Y := 1.2
+const GAUGE_Y := 1.215
 const GAUGE_Z := 0.41               # just in front of the dial faces (they face back toward the seat)
+const SPEEDO_X := 0.5
+const TACH_X := 0.3
+const FUEL_X := 0.66
+const TEMP_X := 0.14
 const SWEEP := 4.71                  # 270 degrees, from lower left round to lower right
+const SMALL_SWEEP := 1.7             # the little fuel and temp dials swing about 100 degrees
+static var odometer := 84213.4       # miles; carried from job to job while the game's running
 var speedo_needle: Node3D
 var tach_needle: Node3D
+var fuel_needle: Node3D
+var temp_needle: Node3D
+var gear_mark: Node3D
+var odo_label: Label3D
 var _speedo_a := 0.0
 var _tach_a := 0.0
 var _rpm := 0.0
 var _thr := 0.0
+var _fuel := 0.62
+var _temp := 0.25
+var _gear := "P"
+func _label(text: String, pos: Vector3, size: int, col: Color) -> Label3D:
+	var lb := Label3D.new()
+	lb.text = text
+	lb.font_size = size; lb.pixel_size = 0.0004; lb.outline_size = 0
+	lb.modulate = col
+	lb.position = pos
+	lb.rotation = Vector3(0, PI, 0)                     # facing back at the driver
+	lb.shaded = false; lb.double_sided = false
+	add_child(lb)
+	return lb
+
+func _needle(at: Vector3, length: float, col: Color) -> Node3D:
+	var pivot := Node3D.new(); pivot.position = at
+	var nm := MeshBuilder.new()
+	nm.box(0, length * 0.4, 0, 0.0035, length, 0.002, col)
+	nm.box(0, -length * 0.12, 0, 0.0035, length * 0.25, 0.002, col)
+	nm.cyl(0, -0.002, 0, 0.0075, 0.0075, 0.004, Color("#2a2a2a"), 10, true)
+	var mi := nm.instance(); mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	pivot.add_child(mi)
+	add_child(pivot)
+	return pivot
+
 func _build_gauges() -> void:
 	if modeled:
 		for e in [[M_SPEEDO, true], [M_TACH, false]]:
@@ -294,63 +330,84 @@ func _build_gauges() -> void:
 		_set_needles(0.0, 0.0)
 		return
 	var mb := MeshBuilder.new()
-	var ink := Color("#1a1a1a"); var red := Color("#c0392b")
-	for g in [[0.52, 60.0, 10.0, 20.0], [0.28, 5.0, 1.0, 1.0]]:
+	var ink := Color("#1a1a1a"); var red := Color("#c0392b"); var grey := Color("#555555")
+	var fz := GAUGE_Z + 0.004
+	for g in [[SPEEDO_X, 60.0, 5.0, 10.0], [TACH_X, 5.0, 0.5, 1.0]]:
 		var gx: float = g[0]; var top: float = g[1]; var step: float = g[2]; var lab: float = g[3]
 		var n := int(round(top / step))
-		for k in range(n * 2 + 1):
-			var th := -SWEEP / 2.0 + SWEEP * k / (n * 2)
-			var major := k % 2 == 0
-			var ln := 0.014 if major else 0.008
-			var r := 0.06 - ln / 2.0
-			mb.push(Transform3D(Basis(Vector3.BACK, th), Vector3(gx, GAUGE_Y, GAUGE_Z + 0.003)))
-			mb.box(0, r, 0, 0.003 if major else 0.002, ln, 0.002, red if (gx < 0.4 and k >= n * 2 - 1) else ink)
+		for k in range(n + 1):
+			var th := -SWEEP / 2.0 + SWEEP * k / n
+			var major := is_equal_approx(fmod(k * step, lab), 0.0) or is_equal_approx(fmod(k * step, lab), lab)
+			var ln := 0.015 if major else 0.008
+			var r := 0.064 - ln / 2.0
+			mb.push(Transform3D(Basis(Vector3.BACK, th), Vector3(gx, GAUGE_Y, fz)))
+			mb.box(0, r, 0, 0.0035 if major else 0.002, ln, 0.002, red if (gx == TACH_X and k * step >= 4.0) else ink)
 			mb.pop()
 		var v := 0.0
 		while v <= top + 0.001:
 			var th := -SWEEP / 2.0 + SWEEP * v / top
-			var lb := Label3D.new()
-			lb.text = str(int(v))
-			lb.font_size = 40; lb.pixel_size = 0.0004; lb.outline_size = 0
-			lb.modulate = ink
-			lb.position = Vector3(gx - sin(th) * 0.041, GAUGE_Y + cos(th) * 0.041, GAUGE_Z - 0.001)
-			lb.rotation = Vector3(0, PI, 0)                     # facing back at the driver
-			add_child(lb)
+			_label(str(int(v)), Vector3(gx - sin(th) * 0.043, GAUGE_Y + cos(th) * 0.043, GAUGE_Z - 0.001), 44, red if (gx == TACH_X and v >= 4.0) else ink)
 			v += lab
-		var unit := Label3D.new()
-		unit.text = "MPH" if gx > 0.4 else "RPM x1000"
-		unit.font_size = 28; unit.pixel_size = 0.0004; unit.outline_size = 0; unit.modulate = Color("#555555")
-		unit.position = Vector3(gx, GAUGE_Y - 0.03, GAUGE_Z - 0.001); unit.rotation = Vector3(0, PI, 0)
-		add_child(unit)
+		_label("MPH" if gx == SPEEDO_X else "RPM x1000", Vector3(gx, GAUGE_Y + 0.02, GAUGE_Z - 0.001), 26, grey)
+	# red line arc on the tach
+	for k in range(8):
+		var th := -SWEEP / 2.0 + SWEEP * (0.8 + 0.2 * k / 8.0)
+		mb.push(Transform3D(Basis(Vector3.BACK, th), Vector3(TACH_X, GAUGE_Y, fz)))
+		mb.box(0, 0.066, 0, 0.0085, 0.004, 0.002, red)
+		mb.pop()
+	# odometer window on the speedo
+	mb.box(SPEEDO_X, GAUGE_Y - 0.036, fz - 0.0015, 0.05, 0.013, 0.001, Color("#111111"))
+	odo_label = _label("", Vector3(SPEEDO_X, GAUGE_Y - 0.036, GAUGE_Z - 0.002), 26, Color("#e8e2cc"))
+	# the shift quadrant on the tach: P R N D 2 1 and an orange marker under the gear you're in
+	var gears := ["P", "R", "N", "D", "2", "1"]
+	for k in range(gears.size()):
+		_label(gears[k], Vector3(TACH_X + 0.025 - k * 0.01, GAUGE_Y - 0.036, GAUGE_Z - 0.001), 22, ink)
+	gear_mark = Node3D.new()
+	var gm := MeshBuilder.new(); gm.box(0, 0, 0, 0.008, 0.002, 0.001, Color("#ff7a1a"))
+	gear_mark.add_child(gm.instance()); add_child(gear_mark)
+	# the little dials: fuel (E to F) and temperature (C to H)
+	for s in [[FUEL_X, "E", "F", "FUEL"], [TEMP_X, "C", "H", "TEMP"]]:
+		var gx: float = s[0]
+		for k in range(5):
+			var th := -SMALL_SWEEP / 2.0 + SMALL_SWEEP * k / 4.0
+			mb.push(Transform3D(Basis(Vector3.BACK, th), Vector3(gx, GAUGE_Y - 0.008, fz)))
+			mb.box(0, 0.024, 0, 0.0025, 0.008 if k % 2 == 0 else 0.005, 0.002, red if ((s[1] == "E" and k == 0) or (s[1] == "C" and k == 4)) else ink)
+			mb.pop()
+		var tl := -SMALL_SWEEP / 2.0; var tr := SMALL_SWEEP / 2.0
+		_label(s[1], Vector3(gx - sin(tl) * 0.019, GAUGE_Y - 0.008 + cos(tl) * 0.019 - 0.006, GAUGE_Z - 0.001), 24, ink)
+		_label(s[2], Vector3(gx - sin(tr) * 0.019, GAUGE_Y - 0.008 + cos(tr) * 0.019 - 0.006, GAUGE_Z - 0.001), 24, ink)
+		_label(s[3], Vector3(gx, GAUGE_Y - 0.02, GAUGE_Z - 0.001), 16, grey)
 	var faces := mb.instance(); faces.name = "GaugeMarks"; faces.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(faces)
-	for gx: float in [0.52, 0.28]:
-		var pivot := Node3D.new(); pivot.position = Vector3(gx, GAUGE_Y, GAUGE_Z - 0.003)
-		var nm := MeshBuilder.new()
-		nm.box(0, 0.024, 0, 0.0035, 0.058, 0.002, red)
-		nm.box(0, -0.006, 0, 0.0035, 0.014, 0.002, red)
-		nm.cyl(0, -0.002, 0, 0.007, 0.007, 0.004, Color("#2a2a2a"), 10, true)
-		var mi := nm.instance(); mi.rotation = Vector3(PI / 2, 0, 0)       # the cap's cylinder faces the driver
-		mi.rotation = Vector3.ZERO
-		pivot.add_child(mi)
-		add_child(pivot)
-		if gx > 0.4: speedo_needle = pivot
-		else: tach_needle = pivot
+	speedo_needle = _needle(Vector3(SPEEDO_X, GAUGE_Y, GAUGE_Z - 0.003), 0.058, red)
+	tach_needle = _needle(Vector3(TACH_X, GAUGE_Y, GAUGE_Z - 0.003), 0.058, red)
+	fuel_needle = _needle(Vector3(FUEL_X, GAUGE_Y - 0.008, GAUGE_Z - 0.003), 0.022, red)
+	temp_needle = _needle(Vector3(TEMP_X, GAUGE_Y - 0.008, GAUGE_Z - 0.003), 0.022, red)
 	_set_needles(0.0, 0.0)
 
 func _set_needles(mph: float, rpm: float) -> void:
+	# the needles turn the way a real dial does as you look at it (clockwise from the driver's seat)
 	if speedo_needle: speedo_needle.rotation = Vector3(0, 0, -SWEEP / 2.0 + SWEEP * clampf(mph / 60.0, 0.0, 1.0))
 	if tach_needle: tach_needle.rotation = Vector3(0, 0, -SWEEP / 2.0 + SWEEP * clampf(rpm / 5000.0, 0.0, 1.0))
+	if fuel_needle: fuel_needle.rotation = Vector3(0, 0, -SMALL_SWEEP / 2.0 + SMALL_SWEEP * _fuel)
+	if temp_needle: temp_needle.rotation = Vector3(0, 0, -SMALL_SWEEP / 2.0 + SMALL_SWEEP * _temp)
+	if gear_mark:
+		var k := "PRND21".find(_gear)
+		gear_mark.position = Vector3(TACH_X + 0.025 - k * 0.01, GAUGE_Y - 0.045, GAUGE_Z - 0.002)
+	if odo_label: odo_label.text = "%06d" % int(odometer) + "." + str(int(fmod(odometer, 1.0) * 10.0))
 
 ## the engine's revs: idling when you're in the cab, climbing through three gears as the truck picks up speed,
-## a bit higher with your foot down; off when you're out of it
+## a bit higher with your foot down; off when you're out of it. The odometer counts the miles, the engine
+## warms the temperature needle up to the middle, and the fuel needle creeps down as you drive.
 var scripted_speed := -1.0       # m/s while the intro drive slides the truck along the road (physics reads 0 then); -1 = off
 var scripted_engine := false     # the engine's running in the intro (idling once it's parked)
 func _gauges_step(dt: float) -> void:
-	var mph := absf(linear_velocity.dot(global_transform.basis.z)) * 2.237
-	if scripted_speed >= 0.0: mph = scripted_speed * 2.237
+	var fwd_v := linear_velocity.dot(global_transform.basis.z)
+	var mph := absf(fwd_v) * 2.237
+	if scripted_speed >= 0.0: mph = scripted_speed * 2.237; fwd_v = scripted_speed
 	var want := 0.0
-	if driving or scripted_engine:
+	var running := driving or scripted_engine
+	if running:
 		var gears := [[0.0, 11.0], [11.0, 21.0], [21.0, 40.0]]
 		var gear: Array = gears[0]
 		for gr in gears:
@@ -358,6 +415,15 @@ func _gauges_step(dt: float) -> void:
 		var frac := clampf((mph - float(gear[0])) / (float(gear[1]) - float(gear[0])), 0.0, 1.0)
 		want = 750.0 + frac * 3300.0 + absf(_thr) * (500.0 if mph < 1.0 else 350.0) + sin(Time.get_ticks_msec() * 0.031) * 25.0
 		if mph > 0.5 and float(gear[0]) > 0.0: want = maxf(want, 1500.0)
+		if fwd_v < -0.3 or (_thr < -0.1 and mph < 1.0): _gear = "R"
+		elif mph > 0.5 or _thr > 0.1: _gear = "D"
+		elif _gear != "P" and _gear != "D": _gear = "N"
+		_temp = move_toward(_temp, 0.5 + 0.03 * clampf(_rpm / 4000.0, 0.0, 1.0), dt * 0.03)
+		_fuel = maxf(0.08, _fuel - mph * dt * 0.00002)
+	else:
+		_gear = "P"
+		_temp = move_toward(_temp, 0.0, dt * 0.004)
+	odometer += mph * dt / 3600.0
 	_rpm = lerpf(_rpm, want, minf(1.0, dt * 6.0))
 	_speedo_a = lerpf(_speedo_a, mph, minf(1.0, dt * 8.0))
 	_set_needles(_speedo_a, _rpm)
@@ -386,7 +452,7 @@ func _driver_mb() -> MeshBuilder:
 	for sx: float in [-1.0, 1.0]:
 		var s0 := Vector3(x + sx * 0.2, sh_y - 0.06, sh_z)
 		var elbow := Vector3(x + sx * 0.25, 1.05, -0.05)
-		var hand := Vector3(x + sx * 0.15, 1.2, 0.34)
+		var hand := Vector3(x + sx * 0.17, 1.07, 0.35)
 		mb.tube(s0, elbow, 0.05, 0.045, shirt, 8, true)
 		mb.tube(elbow, hand, 0.045, 0.04, shirt, 8, true)
 		mb.sphere(hand.x, hand.y, hand.z, 0.045, 0.045, 0.05, glove, 8, 5)

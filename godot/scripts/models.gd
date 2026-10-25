@@ -124,31 +124,8 @@ static func truck(rng: RandomNumberGenerator) -> Dictionary:
 	P.box(0, yb + 0.02, 0.82, 1.92, 0.04, 0.1, c1)                                                    # cowl
 	for sx in [-0.45, 0.35]: D.tube(Vector3(sx, yb + 0.05, 0.84), Vector3(sx + 0.4, yb + 0.12, 0.78), 0.008, 0.008, black, 4)
 	# ---------------- interior (the dash, gauges, wheel, bench seat)
-	D.box(0, 1.06, 0.66, 1.9, 0.18, 0.26, dash); D.bevel_box(0, 1.16, 0.6, 1.88, 0.05, 0.34, MeshBuilder.shade(dash, 1.15), 0.02)
-	# the gauge pod: up behind the top of the wheel where you can see it, under a little hood
-	D.bevel_box(-0.4, 1.2, 0.47, 0.5, 0.17, 0.1, MeshBuilder.shade(dash, 0.8), 0.02)
-	D.bevel_box(-0.4, 1.29, 0.445, 0.52, 0.03, 0.12, MeshBuilder.shade(dash, 0.9), 0.012)
-	for gx in [-0.52, -0.28]:
-		D.push(Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(gx, 1.2, 0.42)))
-		D.cyl(0, 0, 0, 0.07, 0.07, 0.01, h("#e8e2cc"), 16, true)
-		D.pop()
-		# (the needles are their own nodes, driven by the truck: see Truck._build_gauges)
-	D.box(0.35, 1.03, 0.53, 0.45, 0.08, 0.02, h("#6a6f75"))
-	var cx := -0.4; var cy := 1.12; var czw := 0.38; var r := 0.19
-	D.push(Transform3D(Basis(Vector3.RIGHT, -0.42), Vector3(cx, cy, czw)))
-	for k in range(24):
-		var a0 := TAU * k / 24; var a1 := TAU * (k + 1) / 24
-		D.tube(Vector3(cos(a0) * r, sin(a0) * r, 0), Vector3(cos(a1) * r, sin(a1) * r, 0), 0.017, 0.017, rubber, 6)
-	D.tube(Vector3.ZERO, Vector3(-r * 0.95, -0.03, 0), 0.014, 0.014, rubber, 5); D.tube(Vector3.ZERO, Vector3(r * 0.95, -0.03, 0), 0.014, 0.014, rubber, 5)
-	D.cyl(0, -0.02, 0, 0.05, 0.05, 0.04, dark, 10)
-	D.pop()
-	D.tube(Vector3(cx, cy - 0.02, czw + 0.02), Vector3(cx, 1.0, 0.62), 0.03, 0.035, dark, 6)
-	C.tube(Vector3(cx + 0.06, 1.06, 0.44), Vector3(cx + 0.2, 1.0, 0.42), 0.008, 0.008, chrome, 4)
-	D.bevel_box(0, 0.72, -0.3, 1.84, 0.16, 0.5, vinyl, 0.04); D.bevel_box(0, 1.05, -0.56, 1.84, 0.62, 0.14, MeshBuilder.shade(vinyl, 0.95), 0.04)
-	for k in range(6): D.box(-0.75 + k * 0.3, 1.05, -0.485, 0.02, 0.56, 0.01, MeshBuilder.shade(vinyl, 0.82))
-	D.box(0, 1.86, 0.5, 0.06, 0.08, 0.03, h("#2a2d30")); D.bevel_box(0, 1.79, 0.485, 0.40, 0.14, 0.03, h("#2a2d30"), 0.01)
-	for sx in [-1.0, 1.0]: D.box(sx * 0.94, 0.98, 0.04, 0.03, 0.5, 1.3, MeshBuilder.shade(vinyl, 0.8))
-	D.box(0, 0.68, (cz0 + cz1) / 2, 1.96, 0.06, cz1 - cz0, h("#2a2622"))                              # floor mat
+	# (built mirrored like the rest: the driver sits at builder x -0.4, which is +0.4 on the truck)
+	_interior(D, C, P, c1, dash, vinyl, chrome, dark, black, rubber, cz0, cz1)
 	# ---------------- bed
 	for sx in [-1.0, 1.0]: P.box(sx * 0.915, 1.03, (bz0 + bz1) / 2, 0.02, 0.56, bz1 - bz0, MeshBuilder.shade(c1, 0.85))   # inner walls
 	D.box(0, 0.77, (bz0 + bz1) / 2, 1.84, 0.06, bz1 - bz0, h("#3a3632"))
@@ -705,3 +682,153 @@ static func can() -> MeshBuilder:
 	mb.cyl(0, 0.03, 0, 0.0335, 0.0335, 0.03, lime, 14, false); mb.cyl(0, 0.1, 0, 0.0335, 0.0335, 0.015, lime, 14, false)
 	mb.cyl(0, 0.16, 0, 0.033, 0.026, 0.012, al, 14, true)
 	return mb
+
+## the cab's insides: a padded two-tone dash with a hooded gauge cluster (speedo, tach, fuel, temp, warning
+## lamps), radio, heater slides, vents, glovebox and a woodgrain strip; a three-spoke wheel on a column with
+## its stalks and the keys hanging; pedals, a pleated bench, door cards with cranks and pulls, visors, dome
+## light, a pine-tree air freshener and some work-truck clutter. The dial needles are live nodes in Truck.
+static func _interior(D: MeshBuilder, C: MeshBuilder, P: MeshBuilder, c1: Color, dash: Color, vinyl: Color, chrome: Color, dark: Color, black: Color, rubber: Color, cz0: float, cz1: float) -> void:
+	var pad := sh(dash, 0.72); var face := sh(dash, 1.18); var bezel := h("#1b1a19"); var wood := h("#7a4f2c")
+	var cream := h("#ece4c8"); var mat := h("#25221f")
+	var to_seat := Basis(Vector3.RIGHT, -PI / 2)           # a cylinder pointing back at the seat (-z)
+	# dash body and the padded top (left and right of the cluster housing)
+	D.box(0, 1.03, 0.66, 1.9, 0.22, 0.26, face)
+	D.bevel_box(-0.855, 1.165, 0.6, 0.17, 0.06, 0.36, pad, 0.025)
+	D.bevel_box(0.445, 1.165, 0.6, 0.99, 0.06, 0.36, pad, 0.025)
+	D.box(0, 1.137, 0.43, 1.88, 0.02, 0.02, sh(pad, 0.8))                         # the pad's rolled front lip
+	# the cluster housing, its black bezel and the brow over it
+	D.bevel_box(-0.4, 1.215, 0.6, 0.72, 0.2, 0.36, pad, 0.03)
+	D.box(-0.4, 1.215, 0.429, 0.68, 0.17, 0.01, bezel)
+	D.bevel_box(-0.4, 1.322, 0.47, 0.76, 0.03, 0.17, pad, 0.014)
+	for gg in [[-0.5, 0.071], [-0.3, 0.071], [-0.66, 0.034], [-0.14, 0.034]]:
+		var gx: float = gg[0]; var gr: float = gg[1]
+		D.push(Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(gx, 1.215, 0.417)))
+		D.cyl(0, 0, 0, gr - 0.003, gr - 0.003, 0.005, cream, 20, true)
+		D.pop()
+		# chrome ring round each dial
+		var seg := 20
+		for k in range(seg):
+			var a0 := TAU * k / seg; var a1 := TAU * (k + 1) / seg
+			C.tube(Vector3(gx + cos(a0) * gr, 1.215 + sin(a0) * gr, 0.416), Vector3(gx + cos(a1) * gr, 1.215 + sin(a1) * gr, 0.416), 0.004, 0.004, chrome, 4)
+	# warning lamps under the dials: oil, charge, brake, high beam (dim, they're off)
+	var lamps := [h("#5a1e1a"), h("#5a3e14"), h("#5a1e1a"), h("#1c2e5a")]
+	for k in range(4): D.box(-0.46 + k * 0.04 - 0.02, 1.142, 0.419, 0.022, 0.012, 0.004, lamps[k])
+	# woodgrain strip across the passenger side
+	D.box(0.47, 1.09, 0.528, 0.9, 0.05, 0.01, wood)
+	for k in range(5): D.box(0.47, 1.072 + k * 0.009, 0.5225, 0.9, 0.0018, 0.002, sh(wood, 0.78 + (k % 2) * 0.1))
+	C.box(0.47, 1.064, 0.526, 0.9, 0.004, 0.006, chrome); C.box(0.47, 1.116, 0.526, 0.9, 0.004, 0.006, chrome)
+	# glovebox and its latch
+	D.bevel_box(0.55, 0.99, 0.528, 0.44, 0.12, 0.016, sh(face, 0.94), 0.006)
+	C.bevel_box(0.55, 1.02, 0.519, 0.07, 0.016, 0.008, chrome, 0.003)
+	# radio: chrome bezel, the tuning window with its orange pointer, two knobs, push-buttons
+	C.bevel_box(0.04, 1.0, 0.524, 0.32, 0.08, 0.014, chrome, 0.006)
+	D.box(0.04, 1.008, 0.516, 0.17, 0.036, 0.004, h("#14181a"))
+	for k in range(9): D.box(-0.03 + k * 0.018, 1.016, 0.5135, 0.0015, 0.008, 0.002, h("#c8c0a0"))
+	D.box(0.065, 1.008, 0.5132, 0.002, 0.03, 0.002, h("#ff7a1a"))
+	for sx in [-1.0, 1.0]:
+		D.push(Transform3D(to_seat, Vector3(0.04 + sx * 0.125, 1.0, 0.518)))
+		D.cyl(0, 0, 0, 0.016, 0.014, 0.02, black, 12, true)
+		C.cyl(0, 0.02, 0, 0.008, 0.008, 0.003, chrome, 8, true)
+		D.pop()
+	for k in range(5): D.bevel_box(-0.0 + k * 0.022 - 0.004, 0.978, 0.514, 0.016, 0.012, 0.01, h("#2a2a2a"), 0.002)
+	# heater controls: a black plate with three slides
+	D.box(0.04, 1.088, 0.522, 0.26, 0.04, 0.006, bezel)
+	for k in range(3):
+		D.box(-0.04 + k * 0.08, 1.088, 0.518, 0.06, 0.003, 0.002, h("#666660"))
+		D.bevel_box(-0.04 + k * 0.08 + (0.012 * (k - 1)), 1.088, 0.514, 0.012, 0.02, 0.01, h("#d8d2c0"), 0.003)
+	# ashtray under the radio, vents at both ends and in the middle
+	C.bevel_box(0.04, 0.945, 0.522, 0.18, 0.03, 0.014, sh(chrome, 0.85), 0.005)
+	for vx in [-0.84, 0.84, -0.06, 0.14]:
+		D.box(vx, 1.09 if absf(vx) > 0.5 else 1.127, 0.526, 0.12, 0.05 if absf(vx) > 0.5 else 0.022, 0.01, bezel)
+		for k in range(4 if absf(vx) > 0.5 else 2):
+			D.box(vx, (1.072 if absf(vx) > 0.5 else 1.122) + k * 0.012, 0.52, 0.11, 0.004, 0.006, sh(face, 0.8))
+	# headlight knob and wiper switch left of the cluster
+	for kk in [[-0.83, 1.02], [-0.83, 0.97]]:
+		D.push(Transform3D(to_seat, Vector3(kk[0], kk[1], 0.53)))
+		C.cyl(0, 0, 0, 0.012, 0.012, 0.02, chrome, 10, true)
+		D.pop()
+	# knee panel under the driver's side
+	D.box(-0.42, 0.87, 0.6, 0.86, 0.1, 0.16, sh(face, 0.85))
+	# ---- the steering wheel: thick rim with a grip wrap, three spokes low, a padded horn button
+	var cx := -0.4; var cy := 1.02; var czw := 0.38; var r := 0.18
+	D.push(Transform3D(Basis(Vector3.RIGHT, -0.5), Vector3(cx, cy, czw)))
+	for k in range(32):
+		var a0 := TAU * k / 32; var a1 := TAU * (k + 1) / 32
+		D.tube(Vector3(cos(a0) * r, sin(a0) * r, 0), Vector3(cos(a1) * r, sin(a1) * r, 0), 0.019, 0.019, rubber, 7)
+	for k in range(20):                                   # the finger-grip ridges along the bottom of the rim
+		var a := PI * 1.15 + PI * 0.7 * k / 19.0
+		D.tube(Vector3(cos(a) * (r - 0.02), sin(a) * (r - 0.02), 0), Vector3(cos(a) * (r - 0.02) + 0.0, sin(a) * (r - 0.02), 0) + Vector3(cos(a), sin(a), 0) * 0.006, 0.006, 0.006, sh(rubber, 1.3), 4)
+	var hub := Vector3(0, -0.04, 0.01)
+	for a in [PI * 1.12, PI * 1.88, PI * 1.5]:
+		var rim := Vector3(cos(a) * (r - 0.012), sin(a) * (r - 0.012), 0)
+		D.tube(hub + (rim - hub).normalized() * 0.04, rim, 0.016, 0.012, sh(dark, 1.1), 6)
+		C.tube(hub + (rim - hub).normalized() * 0.045, rim * 0.85, 0.004, 0.004, chrome, 4)
+	D.bevel_box(hub.x, hub.y, hub.z - 0.012, 0.12, 0.085, 0.04, sh(dark, 1.15), 0.02)
+	C.bevel_box(hub.x, hub.y, hub.z - 0.034, 0.04, 0.02, 0.006, chrome, 0.004)
+	D.pop()
+	# the column with its collar, the turn-signal stalk (left), column shifter (right) and the keys
+	D.tube(Vector3(cx, cy - 0.06, czw + 0.04), Vector3(cx, 0.98, 0.64), 0.032, 0.04, dark, 8)
+	D.tube(Vector3(cx, cy - 0.055, czw + 0.035), Vector3(cx, cy - 0.075, czw + 0.08), 0.045, 0.045, sh(dark, 1.2), 10)
+	C.tube(Vector3(cx - 0.035, cy - 0.06, czw + 0.06), Vector3(cx - 0.17, cy - 0.04, czw + 0.04), 0.006, 0.005, chrome, 4)
+	D.sphere(cx - 0.175, cy - 0.04, czw + 0.04, 0.012, 0.012, 0.012, black, 6, 4)
+	C.tube(Vector3(cx + 0.04, cy - 0.065, czw + 0.06), Vector3(cx + 0.2, cy - 0.11, czw + 0.03), 0.008, 0.007, chrome, 5)
+	D.sphere(cx + 0.205, cy - 0.112, czw + 0.03, 0.017, 0.017, 0.017, black, 8, 5)
+	C.box(cx + 0.05, cy - 0.13, czw + 0.12, 0.012, 0.03, 0.004, chrome)                           # the key
+	C.tube(Vector3(cx + 0.05, cy - 0.145, czw + 0.12), Vector3(cx + 0.055, cy - 0.21, czw + 0.115), 0.003, 0.003, chrome, 4)
+	D.sphere(cx + 0.055, cy - 0.225, czw + 0.115, 0.014, 0.018, 0.006, h("#b0332a"), 6, 4)        # fob
+	# pedals
+	for pd in [[cx + 0.02, 0.09, 0.06], [cx + 0.17, 0.05, 0.1]]:
+		D.push(Transform3D(Basis(Vector3.RIGHT, 0.5), Vector3(pd[0], 0.8, 0.62)))
+		D.bevel_box(0, 0, 0, pd[1], pd[2], 0.015, sh(rubber, 1.6), 0.005)
+		D.pop()
+		D.tube(Vector3(pd[0], 0.82, 0.63), Vector3(pd[0], 0.95, 0.66), 0.007, 0.007, dark, 4)
+	# floor: ribbed mats and the transmission hump
+	D.box(0, 0.68, (cz0 + cz1) / 2, 1.96, 0.06, cz1 - cz0, mat)
+	D.bevel_box(0, 0.72, 0.38, 0.42, 0.1, 0.72, sh(mat, 1.15), 0.04)
+	for sx in [-1.0, 1.0]:
+		for k in range(7): D.box(sx * 0.55, 0.713, 0.18 + k * 0.06, 0.5, 0.008, 0.02, sh(mat, 0.75))
+	# the bench: pleated two-tone inserts, piping, side bolsters, belt buckles
+	var insert := sh(vinyl, 1.08); var pipe := sh(vinyl, 0.7)
+	D.bevel_box(0, 0.72, -0.3, 1.84, 0.16, 0.5, vinyl, 0.05)
+	D.bevel_box(0, 1.05, -0.56, 1.84, 0.62, 0.14, sh(vinyl, 0.95), 0.05)
+	for sx in [-1.0, 1.0]:
+		D.bevel_box(sx * 0.46, 0.803, -0.28, 0.72, 0.012, 0.4, insert, 0.004)
+		D.bevel_box(sx * 0.46, 1.08, -0.488, 0.72, 0.46, 0.012, insert, 0.004)
+		for k in range(8):
+			D.box(sx * 0.46, 0.81, -0.45 + k * 0.05, 0.72, 0.004, 0.006, pipe)
+			D.box(sx * 0.46, 0.87 + k * 0.058, -0.481, 0.72, 0.006, 0.004, pipe)
+		C.bevel_box(sx * 0.12, 0.81, -0.5, 0.035, 0.015, 0.05, chrome, 0.004)
+		D.tube(Vector3(sx * 0.12, 0.81, -0.52), Vector3(sx * 0.08, 0.8, -0.55), 0.01, 0.01, black, 4)
+	D.box(0, 0.79, -0.05, 1.8, 0.012, 0.01, pipe)
+	# door cards: painted sill, padded panel, armrest, pull, chrome handle and window crank, map pocket
+	for sx in [-1.0, 1.0]:
+		D.box(sx * 0.94, 0.98, 0.04, 0.03, 0.5, 1.3, sh(vinyl, 0.8))
+		P.box(sx * 0.935, 1.27, 0.06, 0.045, 0.06, 1.3, c1)
+		D.bevel_box(sx * 0.92, 1.06, 0.1, 0.02, 0.2, 1.0, sh(vinyl, 0.9), 0.008)
+		for k in range(4): D.box(sx * 0.909, 0.99 + k * 0.045, 0.1, 0.004, 0.004, 1.0, sh(vinyl, 0.72))
+		D.bevel_box(sx * 0.885, 0.97, -0.02, 0.08, 0.05, 0.42, sh(vinyl, 0.75), 0.02)
+		D.bevel_box(sx * 0.91, 0.82, 0.25, 0.02, 0.1, 0.5, sh(vinyl, 0.65), 0.008)
+		C.bevel_box(sx * 0.9, 1.15, 0.42, 0.02, 0.025, 0.09, chrome, 0.008)
+		D.push(Transform3D(Basis(Vector3.BACK, PI / 2 * sx), Vector3(sx * 0.905, 1.12, -0.12)))
+		C.cyl(0, 0, 0, 0.018, 0.018, 0.012, chrome, 10, true)
+		D.pop()
+		C.tube(Vector3(sx * 0.895, 1.12, -0.12), Vector3(sx * 0.89, 1.06, -0.18), 0.006, 0.006, chrome, 4)
+		D.tube(Vector3(sx * 0.875, 1.06, -0.18), Vector3(sx * 0.86, 1.06, -0.18), 0.009, 0.009, black, 6)
+	# sun visors flipped up, the driver's with the registration tucked in; dome light; air freshener
+	for sx in [-1.0, 1.0]:
+		D.bevel_box(sx * 0.46, 1.86, 0.38, 0.6, 0.025, 0.2, h("#8a8172"), 0.01)
+		C.tube(Vector3(sx * 0.17, 1.87, 0.46), Vector3(sx * 0.17, 1.885, 0.46), 0.006, 0.006, chrome, 4)
+	D.box(-0.5, 1.845, 0.36, 0.14, 0.004, 0.09, h("#efe8d4"))
+	D.bevel_box(0, 1.875, -0.15, 0.2, 0.02, 0.1, h("#e8e2d0"), 0.006)
+	D.tube(Vector3(0, 1.725, 0.485), Vector3(0.0, 1.6, 0.48), 0.0015, 0.0015, h("#ddd8cc"), 3)
+	for k in range(3): D.box(0, 1.58 - k * 0.03, 0.48, 0.03 + k * 0.022, 0.035, 0.004, h("#2c6234"))
+	D.box(0, 1.5, 0.48, 0.012, 0.02, 0.004, h("#2c6234"))
+	# work-truck clutter on the dash and seat: a clipboard of tickets, a pencil, a hard hat
+	D.push(Transform3D(Basis(Vector3.UP, 0.25), Vector3(0.5, 1.197, 0.62)))
+	D.box(0, 0, 0, 0.22, 0.008, 0.3, h("#7b5c3a")); D.box(0, 0.005, 0.0, 0.2, 0.004, 0.26, h("#f2eee2"))
+	for k in range(6): D.box(0, 0.0075, -0.08 + k * 0.03, 0.15, 0.001, 0.004, h("#9aa2b0"))
+	C.box(0, 0.01, 0.13, 0.08, 0.012, 0.03, chrome)
+	D.pop()
+	D.tube(Vector3(0.2, 1.2, 0.52), Vector3(0.32, 1.2, 0.58), 0.004, 0.004, h("#e8b830"), 5)
+	D.sphere(0.5, 0.86, -0.32, 0.13, 0.08, 0.15, h("#e8761e"), 10, 5)
+	D.bevel_box(0.5, 0.815, -0.3, 0.3, 0.012, 0.34, h("#e8761e"), 0.004)
