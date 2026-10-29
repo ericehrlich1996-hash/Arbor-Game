@@ -52,6 +52,11 @@ func setup(g, sd: int) -> void:
 	_apply()
 
 ## jump straight to a weather (tests, debugging)
+## a crew member's weather follows the host's (and never changes on its own)
+func net_set(k: String) -> void:
+	_change_t = 1e9
+	if k != kind: set_kind(k)
+
 func force(k: String) -> void:
 	kind = k
 	target = PRESETS[k].duplicate()

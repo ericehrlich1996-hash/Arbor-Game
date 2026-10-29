@@ -32,6 +32,8 @@ var n_up := {}; var n_fore := {}; var n_leg := {}; var n_cane: Node3D
 var bubble: Label3D
 var bubble_until := 0.0
 var last_bark := 0.0
+var mirror := false            # a crew copy: placed and posed from the host's game
+var remote_talk := false       # talking to someone else on the crew
 
 func setup(w: WorldGen, at: Vector2, look := "earl") -> void:
 	world = w
@@ -162,6 +164,7 @@ static func modeled(path: String) -> Dictionary:
 	return out
 
 func bark(text: String, secs := 3.0) -> void:
+	if Net.is_host() and Net.job: Net.job.bark(text, secs)
 	bubble.text = text
 	bubble.visible = true
 	bubble_until = t + secs
@@ -171,6 +174,14 @@ func go_to(p: Vector2, then := "idle") -> void:
 
 func step(dt: float, look_at_pos: Vector3, truck: Truck) -> void:
 	t += dt
+	if mirror:
+		var keep := talking
+		talking = talking or remote_talk
+		body.global_transform = Transform3D(Basis(), global_position)
+		if bubble.visible and t > bubble_until: bubble.visible = false
+		_pose()
+		talking = keep
+		return
 	# get out of the way of a moving truck
 	if truck and truck.linear_velocity.length() > 1.0:
 		var to_me := global_position - truck.global_position; to_me.y = 0

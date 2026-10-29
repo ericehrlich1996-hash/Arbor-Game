@@ -46,6 +46,7 @@ var slab_xf := Transform3D()
 var slab_size := Vector3.ONE
 var down_t := 0.0
 var t := 0.0
+var _net_holes := 0            # on a crew member's game: notches the host's tree has already opened here
 
 const CSG_TOP := 3.2           # cuts happen below this; above it the standing trunk is a plain mesh
 
@@ -164,6 +165,7 @@ func cut_progress(c: Dictionary) -> void:
 	if state != "stand" or not is_instance_valid(c.get("node")): return
 	Wood.update_kerf(c.node, c)
 	dirty = true
+	if Net.is_guest() and Net.job: Net.job.tree_cut(c)
 
 # ---------------------------------------------------------------- analysis
 func _cut_y_at(c: Dictionary, x: float, z: float):
@@ -261,6 +263,8 @@ func _leans_over_hold(an: Dictionary) -> bool:
 
 func step(dt: float) -> void:
 	t += dt
+	# a crew member's copy: the host's tree decides when it goes, and how; the cuts and lean come from there
+	if Net.is_guest(): return
 	if state == "stand" and sits_back():
 		# wedges and the rope lift it back toward upright, a little at a time
 		var want: Vector3 = lean_dir * def.lean + push
@@ -387,7 +391,7 @@ func start_fall(kind: String) -> void:
 			var ko := {type = "kerf", e = c.e, f = c.f, n = c.n, s = c.s, done = true}
 			if c.has("w"): ko.w = c.w
 			kops.append(ko)
-	for w in wedges: kops.append({type = "prism", mesh = w.mesh})
+	for w in wedges: kops.append({type = "prism", mesh = w.mesh, pts = w.get("pts", [])})
 	barber_dir = null
 	if kind == "barber":
 		barber_dir = fd
@@ -422,6 +426,7 @@ func start_fall(kind: String) -> void:
 	Sfx.play("creak")
 	get_tree().create_timer(0.6).timeout.connect(func(): Sfx.play("crack"))
 	fell.emit(kind)
+	if Net.is_host() and Net.job: Net.job.tree_fell(kind)
 
 func _hinge_step(dt: float) -> void:
 	var h := hinge
@@ -507,6 +512,13 @@ func stump_start_cut(e: Vector3, f: Vector3, n: Vector3) -> Dictionary:
 
 ## a cleanup cut through the stump: the wood above comes off as its own piece
 func finish_stump_cut(c: Dictionary) -> void:
+	if Net.is_guest():
+		# the host makes the cut; what comes off arrives from there
+		if Net.job: Net.job.stump_cut(c)
+		stump_cuts.erase(c)
+		_rebuild_stump()
+		Sfx.play("crunch")
+		return
 	c.done = true
 	var n: Vector3 = c.n
 	if n.y < 0: n = -n
@@ -527,3 +539,53 @@ func finish_stump_cut(c: Dictionary) -> void:
 	stump_cuts.erase(c)
 	_rebuild_stump()
 	Sfx.play("crunch")
+	if Net.is_host() and Net.job: Net.job.stump_changed()
+
+# ---------------------------------------------------------------- a crew member's copy
+## the host's cuts (as deep as they've got), its lean, and any notch that's popped out
+func net_apply(list: Array, tilt: Vector3, holes: Array) -> void:
+	if state != "stand" or not is_instance_valid(stand_csg): return
+	for a in list:
+		var c := start_cut(a[0], a[1], a[2])
+		c.s = maxf(float(c.s), float(a[3]))
+		c.exit = float(a[4])
+		if float(a[5]) > 0.0: c.w = float(a[5])
+		if is_instance_valid(c.get("node")): Wood.update_kerf(c.node, c)
+	if not net.is_equal_approx(tilt):
+		net = tilt; _apply_tilt()
+	while _net_holes < holes.size():
+		var P: Array = holes[_net_holes]
+		_net_holes += 1
+		var hole := CSGMesh3D.new(); hole.mesh = Wood.prism_mesh(P); hole.operation = CSGShape3D.OPERATION_SUBTRACTION; hole.material = Mats.sap
+		stand_csg.add_child(hole)
+		Sfx.play("crunch")
+
+func _net_stump_vals(s: Dictionary) -> void:
+	var ops := []
+	for o in s.ops: ops.append(NetJob.op_in(o))
+	stump_ops = ops
+	stump_top = float(s.top); stump_y0 = float(s.y0)
+	barber_dir = s.bd
+	slab_xf = s.sx; slab_size = s.ss
+
+## the host's tree went over (kind "" if it was already down when you got here)
+func net_fall(d: Dictionary) -> void:
+	if state != "stand": return
+	grade = d.grade
+	_net_stump_vals(d.stump)
+	if is_instance_valid(stand_csg): stand_csg.queue_free()
+	if is_instance_valid(stand_upper): stand_upper.queue_free()
+	if is_instance_valid(stand_body): stand_body.queue_free()
+	_rebuild_stump()
+	go_kind = ""
+	if str(d.kind) == "":
+		state = "down"; down_t = t
+		return
+	state = "hinge"
+	Sfx.play("creak")
+	get_tree().create_timer(0.6).timeout.connect(func(): Sfx.play("crack"))
+	fell.emit(str(d.kind))
+
+func net_stump(s: Dictionary) -> void:
+	_net_stump_vals(s)
+	_rebuild_stump()

@@ -32,8 +32,11 @@ func open() -> void:
 	if visible: return
 	visible = true                        # first: letting go of held buttons can call back in here
 	if game.touch: game.touch._release_all()
-	get_tree().paused = true
-	AudioServer.set_bus_mute(0, true)
+	# with a crew on the line the world can't stop for one of you: just your hands come off the controls
+	if Net.active(): Player.input_off = true
+	else:
+		get_tree().paused = true
+		AudioServer.set_bus_mute(0, true)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_build()
 
@@ -41,6 +44,7 @@ func close() -> void:
 	if not visible: return
 	visible = false
 	showing_help = false
+	Player.input_off = false
 	get_tree().paused = false
 	AudioServer.set_bus_mute(0, false)
 	Settings.save()

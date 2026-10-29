@@ -12,6 +12,7 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 
 Mats="*res://scripts/mats.gd"
 Sfx="*res://scripts/sfx.gd"
+Net="*res://scripts/net.gd"
 
 [display]
 

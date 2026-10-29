@@ -31,6 +31,12 @@ var clock := 0.0
 var seed := 0
 var start_time := 0.0
 var touch: TouchControls          # on-screen controls on phones and tablets
+# a crew job (see net.gd / net_job.gd)
+var net_job: NetJob               # keeping the crew's copies of the job in step (null on your own)
+var storm_Ts: Array = []          # the storm job's tree shapes (so a log can say which tree it came from)
+var chipper_holder = null         # whoever is walking the chipper by its tongue (you, or a crew member's stand-in)
+var _seat_t := -100.0
+var phone: PhoneUI
 
 ## the mouse is "ours": captured on a computer, always on a touchscreen (there's no pointer to capture)
 func cap() -> bool:
@@ -61,6 +67,7 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and pause and tests == null and can_pause(): pause.open()
 var tests = null
 var force_rev := false         # scripted tests hold the throttle without a captured mouse
+var test_job_done := false     # scripted tests: count the work as finished (to get to payday)
 var on_bed := false
 var called_pay := false
 var called_tarp := false
@@ -77,6 +84,8 @@ const INTRO_DRINK := 4.4
 const INTRO_OUT := 2.4
 
 func _ready() -> void:
+	Net.game = self
+	Net.job = null
 	_setup_input()
 	_setup_env()
 	hud = Hud.new(); add_child(hud)
@@ -96,7 +105,9 @@ func _ready() -> void:
 	pause = PauseMenu.new(); pause.name = "Pause"; add_child(pause); pause.setup(self)
 	get_tree().create_timer(3.0).timeout.connect(Ach.retro)
 	hud.start_pressed.connect(_on_start)
-	hud.next_job_pressed.connect(func(): Hub.come_home = true; get_tree().reload_current_scene())
+	hud.next_job_pressed.connect(next_job)
+	Net.roster_changed.connect(_crew_changed)
+	_crew_changed()
 	hud.job_chosen.connect(start_job)
 	hud.computer_closed.connect(_close_computer)
 	hud.upgrade_chosen.connect(buy_upgrade)
@@ -106,7 +117,7 @@ func _ready() -> void:
 	var test_name := ""
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--test="): test_name = a.substr(7)
-	if test_name == "" or test_name.begins_with("hub"): enter_hub()
+	if test_name == "" or test_name.begins_with("hub") or test_name.begins_with("net"): enter_hub()
 	else:
 		if test_name.begins_with("hale"): job = Jobs.HALE
 		if test_name.begins_with("dock"): job = Jobs.DOCK
@@ -117,7 +128,7 @@ func _ready() -> void:
 	if OS.get_environment("ARBOR_LOW") != "": set_detail(0)
 	Settings.apply(self)
 	if test_name != "":
-		tests = load("res://scripts/tests.gd").new()
+		tests = load("res://scripts/net_tests.gd" if test_name.begins_with("net") else "res://scripts/tests.gd").new()
 		add_child(tests)
 		tests.run(self, test_name)
 
@@ -132,6 +143,10 @@ func enter_hub() -> void:
 	world = hub.world
 	truck = hub.truck
 	player = hub.player
+	Net.job = null
+	Net.set_scene("hub")
+	Net.scene_reset()
+	_crew_spot(player)
 	weather = Weather.new(); weather.name = "Weather"; level_root.add_child(weather)
 	weather.setup(self, randi() % 100000)
 	Sfx.set_ambient_level(1.0)
@@ -209,9 +224,22 @@ func _close_computer() -> void:
 	_capture()
 
 func start_job(idx: int) -> void:
+	if Net.is_guest():
+		hud.toast("%s picks the work for the crew. Hang tight." % Net.boss_name(), 3.0)
+		return
 	if idx < 0 or idx >= Jobs.LIST.size(): return
 	var need: String = Jobs.LIST[idx].get("needs", "")
 	if need != "" and not Jobs.ALL_OPEN and not bool(Career.load().get(need, false)): return
+	var variant := randi() % 1000000
+	if Net.is_host(): Net.tell("begin", [idx, variant])
+	begin_job(idx, variant)
+
+## off to a job (the whole crew goes when the host takes one)
+func begin_job(idx: int, variant: int) -> void:
+	if idx < 0 or idx >= Jobs.LIST.size(): return
+	if hud.pc_screen.visible: hud.hide_computer()
+	if phone and phone.visible: phone.close()
+	if hub: hub.busy = true
 	job = Jobs.LIST[idx]
 	Sfx.play("ding")
 	var tw := create_tween()
@@ -220,7 +248,7 @@ func start_job(idx: int) -> void:
 		in_hub = false
 		hub = null
 		hud.set_play_visible(false); hud.set_prompt("")
-		new_level(randi() % 1000000)
+		new_level(variant)
 		_prewarm_shaders()
 		start_intro())
 
@@ -384,6 +412,11 @@ func new_level(variant: int) -> void:
 	var sd := WorldGen.layout_seed(job.id)
 	seed = sd
 	in_hub = false
+	storm_Ts = []
+	chipper_holder = null
+	Net.job = null
+	Net.set_scene("job:%s:%d" % [job.id, variant])
+	Net.scene_reset()
 	if level_root: level_root.queue_free()
 	level_root = Node3D.new(); level_root.name = "Level"; add_child(level_root)
 	world = WorldGen.new(); world.setup(sd, job.id, variant); world.build(level_root)
@@ -414,6 +447,7 @@ func new_level(variant: int) -> void:
 	tree.fell.connect(_on_fell)
 	earl = Earl.new(); earl.name = "Client"; level_root.add_child(earl)
 	earl.setup(world, world.old_man, job.look)
+	earl.mirror = Net.is_guest()
 	earl.display = job.who; earl.idle_lines = job.idle
 	player = Player.new(); player.name = "Player"; level_root.add_child(player)
 	var out := truck.global_transform * Vector3(1.75, 0, 0.15)
@@ -443,11 +477,19 @@ func new_level(variant: int) -> void:
 	var logs_job: bool = job.get("kind", "") == "logs"
 	var storm_job: bool = job.get("kind", "") == "storm"
 	objs = {talk = false, felled = logs_job or storm_job, limbed = false, stacked = false, tarped = trailer == null or logs_job, hauled = not logs_job, paid = false}
-	if logs_job: _spawn_lake_logs()
-	if storm_job:
-		_spawn_storm_trees()
-		if OS.get_environment("ARBOR_WEATHER") == "": weather.force("overcast")       # the grey morning after
+	if Net.is_guest():
+		# the host's game puts the wood out; here we only need the storm trees' shapes to rebuild it
+		for t in world.storm_trees: storm_Ts.append(Wood.make_tree_def(t))
+	else:
+		if logs_job: _spawn_lake_logs()
+		if storm_job: _spawn_storm_trees()
+	if storm_job and OS.get_environment("ARBOR_WEATHER") == "": weather.force("overcast")       # the grey morning after
 	called_pay = false; called_tarp = false
+	if Net.active():
+		net_job = NetJob.new(); net_job.name = "NetJob"; level_root.add_child(net_job)
+		net_job.setup(self)
+	else:
+		net_job = null
 	update_objectives()
 
 # ---------------------------------------------------------------- the drive in
@@ -577,6 +619,7 @@ func end_intro() -> void:
 	hud.intro_card.modulate.a = 0
 	var out := truck.global_transform * Vector3(1.75, 0, 0.15)
 	player.teleport(Vector3(out.x, world.H(out.x, out.z) + 0.05, out.z))
+	_crew_spot(player)
 	var to := earl.global_position - player.global_position
 	player.yaw = atan2(-to.x, -to.z); player.pitch = -0.05
 	_start()
@@ -606,6 +649,8 @@ func _input(ev: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _unhandled_input(ev: InputEvent) -> void:
+	if pause and pause.is_open(): return
+	if phone and phone.visible: return
 	if ev is InputEventKey and ev.pressed and not ev.echo and ev.physical_keycode == KEY_F3:
 		set_detail(1 - detail)
 		Settings.detail = detail; Settings.save()
@@ -646,7 +691,9 @@ func _unhandled_input(ev: InputEvent) -> void:
 	if player.in_truck:
 		if ev.is_action_pressed("interact"): exit_truck()
 		elif ev.is_action_pressed("camera"): truck.toggle_cam()
-		elif ev.is_action_pressed("unstick"): unstick_truck()
+		elif ev.is_action_pressed("unstick"):
+			if Net.is_guest(): Net.ask("use", ["unstick", net_pose()])
+			else: unstick_truck()
 		return
 	if player.tool == "rod" and ev is InputEventMouseButton and cap():
 		if ev.button_index == MOUSE_BUTTON_LEFT: fishing.press(ev.pressed); return
@@ -677,7 +724,9 @@ func _unhandled_input(ev: InputEvent) -> void:
 		else: hud.toast("No fishing rod yet. Somebody down by a lake might lend you one.", 3.0)
 	elif ev.is_action_pressed("crouch"): player.crouch = not player.crouch
 	elif ev.is_action_pressed("unstick"):
-		if player.global_position.distance_to(truck.global_position) < 12.0: unstick_truck()
+		if player.global_position.distance_to(truck.global_position) < 12.0:
+			if Net.is_guest(): Net.ask("use", ["unstick", net_pose()])
+			else: unstick_truck()
 		else: hud.toast("Walk over to the truck to unstick it.", 2.0)
 	elif ev.is_action_pressed("saw_start") and player.tool == "saw": saw.pull_start()
 
@@ -892,17 +941,14 @@ func _tipped_near() -> String:
 func interact() -> void:
 	var tipped := _tipped_near()
 	if tipped != "":
+		if Net.is_guest(): Net.ask("use", ["flip_" + tipped, net_pose()]); return
 		if tipped == "truck": truck.right_up(world)
 		else: chipper.right_up()
 		Sfx.play("thud"); hud.toast("Back on its wheels.", 1.6)
 		return
-	if chipper.mode == "hand":
-		var to := chipper.nearest_hitch()
-		if to != null:
-			chipper.hitch_now(to); Sfx.play("clank"); hud.toast("Hitched to the back of the trailer." if to == trailer else "Hitched.", 1.8)
-		else:
-			chipper.set_down(); Sfx.play("drop")
-		player.speed_mult = 1.0
+	if chipper.mode == "hand" and holding_chipper():
+		if Net.is_guest(): Net.ask("use", ["hand", net_pose()]); return
+		chipper_hand_action()
 		return
 	if haul.drag != null: haul.stop_drag(); return
 	if haul.carrying():
@@ -912,6 +958,8 @@ func interact() -> void:
 		if brush and haul.near_hopper() and chipper.running: haul.feed(); return
 		haul.drop_all(); return
 	if aim.is_empty(): return
+	if Net.is_guest() and aim.kind in ["hitch", "chipper", "trailer", "coupler"]:
+		Net.ask("use", [aim.kind, net_pose()]); return
 	match aim.kind:
 		"earl": talk_to_earl()
 		"truck": enter_truck()
@@ -971,6 +1019,7 @@ func _spawn_storm_trees() -> void:
 	storm_pieces = []
 	for t in world.storm_trees:
 		var T := Wood.make_tree_def(t)
+		storm_Ts.append(T)
 		var d3 := Vector3(t.dir.x, 0, t.dir.y).normalized()
 		var lay := Basis(Vector3.UP.cross(d3).normalized(), PI / 2)          # the wood's +y down the trunk, along d3
 		# roll it round its own axis so the crown spreads up and sideways rather than into the road
@@ -1041,9 +1090,11 @@ func hitch_action() -> void:
 	elif chipper.mode == "free":
 		if haul.carrying(): haul.drop_all()
 		chipper.grab_tongue(_hand_point()); Sfx.play("pick"); player.speed_mult = 0.55
+		chipper_holder = player
 
-func _hand_point() -> Vector3:
-	var h := player.global_position + player.fwd() * 0.9
+func _hand_point(p = null) -> Vector3:
+	if p == null or not is_instance_valid(p): p = player
+	var h: Vector3 = p.global_position + p.fwd() * 0.9
 	h.y = world.H(h.x, h.z) + 0.55
 	return h
 
@@ -1079,6 +1130,10 @@ func hop_truck() -> void:
 	Sfx.play("step")
 
 func enter_truck() -> void:
+	if Net.is_guest():
+		Net.ask("seat"); return               # the host hands over the wheel (or says who has it)
+	if truck.remote_driver != 0:
+		hud.toast("%s's got the wheel." % Net.name_of(truck.remote_driver), 2.5); return
 	if haul.carrying(): haul.drop_all()
 	if haul.drag != null: haul.stop_drag()
 	if saw.on: saw.stop()
@@ -1091,8 +1146,31 @@ func enter_truck() -> void:
 	hud.set_play_visible(false); hud.crosshair.visible = false
 	hud.drive.visible = true
 
-func exit_truck() -> void:
-	truck.exit()
+## a crew member gets the seat: the host's game drives the truck from their keys
+func enter_truck_mirror() -> void:
+	if haul.carrying(): haul.drop_all()
+	if haul.drag != null: haul.stop_drag()
+	if saw.on: saw.stop()
+	player.in_truck = true
+	player.visible = false
+	player.col_shape.disabled = true
+	truck.driving = true; truck.look_yaw = 0; truck.look_pitch = 0
+	truck._set_cam(); truck.mirror_live = true; truck.mirror_div = 3
+	_seat_t = clock
+	Sfx.play("door")
+	truck.engine_snd = Sfx.engine("truck")
+	hud.set_play_visible(false); hud.crosshair.visible = false
+	hud.drive.visible = true
+
+func exit_truck_mirror() -> void:
+	exit_truck(false)
+
+func exit_truck(ask := true) -> void:
+	if Net.is_guest():
+		if ask: Net.ask("unseat")
+		truck.driving = false; truck.mirror_live = false
+	else:
+		truck.exit()
 	if truck.engine_snd: truck.engine_snd.stop(); truck.engine_snd = null
 	var out := truck.global_transform * Vector3(1.75, 0, 0.15)
 	player.teleport(Vector3(out.x, world.H(out.x, out.z) + 0.05, out.z), truck.rotation.y + PI)
@@ -1149,12 +1227,16 @@ func talk_to_earl() -> void:
 		for l in job.talk: lines.append({who = E, text = l})
 		if job.id == "hale" and not (Rigging.owned("wedges") or Rigging.owned("rope")):
 			lines.append({who = E, text = "You didn't bring wedges? Or a rope? Oh dear. Well, you know your business. I hope."})
-		start_dialog(lines, func(): objs.talk = true; earl.state = "idle"; update_objectives())
+		start_dialog(lines, func():
+			objs.talk = true; earl.state = "idle"; update_objectives()
+			if Net.is_guest(): Net.ask("talked"))
 		return
 	if objs.felled and objs.limbed and objs.stacked and not objs.tarped:
 		start_dialog([{who = job.who, text = "Tarp it first, dear. Walter lost a whole load of firewood on the Route 9 hill in 1983. I still hear about it. From myself."}]); return
 	if objs.felled and objs.limbed and objs.stacked and objs.tarped and not objs.paid:
-		payday(); return
+		if Net.is_guest(): Net.ask("pay")
+		else: payday()
+		return
 	start_dialog([{who = E, text = earl.idle_lines[randi() % earl.idle_lines.size()]}])
 
 ## pull the tarp over the load and bungee it down; the rounds under it stay put from then on
@@ -1178,6 +1260,7 @@ func customer_sits_back() -> void:
 	if job.id == "hale": earl.bark("Is it... stuck? Walter always said it'd be stubborn.", 4.0)
 
 func payday() -> void:
+	if objs.paid: return
 	var g := tree.grade
 	var total: int = job.pay
 	var kind_txt: String = {"logs": "Job: haul, buck and load", "storm": "Job: clear the road (limb, chip, buck, move)"}.get(job.get("kind", ""), "Job: drop, limb, chip and %s" % ("load" if trailer else "pile"))
@@ -1198,29 +1281,42 @@ func payday() -> void:
 		plines.append({who = E, text = "I'm taking the damage out of what I owe you. That's only fair."})
 	else:
 		for l in job.paid: plines.append({who = E, text = l})
-	start_dialog(plines,
+	var notes := []
+	if job.id == "dock": notes.append("Gus gave you his old spinning rod. Press 6 near water to fish.")
+	if g.has("notch_pct") and job.get("kind", "") != "logs":
+		if g.open:
+			notes.append("Notch: %d%% of the diameter deep, %d° open." % [roundi(g.notch_pct * 100), roundi(g.notch_angle)])
+			notes.append("Hinge: %.1f in, %d%% of the diameter." % [g.hinge_in, roundi(g.hinge_pct * 100)])
+			notes.append("Fell direction: %d° off the notch." % roundi(g.dir_err))
+		else: notes.append("The stem split up the back (barber chair)." if g.barber else "No notch was cut.")
+	notes.append("Time: %d min." % roundi(mins))
+	objs.paid = true                     # (once: two of the crew asking at the same moment get paid once)
+	var data := {rows = rows, total = total, notes = notes, lines = plines, mins = mins, crew = Net.crew_size()}
+	if Net.is_host() and net_job: net_job.event_all("payday", [data])
+	_payday_show(data)
+
+## everybody on the crew hears the customer out, then banks their share
+func _payday_show(d: Dictionary) -> void:
+	var total: int = int(d.total)
+	var crew: int = maxi(1, int(d.crew))
+	var share: int = total if crew == 1 else roundi(float(total) / crew)
+	var mins: float = float(d.mins)
+	start_dialog(d.lines,
 		func():
 			objs.paid = true; update_objectives(); Sfx.play("cash")
-			var c := Career.load(); c.money += total; c.jobs += 1
+			var c := Career.load(); c.money += share; c.jobs += 1
 			if job.id == "dock": c.rod = true
 			if trailer:
 				c.trailer = true; c.firewood = true
 				var loaded := pieces().filter(func(b): return b.kind == "trunk" and trailer.in_bed(b.center_world())).size()
 				c.rounds = int(c.get("rounds", 0)) + maxi(12, loaded)
 			Career.save(c); money = c.money
-			_payday_achievements(total, mins)
-			var notes := []
-			if job.id == "dock": notes.append("Gus gave you his old spinning rod. Press 6 near water to fish.")
-			if g.has("notch_pct") and job.get("kind", "") != "logs":
-				if g.open:
-					notes.append("Notch: %d%% of the diameter deep, %d° open." % [roundi(g.notch_pct * 100), roundi(g.notch_angle)])
-					notes.append("Hinge: %.1f in, %d%% of the diameter." % [g.hinge_in, roundi(g.hinge_pct * 100)])
-					notes.append("Fell direction: %d° off the notch." % roundi(g.dir_err))
-				else: notes.append("The stem split up the back (barber chair)." if g.barber else "No notch was cut.")
-			notes.append("Time: %d min." % roundi(mins))
+			_payday_achievements(share, mins)
+			var rows: Array = (d.rows as Array).duplicate()
+			if crew > 1: rows.append(["Split %d ways: the rest goes to the crew" % crew, share - total])
 			phase = "done"
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-			hud.show_summary(rows, total, notes, money, "Job done · %s" % job.title)
+			hud.show_summary(rows, share, d.notes, money, "Job done · %s" % job.title)
 			hud.play_timelapse(timelapse.frames, timelapse.stamps))
 
 ## after the money's in the bank (so the career file already has it)
@@ -1249,6 +1345,7 @@ func _on_fell(kind: String) -> void:
 	hud.shout("BARBER CHAIR!" if kind == "barber" else "TIMBER!")
 	saw.cut = null
 	rig.on_fell()
+	if Net.is_guest(): return
 	if kind == "barber":
 		earl.bark(job.barber, 3.5)
 	else:
@@ -1283,6 +1380,7 @@ func _check_damage() -> void:
 			var w := tree.stem.to_world(p)
 			if absf(w.x - box.x) < box.w / 2 + 0.45 and absf(w.z - box.z) < box.d / 2 + 0.45 and w.y < gy + b[2]:
 				damage[b[0]] = true
+				if Net.is_host() and net_job: net_job.event_all("crunch", [b[0]])
 				Sfx.play("crunch", 1.0, 0.6); Sfx.play("crack", 0.9, 0.7); Sfx.play("thud", 1.0, 0.8)
 				hud.shout("CRUNCH!")
 				if b[0] == "garage": world.crush_garage()
@@ -1305,6 +1403,7 @@ func in_pile(b: WoodPiece) -> bool:
 	return absf(c.x - p.x) < p.w / 2 + 0.6 and absf(c.z - p.z) < p.d / 2 + 0.6
 
 func update_objectives() -> void:
+	if Net.is_guest(): return               # the host keeps the job list; ours arrives from there
 	var brush := 0; var rounds := 0; var heavy := 0; var piled := 0
 	for b in pieces():
 		if b.kind == "limb" or b.kind == "wedge":
@@ -1367,6 +1466,8 @@ func update_objectives() -> void:
 			[objs.stacked, buck_txt]]
 			+ ([[objs.tarped, "Tarp the trailer so nothing falls out"]] if trailer else [])
 			+ [[objs.paid, "Get paid"]])
+	if test_job_done:
+		objs.felled = true; objs.limbed = true; objs.stacked = true; objs.tarped = true; objs.hauled = true
 	if trailer and objs.stacked and not objs.tarped and not called_tarp:
 		called_tarp = true
 		Sfx.play("ding")
@@ -1377,6 +1478,8 @@ func update_objectives() -> void:
 		Sfx.play("ding")
 		earl.bark(job.done, 6.0)
 		hud.toast("Job done. Talk to %s to get paid." % job.who)
+		if net_job: net_job.event_all("toast", ["Job done. Talk to %s to get paid." % job.who, 3.2])
+	if Net.is_host() and net_job: net_job.objectives_changed()
 
 # ================================================================ HUD
 func _update_hud() -> void:
@@ -1418,7 +1521,7 @@ func _update_hud() -> void:
 	var tipped := _tipped_near()
 	if dlg != null: t = ""
 	elif tipped != "": t = "[b]E[/b] Flip the %s back over" % tipped
-	elif chipper.mode == "hand":
+	elif chipper.mode == "hand" and holding_chipper():
 		var nh := chipper.nearest_hitch()
 		t = ("[b]E[/b] Hitch it to the trailer" if nh == trailer else "[b]E[/b] Hitch it to the truck") if nh != null else "[b]E[/b] Set the tongue down"
 	elif haul.drag != null:
@@ -1459,8 +1562,8 @@ func _update_hud() -> void:
 
 # ================================================================ frame loop
 func _physics_process(dt: float) -> void:
-	if chipper and chipper.mode == "hand":
-		chipper.move_hand(_hand_point(), dt)
+	if chipper and chipper.mode == "hand" and not Net.is_guest():
+		chipper.move_hand(_hand_point(chipper_holder), dt)
 	if rig and phase == "play": rig.physics_step(dt)
 	if phase == "play": _water_step(dt)
 	if haul: haul.step_drag(dt)
@@ -1508,7 +1611,7 @@ func _process(dt: float) -> void:
 		aim = {}
 	_step_dialog(dt)
 	# speed: slowed by what you carry or drag
-	player.speed_mult = (0.55 if chipper.mode == "hand" else 1.0) * (1.0 - haul.carry_mass() / Wood.LIFT_MAX * 0.45) * (0.5 if haul.drag != null else 1.0)
+	player.speed_mult = (0.55 if chipper.mode == "hand" and holding_chipper() else 1.0) * (1.0 - haul.carry_mass() / Wood.LIFT_MAX * 0.45) * (0.5 if haul.drag != null else 1.0)
 	haul.step_carry(dt)
 	# the saw (or bare hands)
 	var rev := (Input.is_action_pressed("rev") and cap() and dlg == null) or force_rev
@@ -1523,20 +1626,20 @@ func _process(dt: float) -> void:
 		saw.pose_hands(haul.carrying())
 		saw.step(dt, false, true)
 	rig.step(dt)
-	if tree.state == "down":
+	if tree.state == "down" and not Net.is_guest():
 		_break_under_limbs()
 		if not objs.felled and (tree.t - tree.down_t > 5.0 or (is_instance_valid(tree.stem) and tree.stem.sleeping)):
 			objs.felled = true; update_objectives(); Sfx.play("ding")
 	# Earl heads for the porch once the saw's running near the tree
-	if objs.talk and not world.house.is_empty() and not earl.get_meta("to_porch", false) and saw.on and player.global_position.distance_to(tree.global_position) < tree.T.H:
+	if not Net.is_guest() and objs.talk and not world.house.is_empty() and not earl.get_meta("to_porch", false) and _anyone_sawing_near(tree.global_position, tree.T.H):
 		earl.set_meta("to_porch", true)
 		var h: Dictionary = world.house
 		earl.go_to(Vector2(h.x + h.w * 0.18, h.z - h.d / 2 - 1.4))
 		earl.bark(job.porch, 4.0)
-	if objs.felled and not objs.paid and dlg == null and clock - earl.last_bark > 38.0:
+	if not Net.is_guest() and objs.felled and not objs.paid and dlg == null and clock - earl.last_bark > 38.0:
 		earl.last_bark = clock
 		earl.bark(earl.idle_lines[randi() % earl.idle_lines.size()], 5.0)
-	_check_damage()
+	if not Net.is_guest(): _check_damage()
 	# engines
 	var eng = chipper.engine_snd
 	if eng:
@@ -1544,7 +1647,7 @@ func _process(dt: float) -> void:
 		var d := player.global_position.distance_to(chipper.global_position)
 		eng.setv(0.5 + chipper.load * 0.4, chipper.load, clampf(1 - d / 60, 0.05, 1) * 0.55)
 	if truck.engine_snd:
-		var sp := truck.linear_velocity.length()
+		var sp := truck.linear_velocity.length() if not (Net.is_guest() and net_job) else absf(net_job.truck_speed)
 		truck.engine_snd.setv(clampf(sp / 9, 0, 1) * 0.85 + 0.15 + absf(truck.engine_force) / 3600.0 * 0.2, clampf(sp / 12, 0, 0.6), 0.5)
 	if int(clock * 2) != int((clock - dt) * 2) and objs.felled: update_objectives()
 	_update_hud()
@@ -1630,3 +1733,136 @@ func _snap_limb(st: WoodPiece, id: int) -> void:
 	if lp: lp.linear_velocity *= 0.5
 	Sfx.play("crack", 0.6, randf_range(0.9, 1.3))
 	if tree.stem and is_instance_valid(tree.stem): tree.stem.sleeping = false
+
+# ================================================================ the crew (see net.gd, net_job.gd)
+## is the chipper's tongue in my hands (rather than a crew member's)?
+func holding_chipper() -> bool:
+	if Net.is_guest(): return net_job != null and net_job.chipper_holder == Net.me()
+	return chipper_holder == null or not is_instance_valid(chipper_holder) or chipper_holder == player
+
+## walking the chipper: drop the tongue on a hitch ball if it's over one, otherwise on its jack
+func chipper_hand_action() -> void:
+	var to := chipper.nearest_hitch()
+	if to != null:
+		chipper.hitch_now(to); Sfx.play("clank"); hud.toast("Hitched to the back of the trailer." if to == trailer else "Hitched.", 1.8)
+	else:
+		chipper.set_down(); Sfx.play("drop")
+	player.speed_mult = 1.0
+	chipper_holder = null
+
+## a crew member pressed E on something of the host's (done "as" them: see NetJob.as_peer)
+func net_use(kind: String) -> void:
+	match kind:
+		"flip_truck":
+			truck.right_up(world); Sfx.play("thud"); hud.toast("Back on its wheels.", 1.6)
+		"flip_chipper":
+			chipper.right_up(); Sfx.play("thud"); hud.toast("Back on its wheels.", 1.6)
+		"hand":
+			if chipper.mode == "hand" and chipper_holder == player: chipper_hand_action()
+		"hitch":
+			if chipper.mode == "hand": return
+			hitch_action()
+		"chipper": toggle_chipper()
+		"trailer":
+			if trailer and objs.stacked and not objs.tarped: tarp_trailer()
+		"coupler": trailer_hitch_action()
+		"unstick": unstick_truck()
+
+## is anyone on the crew running a saw near here?
+func _anyone_sawing_near(p: Vector3, r: float) -> bool:
+	if saw.on and player.global_position.distance_to(p) < r: return true
+	for id in Net.avatars:
+		var av = Net.avatars[id]
+		if is_instance_valid(av) and av.visible and (av._flags & Avatar.F_SAW_ON) and av.global_position.distance_to(p) < r: return true
+	return false
+
+## where I am and what I'm doing, for the rest of the crew's screens
+func net_pose():
+	if player == null or not is_instance_valid(player): return null
+	var fl := 0
+	if saw and is_instance_valid(saw) and saw.on:
+		fl |= Avatar.F_SAW_ON
+		if (Input.is_action_pressed("rev") and cap()) or force_rev: fl |= Avatar.F_REV
+		if saw.cutting: fl |= Avatar.F_CUTTING
+	if player.in_truck: fl |= Avatar.F_TRUCK
+	if player.crouch: fl |= Avatar.F_CROUCH
+	if haul != null and is_instance_valid(haul) and haul.carrying(): fl |= Avatar.F_CARRY
+	var tool: String = player.tool if not in_hub else "hands"
+	return [player.global_position, player.yaw, player.pitch, tool, fl]
+
+## a message from the host
+func net_event(name: String, a: Array) -> void:
+	match name:
+		"begin":
+			if in_hub: begin_job(int(a[0]), int(a[1]))
+		"home": go_home_now()
+		"payday":
+			if not in_hub: _payday_show(a[0])
+		"toast": hud.toast(str(a[0]), float(a[1]) if a.size() > 1 else 3.0)
+		_:
+			if net_job and is_instance_valid(net_job): net_job.on_event(name, a)
+
+## a crew member asks the host's game for something
+func net_ask(id: int, name: String, a: Array) -> void:
+	match name:
+		"home":
+			if phase == "done": next_job()
+		_:
+			if net_job and is_instance_valid(net_job): net_job.on_ask(id, name, a)
+			elif name == "ready":
+				# their copy's built before ours: tell them to try again in a moment
+				get_tree().create_timer(0.5).timeout.connect(func(): if net_job: net_job.on_ask(id, name, a))
+
+## the crew hears it come down on a building
+func net_crunch(kind: String) -> void:
+	damage[kind] = true
+	Sfx.play("crunch", 1.0, 0.6); Sfx.play("crack", 0.9, 0.7); Sfx.play("thud", 1.0, 0.8)
+	hud.shout("CRUNCH!")
+	if kind == "garage": world.crush_garage()
+
+## the payday card's button: home to the cabin (the whole crew goes when the host does)
+func next_job() -> void:
+	if Net.is_guest():
+		Net.ask("home")
+		hud.toast("Waiting on %s to head home..." % Net.boss_name(), 3.0)
+		return
+	if Net.is_host(): Net.tell("home")
+	go_home_now()
+
+func go_home_now() -> void:
+	Player.input_off = false
+	get_tree().paused = false
+	Hub.come_home = true
+	get_tree().reload_current_scene()
+
+## stand the crew side by side rather than all in one spot
+func _crew_spot(p: Player) -> void:
+	if not Net.active() or not Net.roster.has(Net.me()): return
+	var slot := int(Net.roster[Net.me()].hat)
+	if slot == 0: return
+	var side := Vector3(cos(p.yaw), 0, -sin(p.yaw))
+	var q := p.global_position + side * (0.9 * slot)
+	p.teleport(Vector3(q.x, world.H(q.x, q.z) + 0.05 if world else q.y, q.z))
+
+func _crew_changed() -> void:
+	if hud == null: return
+	if not Net.active(): hud.set_crew(""); return
+	var names := []
+	for id in Net.roster:
+		names.append(Net.name_of(id) + (" (boss)" if id == 1 else ""))
+	hud.set_crew("Crew: " + ", ".join(names))
+
+## the phone on the cabin wall: the crew lobby
+func open_phone() -> void:
+	if phone == null:
+		phone = PhoneUI.new(); phone.name = "Phone"
+		hud.add_child(phone)
+		phone.setup(self)
+	if hub: hub.busy = true
+	hud.set_prompt("")
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	phone.open()
+
+func phone_closed() -> void:
+	if hub: hub.busy = false
+	_capture()

@@ -27,7 +27,12 @@ func can_add(b: WoodPiece) -> bool:
 	return carry_mass() + b.mass <= Wood.LIFT_MAX
 
 func liftable(b: WoodPiece) -> bool:
+	if Net.job and Net.job.taken(b): return false      # somebody on the crew has it
 	return b.mass <= Wood.LIFT_MAX          # anything you can lift counts as limbed enough
+
+## on a crew member's game: let go of it, and the host takes it from here
+func _let_go(b: WoodPiece) -> void:
+	if Net.is_guest() and Net.job: Net.job.give(b, b.linear_velocity, b.angular_velocity)
 
 func _hold(b: WoodPiece, on: bool) -> void:
 	if on:
@@ -47,6 +52,7 @@ func pick_up(b: WoodPiece) -> void:
 	b.set_meta("held_t", 0.0)
 	if b.has_meta("carry_roll"): b.remove_meta("carry_roll")
 	carry.append(b)
+	if Net.is_guest() and Net.job: Net.job.take(b, "held")
 	Sfx.play("pick")
 
 func release(b: WoodPiece, v := Vector3.ZERO) -> void:
@@ -58,6 +64,7 @@ func drop_one() -> void:
 	if carry.is_empty(): return
 	var b: WoodPiece = carry.pop_back()
 	release(b, game.player.aim_dir() * 1.0 + Vector3(0, 0.5, 0))
+	_let_go(b)
 	Sfx.play("drop")
 	game.get_tree().create_timer(1.5).timeout.connect(game.update_objectives)
 
@@ -65,6 +72,7 @@ func drop_all() -> void:
 	var i := 0
 	for b in carry:
 		release(b, game.player.aim_dir() * 1.0 + Vector3(0.3 if i % 2 else -0.3, 0.5, 0))
+		_let_go(b)
 		i += 1
 	carry.clear()
 	Sfx.play("drop")
@@ -197,11 +205,13 @@ func throw_one() -> void:
 		var fw: Vector3 = game.player.fwd()
 		b.linear_velocity = fw * 4.2 * (1 - minf(0.5, b.mass / 120.0)) + Vector3(0, 2.4, 0)
 	b.angular_velocity = Vector3(randf() - 0.5, (randf() - 0.5) * 0.5, randf() - 0.5) * 2
+	_let_go(b)
 	Sfx.play("pick")
 	game.get_tree().create_timer(1.8).timeout.connect(game.update_objectives)
 
 # ---------------------------------------------------------------- dragging
 func can_drag(b: WoodPiece) -> bool:
+	if b != null and Net.job and Net.job.taken(b): return false
 	return b != null and b.mode == "dyn" and (b.mass > Wood.LIFT_MAX or (b.kind == "trunk" and not b.limbs.is_empty())) and b.mass <= Wood.DRAG_MAX
 
 func start_drag(b: WoodPiece) -> void:
@@ -213,12 +223,17 @@ func start_drag(b: WoodPiece) -> void:
 		var ba: Dictionary = b.brush_axis(); ends = [ba.butt, ba.butt + ba.ax * 0.6]
 	var lp: Vector3 = ends[0] if b.to_world(ends[0]).distance_to(p.global_position) < b.to_world(ends[1]).distance_to(p.global_position) else ends[1]
 	drag = {b = b, lp = lp}
+	if Net.is_guest() and Net.job:
+		Net.job.take(b, "dyn")
+		b.freeze = false                 # mine to move while I drag it: real physics on my end
 	b.sleeping = false
 	Sfx.play("pick")
 
 func stop_drag() -> void:
 	if drag == null: return
-	if is_instance_valid(drag.b): drag.b.sleeping = false
+	if is_instance_valid(drag.b):
+		drag.b.sleeping = false
+		_let_go(drag.b)
 	drag = null
 	Sfx.play("drop")
 	game.get_tree().create_timer(1.5).timeout.connect(game.update_objectives)
@@ -260,6 +275,14 @@ func kick() -> void:
 	var hit: Dictionary = game.get_world_3d().direct_space_state.intersect_ray(q)
 	if hit.is_empty() or not (hit.collider is WoodPiece): Sfx.play("step"); return
 	var b: WoodPiece = hit.collider
+	if Net.is_guest() and Net.job:
+		Net.job.kick(b, hit.position, d)
+		Sfx.play("thud", 0.4)
+		return
+	kick_piece(b, hit.position, d)
+
+## the boot lands on a piece of wood at `at`, going `d`
+func kick_piece(b: WoodPiece, at: Vector3, d: Vector3) -> void:
 	b.sleeping = false
 	# a piece that's nearly cut through snaps apart. Cuts in the same plane add up: a top cut and a cut
 	# up from underneath that meet (or nearly) count as one cut through
@@ -279,13 +302,13 @@ func kick() -> void:
 		best.piece = b
 		best.part = {trunk = true}
 		Sfx.play("crack")
-		game.saw._emit(hit.position, Vector3(0, 1.2, 0), 12, Color("#c4ae88"), 2, 0.04)
+		game.saw._emit(at, Vector3(0, 1.2, 0), 12, Color("#c4ae88"), 2, 0.04)
 		game.saw._finish_piece_cut(best)
 		if game.saw.cut == best: game.saw.cut = null
 		Ach.unlock("one_kick")
 		return
 	var J := Vector3(d.x, 0, d.z).normalized() * minf(220, b.mass * 3) + Vector3(0, minf(60, b.mass * 0.8), 0)
-	b.apply_impulse(J, hit.position - b.global_position)
+	b.apply_impulse(J, at - b.global_position)
 	Sfx.play("thud", 0.4)
 
 # ---------------------------------------------------------------- the chipper
@@ -297,6 +320,9 @@ func feed() -> void:
 	if not c.running: game.hud.toast("The chipper isn't running."); return
 	var brush := carry.filter(func(b): return b.chippable())
 	carry = carry.filter(func(b): return not b.chippable())
+	if Net.is_guest() and Net.job:
+		Net.job.feed(brush)              # the host's chipper takes them from here
+		return
 	for b in brush:
 		b.mode = "feedwait"
 		feed_queue.append(b)

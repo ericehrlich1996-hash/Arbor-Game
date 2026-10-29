@@ -34,6 +34,9 @@ var coil: MeshInstance3D
 var swing := 0.0                # hammer swing, counts down
 var wedge_mesh: ArrayMesh
 var _tip := ""
+var holder = null              # whoever tied the rope on and is walking the other end (null: you)
+var net_line: Array = []       # on a crew member's game: the rope as the host has it [a, b, slack]
+var holder_peer := 0
 
 func setup(g) -> void:
 	game = g
@@ -199,6 +202,12 @@ func _count_in(c: Dictionary) -> int:
 
 # ---------------------------------------------------------------- using them
 func use() -> bool:
+	if Net.is_guest() and Net.job:
+		# the host's game does the hammering and the tying; we just swing
+		if prompt() == "": return false
+		if game.player.tool == "wedge": swing = 0.28
+		Net.ask("rig", [game.net_pose()])
+		return true
 	match game.player.tool:
 		"wedge": return _hit()
 		"rope": return _rope_action()
@@ -272,6 +281,7 @@ func _rope_action() -> bool:
 				rope_piece = lg.piece
 				rope_local = rope_piece.global_transform.affine_inverse() * (lg.p as Vector3)
 				rope = "tree"; rope_used = true
+				holder = game.player
 				anchor_w = _anchor()
 				_was_wet = true
 				Sfx.play("pick")
@@ -284,6 +294,7 @@ func _rope_action() -> bool:
 			var y: float = minf(tree.T.H * 0.55, 9.5)
 			rope_pt = Vector3(0, y, 0) + lp.normalized() * Wood.r_at(tree.T, y)
 			rope = "tree"; rope_used = true
+			holder = game.player
 			anchor_w = _anchor()
 			Sfx.play("pick")
 			game.hud.toast("You toss a throw line over a limb and haul the rope up. Tied off about %d ft up. Now take the other end to the truck's hitch." % roundi(y * 3.28), 5.0)
@@ -328,6 +339,7 @@ func _near_tie() -> bool:
 
 # ---------------------------------------------------------------- every frame
 func physics_step(_dt: float) -> void:
+	if Net.is_guest(): return
 	if rope_piece != null and not is_instance_valid(rope_piece):
 		rope = ""; rope_piece = null; rope_stretch = 0.0
 		return
@@ -377,9 +389,9 @@ func step(dt: float) -> void:
 	pose(dt)
 	_draw_rope()
 
-func _draw_rope() -> void:
-	rope_im.clear_surfaces()
-	if rope == "" or (rope_piece == null and game.tree.state != "stand"): return
+## the rope as it hangs: [tie-off, other end, sag] or [] when there's no rope out
+func rope_line() -> Array:
+	if rope == "" or (rope_piece == null and game.tree.state != "stand"): return []
 	var a := _anchor()
 	var b: Vector3
 	var slack := 0.0
@@ -387,12 +399,44 @@ func _draw_rope() -> void:
 		b = game.truck.hitch_world()
 		slack = sqrt(maxf(rope_len * rope_len - a.distance_squared_to(b), 0.0)) * 0.5
 	else:
-		# hanging down the trunk to the ground, or to your hand when you're walking it to the truck
-		if game.player.tool == "rope" and not game.player.in_truck:
-			b = game.player.global_position + Vector3(0, 1.1, 0) + game.player.fwd() * 0.3
+		# hanging down the trunk to the ground, or to the hand of whoever's walking it to the truck
+		var hp = holder if holder != null and is_instance_valid(holder) else game.player
+		if hp.tool == "rope" and not hp.in_truck:
+			b = hp.global_position + Vector3(0, 1.1, 0) + hp.fwd() * 0.3
 			slack = clampf(a.distance_to(b) * 0.12, 0.3, 2.5)
 		else:
 			b = game.tree.global_position + Vector3(0.4, 0.05, 0.4)
+	return [a, b, slack]
+
+## for the crew: the rope, the log it's on, how tight, who's holding the end, and where the wedges sit
+func net_state(job) -> Array:
+	var wx := []
+	for w in wedges:
+		if is_instance_valid(w.node): wx.append((w.node as Node3D).transform)
+	var line := rope_line()
+	if not line.is_empty(): line = [line[0], line[1], snappedf(line[2], 0.05)]
+	return [rope, line, job.nid_of(rope_piece) if rope_piece else 0, snappedf(rope_stretch, 0.05), job._peer_of(holder) if rope == "tree" else 0, wx]
+
+func net_apply(a: Array, job) -> void:
+	rope = str(a[0])
+	net_line = a[1]
+	rope_piece = job.mirrors.get(int(a[2])) if int(a[2]) != 0 else null
+	if rope_piece != null and not is_instance_valid(rope_piece): rope_piece = null
+	rope_stretch = float(a[3])
+	holder_peer = int(a[4])
+	job.show_wedges(a[5], wedge_mesh)
+
+func _draw_rope() -> void:
+	rope_im.clear_surfaces()
+	var L := rope_line() if not Net.is_guest() else net_line.duplicate()
+	if L.is_empty(): return
+	var a: Vector3 = L[0]
+	var b: Vector3 = L[1]
+	var slack: float = L[2]
+	# the end in my own hands follows me, not the host's last word on where I was
+	if Net.is_guest() and rope == "tree" and holder_peer == Net.me() and game.player.tool == "rope" and not game.player.in_truck:
+		b = game.player.global_position + Vector3(0, 1.1, 0) + game.player.fwd() * 0.3
+		slack = clampf(a.distance_to(b) * 0.12, 0.3, 2.5)
 	var n := 18
 	var pts := []
 	for i in range(n + 1):

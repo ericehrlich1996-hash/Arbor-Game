@@ -24,6 +24,19 @@ Drop it on the garage and the roof caves in, and the damage comes out of your pa
   2. Choose **Import** and pick `godot/project.godot`.
   3. Press **F5** to play.
 
+## Crew play (up to 4)
+
+Pick up the 90s phone on the cabin wall by the computer (E).
+
+- **HOST A CREW** opens your line. Your number shows on the phone's green display.
+- Your friends punch that number into their own phone (`*` is the dot) and press **CALL**. Same Wi-Fi: the number on the display. Different houses: the host forwards **port 24565 (UDP)** to their computer and gives out their public address.
+- The host takes a job on the computer and the whole crew goes. Everyone works the same tree, logs and truck: cut, carry, throw, chip, drive, hammer wedges, rig the rope. The pay is split evenly; everyone keeps their own bank and gear.
+- To try it on one computer, run the game twice: HOST in one, CALL `127.0.0.1` in the other.
+
+How it works: the host's game runs the shared world (`scripts/net.gd`, `scripts/net_job.gd`). Each player moves themselves; cuts, pick-ups, throws and the rest go to the host, and the host sends the result back. Crew play is in the PC game only (not the browser build). Steam lobbies can replace the direct connection later.
+
+Two-player tests run a host and a guest on one machine: `godot --headless --path . -- --test=net_host --job=0` and, alongside it, `--test=net_guest --job=0` (jobs 0 to 3).
+
 ## Controls
 
 | Key | Action |

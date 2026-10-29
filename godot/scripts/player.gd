@@ -17,6 +17,7 @@ var in_truck := false
 var speed_mult := 1.0
 var wade := 1.0                 # slowed down wading in water
 var col_shape: CollisionShape3D
+static var input_off := false   # the pause menu's up in a crew game (the world keeps going, you don't)
 
 const WALK := 3.3
 const RUN := 5.6
@@ -63,7 +64,7 @@ func _physics_process(dt: float) -> void:
 	if in_truck: return
 	var target_eye := 0.98 if crouch else 1.62
 	eye_h = lerpf(eye_h, target_eye, minf(1, dt * 8))
-	var mv := Input.get_vector("move_left", "move_right", "move_fwd", "move_back")
+	var mv := Input.get_vector("move_left", "move_right", "move_fwd", "move_back") if not input_off else Vector2.ZERO
 	var dir := (global_transform.basis * Vector3(mv.x, 0, mv.y))
 	dir.y = 0
 	if dir.length() > 1: dir = dir.normalized()
@@ -71,7 +72,7 @@ func _physics_process(dt: float) -> void:
 	var hv := dir * sp
 	velocity.x = move_toward(velocity.x, hv.x, dt * 30); velocity.z = move_toward(velocity.z, hv.z, dt * 30)
 	if is_on_floor():
-		if Input.is_action_just_pressed("jump") and not crouch: velocity.y = JUMP
+		if Input.is_action_just_pressed("jump") and not crouch and not input_off: velocity.y = JUMP
 	else:
 		velocity.y -= GRAV * dt
 	var grounded := is_on_floor()

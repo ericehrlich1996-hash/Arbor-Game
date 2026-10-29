@@ -648,6 +648,9 @@ func _start_cut(h: Dictionary):
 	return c
 
 func _finish_piece_cut(c: Dictionary) -> void:
+	# on a crew member's game the host makes the cut; the pieces it makes come back from there
+	if Net.is_guest() and Net.job:
+		Net.job.cut_piece(c); return
 	var pc: WoodPiece = c.piece
 	var T: Dictionary = pc.T
 	var part: Dictionary = c.part

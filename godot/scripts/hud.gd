@@ -135,6 +135,9 @@ func _ready() -> void:
 	money.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7)); money.add_theme_constant_override("outline_size", 6)
 	tool_state = _label("", 14, DIM); tool_state.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	tr.add_child(money); tr.add_child(tool_state)
+	crew_lbl = _label("", 14, Color("#ffe1b8")); crew_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	crew_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7)); crew_lbl.add_theme_constant_override("outline_size", 5)
+	tr.add_child(crew_lbl)
 	root.add_child(tr)
 	# interaction prompt
 	prompt = RichTextLabel.new(); prompt.bbcode_enabled = true; prompt.fit_content = true; prompt.scroll_active = false
@@ -466,7 +469,14 @@ func set_play_visible(on: bool) -> void:
 	for n in [crosshair, obj_panel, hotbar, prompt, tilt]:
 		n.visible = on
 
+var crew_lbl: Label
+## who's on the crew, under the bank balance
+func set_crew(text: String) -> void:
+	if crew_lbl: crew_lbl.text = text
+
+var obj_list_lines: Array = []          # the last objective lines (sent on to the crew)
 func set_objectives(lines: Array) -> void:
+	obj_list_lines = lines
 	var s := ""
 	for l in lines:
 		if l[0]: s += "[color=#7bc96f]■[/color] [color=#8a8476][s]%s[/s][/color]\n" % l[1]
@@ -495,6 +505,7 @@ func set_tool(t: String, muffs: bool) -> void:
 		sb.set_border_width_all(2 if on else 1)
 
 func shout(msg: String) -> void:
+	if capture != null: return
 	toast(msg, 2.5)
 	toast_lbl.add_theme_font_size_override("font_size", 40)
 	get_tree().create_timer(2.5).timeout.connect(func(): toast_lbl.add_theme_font_size_override("font_size", 17))
@@ -504,7 +515,10 @@ func use_touch_text() -> void:
 	if title_hint: title_hint.text = "Left thumb to move · swipe to look · USE is your left mouse button, a double-tap your right"
 	if help_lbl: help_lbl.text = "[b]Left stick[/b] walk (push to the edge to run) · in the truck: drive and steer\n[b]Swipe[/b] anywhere on the right to look\n[b]USE[/b] = left mouse: grab, cut, cast, reel, swing the axe\n[b]Double-tap[/b] = right mouse (hold the second tap): rev the saw, set down / throw in the truck, jig the lure\n[b]E[/b] talk / pick up / drive / hitch · [b]JUMP[/b] jump (brake in the truck) · [b]KICK[/b] kick\n[b]Up / down arrows[/b] the mouse wheel: angle the cut · the down arrow sets the hook when the float goes under\n[b]Tap a slot[/b] on the bar to switch tools\n[b]START SAW[/b] pull-start (a few pulls) · [b]DRAG[/b] drag a log · [b]THROW[/b] / [b]DROP[/b] what you carry\n[b]CAMERA[/b] truck view · [b]UNSTICK[/b] free the truck"
 
+var capture = null                       # while doing something for a crew member: their messages go to them
 func toast(msg: String, secs := 3.2) -> void:
+	if capture != null:
+		capture.append([msg, secs]); return
 	toast_lbl.text = msg
 	toast_until = _t + secs
 	toast_lbl.modulate.a = 1

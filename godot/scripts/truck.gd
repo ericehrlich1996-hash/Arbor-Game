@@ -22,6 +22,9 @@ var mirror_live := false        # the mirror is redrawn a few times a second whi
 var _mirror_n := 0
 var mirror_div := 3             # redraw the mirror every Nth frame
 var _last_pos := Vector3.ZERO
+var remote_driver := 0             # a crew member driving it from their computer (their inputs come over the line)
+var remote_in := {}                # {thr, st, br} from them
+var show_driver := false           # somebody else is at the wheel: draw them in the seat
 
 static var BED_FLOOR_Y := 0.8         # (the Meshy truck's bed sits lower: set in setup)
 
@@ -241,11 +244,12 @@ func in_bed(p: Vector3) -> bool:
 	var l := bed_local(p)
 	return absf(l.x) < 1.0 and l.z > -2.7 and l.z < -0.7 and l.y > BED_FLOOR_Y - 0.08 and l.y < 3.0
 
-func enter() -> void:
+func enter(remote := false) -> void:
 	freeze = false
 	_still_t = 0.0
 	driving = true
 	look_yaw = 0; look_pitch = 0
+	if remote: return
 	_set_cam()
 	mirror_live = true
 	mirror_div = 3
@@ -467,15 +471,18 @@ func _driver_mb() -> MeshBuilder:
 	return mb
 
 func _physics_process(dt: float) -> void:
-	if driver: driver.visible = driving and chase
+	if driver: driver.visible = (driving and chase) or show_driver or remote_driver != 0
+	if freeze and (driving or remote_driver != 0) and Net.is_guest(): return       # a crew copy: the host drives it
 	var fwd := global_transform.basis.z
 	var v := linear_velocity.dot(fwd)
 	if driving:
 		var thr := Input.get_axis("move_back", "move_fwd")
-		_thr = thr
 		var st := Input.get_axis("move_right", "move_left")
-		steering = move_toward(steering, st * (0.55 if absf(v) < 6 else 0.3), dt * 2.0)
 		var want_brake := Input.is_action_pressed("jump")
+		if remote_driver != 0:
+			thr = float(remote_in.get("thr", 0.0)); st = float(remote_in.get("st", 0.0)); want_brake = bool(remote_in.get("br", false))
+		_thr = thr
+		steering = move_toward(steering, st * (0.55 if absf(v) < 6 else 0.3), dt * 2.0)
 		if thr > 0 and v < -0.5 or thr < 0 and v > 0.5:
 			engine_force = 0; brake = 40.0       # pressing against the motion brakes first
 		elif thr != 0:

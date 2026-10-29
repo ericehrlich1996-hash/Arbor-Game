@@ -48,6 +48,7 @@ func build(g) -> void:
 	screen_mat.vertex_color_use_as_albedo = true
 	screen_mat.emission_enabled = true; screen_mat.emission = Color(0.12, 0.45, 0.16); screen_mat.roughness = 0.15
 	_build_cabin()
+	_build_phone()
 	_build_yard()
 	# the truck, nose in by the cabin
 	var rng := RandomNumberGenerator.new(); rng.seed = 7
@@ -79,6 +80,61 @@ func build(g) -> void:
 	split.setup(self, block_top, rk, PI / 2)
 	spots.block = [block_top + Vector3(0, 0.25, 0), 2.6]
 	spots.rack = [rk + Vector3(0, 1.0, 0), 3.5]
+
+# ================================================================ the phone
+## A beige push-button wall phone by the desk (handset on its hook, the curly cord looping down), and an
+## answering machine on the desk under it with a red light that's lit while a crew line is open.
+var line_led: MeshInstance3D
+var _led_mat: StandardMaterial3D
+func _build_phone() -> void:
+	var mb := MeshBuilder.new()
+	var beige := Color("#d8cdb0"); var beige2 := Color("#c2b694"); var dark := Color("#2e2c28"); var keyc := Color("#ece6d2")
+	var px := -2.0; var pz := -HZ + 0.2; var py := F + 1.42
+	# the wall plate and the base, keys on its face below the hook
+	mb.bevel_box(px, py, pz, 0.16, 0.3, 0.025, beige2, 0.008)
+	mb.bevel_box(px, py - 0.02, pz + 0.035, 0.13, 0.25, 0.05, beige, 0.012)
+	mb.box(px, py + 0.07, pz + 0.062, 0.08, 0.025, 0.004, Color("#8fae7a"))                 # the little display
+	for r in range(4):
+		for c in range(3):
+			mb.box(px - 0.032 + c * 0.032, py + 0.02 - r * 0.028, pz + 0.063, 0.024, 0.02, 0.008, keyc)
+	# the handset on its hook, standing up the left side of the base
+	var hx := px - 0.085
+	mb.bevel_box(hx, py, pz + 0.05, 0.05, 0.24, 0.05, beige, 0.018)
+	mb.bevel_box(hx, py + 0.11, pz + 0.07, 0.06, 0.06, 0.05, beige, 0.02)                     # earpiece
+	mb.bevel_box(hx, py - 0.11, pz + 0.07, 0.06, 0.06, 0.05, beige, 0.02)                     # mouthpiece
+	# the coiled cord: from the bottom of the handset, looping down and back up into the base
+	var a := Vector3(hx, py - 0.14, pz + 0.06); var b := Vector3(px + 0.03, py - 0.15, pz + 0.05)
+	var turns := 34; var prev := Vector3.ZERO
+	for i in range(turns * 6 + 1):
+		var t := float(i) / (turns * 6)
+		var mid := a.lerp(b, t) + Vector3(0, -0.34 * sin(t * PI), 0.02 * sin(t * PI))
+		var ang := t * turns * TAU
+		var tangent := (a.lerp(b, minf(1.0, t + 0.01)) - a.lerp(b, t)).normalized()
+		var side := tangent.cross(Vector3.BACK).normalized() if absf(tangent.z) < 0.9 else Vector3.RIGHT
+		var up := tangent.cross(side).normalized()
+		var p := mid + (side * cos(ang) + up * sin(ang)) * 0.011
+		if i > 0: mb.tube(prev, p, 0.0035, 0.0035, beige2, 4)
+		prev = p
+	# the answering machine on the desk, under the phone
+	var dt := F + 0.76
+	var mx := -2.64; var mz := -2.98
+	mb.bevel_box(mx, dt + 0.03, mz, 0.22, 0.055, 0.15, dark, 0.01)
+	mb.box(mx - 0.035, dt + 0.059, mz - 0.01, 0.1, 0.004, 0.06, Color("#4a4842"))            # the tape window
+	mb.cyl(mx - 0.06, dt + 0.061, mz - 0.01, 0.012, 0.012, 0.004, Color("#c8c4bc"), 8, true)   # the two reels
+	mb.cyl(mx - 0.01, dt + 0.061, mz - 0.01, 0.012, 0.012, 0.004, Color("#c8c4bc"), 8, true)
+	for k in range(4): mb.box(mx + 0.04 + (k % 2) * 0.03, dt + 0.06, mz - 0.03 + (k / 2) * 0.035, 0.022, 0.006, 0.022, Color("#5a5852"))
+	mb.box(mx + 0.06, dt + 0.059, mz + 0.05, 0.05, 0.004, 0.012, Color("#d8d2c0"))            # "MESSAGES" label strip
+	var mi := mb.instance(); mi.name = "Phone"
+	mi.position = Vector3(0, y0, 0)
+	add_child(mi)
+	_led_mat = StandardMaterial3D.new()
+	_led_mat.albedo_color = Color("#5a1a14")
+	_led_mat.emission_enabled = true; _led_mat.emission = Color(1.0, 0.15, 0.08); _led_mat.emission_energy_multiplier = 0.0
+	var lm := MeshBuilder.new(); lm.sphere(0, 0, 0, 0.007, 0.005, 0.007, Color.WHITE, 8, 4)
+	line_led = lm.instance(_led_mat)
+	line_led.position = W(Vector3(mx + 0.085, dt + 0.06, mz - 0.045))
+	add_child(line_led)
+	spots.phone = [W(Vector3(px, py, pz + 0.1)), 2.2]
 
 ## is this world point inside the cabin (under the roof, between the walls)?
 func indoors(p: Vector3) -> bool:
@@ -633,6 +689,11 @@ func step(dt: float) -> void:
 	flames.scale = Vector3(1.0, 0.85 + 0.25 * fk, 1.0)
 	if smoke: smoke.emitting = flames.visible             # smoke only while the fire's lit
 	lamp_light.light_energy = 0.65 + 0.04 * sin(t * 9.0)
+	# the answering machine's light: steady while you've a crew on the line
+	if _led_mat:
+		var lit: bool = Net.active() or (Net.role == "dialing" and int(t * 3.0) % 2 == 0)
+		_led_mat.emission_energy_multiplier = 2.5 if lit else 0.0
+		_led_mat.albedo_color = Color("#ff3a26") if lit else Color("#5a1a14")
 	if game.phase == "title":
 		var a := t * 0.05
 		title_cam.global_position = W(Vector3(sin(a) * 15.0, 7.5, cos(a) * 15.0 - 2.0))
@@ -660,6 +721,10 @@ func step(dt: float) -> void:
 	var txt := ""
 	match aim:
 		"computer": txt = "[b]E[/b] Use the computer"
+		"phone":
+			if Net.is_host(): txt = "[b]E[/b] Pick up the phone · your crew line's open (%d on the crew)" % Net.roster.size()
+			elif Net.is_guest(): txt = "[b]E[/b] Pick up the phone · on %s's crew" % Net.boss_name()
+			else: txt = "[b]E[/b] Pick up the phone · get a crew together"
 		"truck": txt = "" if Mats.truck_rust <= 0.0 else "Your truck. She's seen better days."
 		"bed": txt = "[b]E[/b] Have a nap"
 		"fire":
@@ -691,6 +756,7 @@ func interact() -> void:
 		"block":
 			if split.carrying or not split.pieces.is_empty(): split.use_block()
 		"computer": game.open_computer()
+		"phone": game.open_phone()
 		"bed":
 			busy = true
 			var tw := create_tween()
