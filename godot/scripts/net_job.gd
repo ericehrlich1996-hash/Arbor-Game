@@ -572,7 +572,7 @@ func _guest_step(dt: float) -> void:
 		if _drive_t >= 1.0 / 30.0:
 			_drive_t = 0.0
 			var cap: bool = game.cap() or game.tests != null
-			Net.stream_up("drive", [Input.get_axis("move_back", "move_fwd") if cap else 0.0,
+			Net.stream_up("drive", [clampf(Input.get_axis("move_back", "move_fwd") + Gamepad.drive_axis(), -1.0, 1.0) if cap else 0.0,
 				Input.get_axis("move_right", "move_left") if cap else 0.0, Input.is_action_pressed("jump") and cap])
 	# a cut that's gone deeper since it was last sent (you let off the trigger between updates): send it now
 	_flush_t += dt

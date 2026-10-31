@@ -476,7 +476,7 @@ func _physics_process(dt: float) -> void:
 	var fwd := global_transform.basis.z
 	var v := linear_velocity.dot(fwd)
 	if driving:
-		var thr := Input.get_axis("move_back", "move_fwd")
+		var thr := clampf(Input.get_axis("move_back", "move_fwd") + Gamepad.drive_axis(), -1.0, 1.0)
 		var st := Input.get_axis("move_right", "move_left")
 		var want_brake := Input.is_action_pressed("jump")
 		if remote_driver != 0:

@@ -3467,3 +3467,95 @@ func _cemetery_stonehit() -> void:
 		for l in r.find_children("*", "Label", true, false): txt += (l as Label).text + " "
 		rows.append(txt.strip_edges())
 	note("pay_rows", rows)
+
+## controller: the whole loop with nothing but pad input (buttons as real joypad events, the sticks and
+## triggers through Gamepad.fake since a headless run has no pad plugged in)
+func _jb(b: JoyButton, down: bool) -> void:
+	var e := InputEventJoypadButton.new(); e.button_index = b; e.pressed = down; e.device = 0
+	Input.parse_input_event(e)
+
+func _jtap(b: JoyButton) -> void:
+	_jb(b, true); await wait(0.1); _jb(b, false); await wait(0.15)
+
+func _gamepad() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(1.0)
+	var p: Player = g.player
+	# look with the right stick
+	var y0 := p.yaw
+	Gamepad.fake = {JOY_AXIS_RIGHT_X: 1.0}
+	await wait(0.5)
+	Gamepad.fake = {JOY_AXIS_RIGHT_X: 0.0, JOY_AXIS_RIGHT_Y: 0.0}
+	note("pad_look_turned", snappedf(y0 - p.yaw, 0.01))
+	# walk with the left stick (a real axis event through the input map)
+	var p0 := p.global_position
+	p.yaw = y0
+	Gamepad.fake = {JOY_AXIS_LEFT_Y: -1.0}
+	await wait(0.8)
+	Gamepad.fake = {JOY_AXIS_LEFT_Y: 0.0}
+	await wait(0.1)
+	note("pad_walked", snappedf(p.global_position.distance_to(p0), 0.1))
+	note("pad_move_strength_after", Input.get_action_strength("move_fwd"))
+	var p1 := p.global_position
+	Input.action_press("move_fwd"); await wait(0.8); Input.action_release("move_fwd")
+	note("key_walked", snappedf(p.global_position.distance_to(p1), 0.1))
+	# RB to the saw, View to start it, LT to rev
+	await _jtap(JOY_BUTTON_RIGHT_SHOULDER)
+	note("pad_hints", [g.hud.pad_on, g.hud.help_lbl.text.begins_with("[b]Left stick[/b]"), g.hud.pad_words("Talk with [b]E[/b], cut with [b]Left click[/b]")])
+	note("pad_rb_tool", p.tool)
+	for i in range(6):
+		if g.saw.on: break
+		await _jtap(JOY_BUTTON_BACK); await wait(0.4)
+	note("pad_saw_on", g.saw.on)
+	Gamepad.fake = {JOY_AXIS_TRIGGER_LEFT: 1.0}
+	await wait(0.3)
+	note("pad_lt_rev", Input.is_action_pressed("rev"))
+	Gamepad.fake = {JOY_AXIS_TRIGGER_LEFT: 0.0}
+	await wait(0.2)
+	note("pad_lt_off", not Input.is_action_pressed("rev"))
+	var r0: float = g.saw.roll
+	await _jtap(JOY_BUTTON_DPAD_UP)
+	note("pad_dpad_roll", absf(g.saw.roll - r0) > 0.01 or not g.saw.guide.is_empty())
+	await _jtap(JOY_BUTTON_LEFT_SHOULDER)
+	note("pad_lb_tool", p.tool)
+	# Menu pauses, the pad lands on a button, B backs out
+	await _jtap(JOY_BUTTON_START)
+	await wait(0.3)
+	var fo: Control = g.get_viewport().gui_get_focus_owner()
+	note("pad_pause", [g.pause.is_open(), fo != null and g.pause.panel.is_ancestor_of(fo)])
+	await _jtap(JOY_BUTTON_DPAD_DOWN)
+	var fo2: Control = g.get_viewport().gui_get_focus_owner()
+	note("pad_menu_moved", [fo2 != null and fo2 != fo, fo.get_class() + ":" + str(fo.get("text")), (fo2.get_class() + ":" + str(fo2.get("text"))) if fo2 else "none"])
+	await _jtap(JOY_BUTTON_B)
+	await wait(0.3)
+	note("pad_unpaused", not g.pause.is_open())
+	# hold View: the controller card
+	_jb(JOY_BUTTON_BACK, true); await wait(0.8)
+	note("pad_help_held", g.hud.help.visible)
+	_jb(JOY_BUTTON_BACK, false); await wait(0.2)
+	note("pad_help_gone", not g.hud.help.visible)
+	# X talks to the client (walk up to them first)
+	p.teleport(g.earl.global_position + Vector3(1.2, 0, 0))
+	look_at_point(g.earl.global_position + Vector3(0, 1.5, 0))
+	await wait(0.3)
+	await _jtap(JOY_BUTTON_X)
+	await wait(0.3)
+	note("pad_x_talk", g.dlg != null)
+	for i in range(12):
+		if g.dlg == null: break
+		await _jtap(JOY_BUTTON_A); await wait(0.3)
+	note("pad_a_through_talk", g.dlg == null)
+	# the pedals
+	Gamepad.fake = {JOY_AXIS_TRIGGER_RIGHT: 1.0}
+	note("pad_gas", Gamepad.drive_axis())
+	Gamepad.fake = {JOY_AXIS_TRIGGER_LEFT: 1.0}
+	note("pad_reverse", Gamepad.drive_axis())
+	Gamepad.fake = {}
+	# the keyboard again: the hints go back
+	var k := InputEventKey.new(); k.physical_keycode = KEY_W; k.keycode = KEY_W; k.pressed = true
+	Input.parse_input_event(k)
+	await wait(0.2)
+	var ku := InputEventKey.new(); ku.physical_keycode = KEY_W; ku.keycode = KEY_W; ku.pressed = false
+	Input.parse_input_event(ku)
+	note("pad_keys_back", not g.hud.pad_on)

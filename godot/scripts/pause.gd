@@ -83,7 +83,7 @@ func _build() -> void:
 	var rb := _btn("Resume", true); head.add_child(rb)
 	rb.pressed.connect(close)
 
-	scroll = ScrollContainer.new(); scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll = ScrollContainer.new(); scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED; scroll.follow_focus = true
 	scroll.custom_minimum_size = Vector2(minf(560.0 * f, s.x - 60.0), minf(s.y * 0.72, 430.0 * f))
 	v.add_child(scroll)
 	body = VBoxContainer.new(); body.add_theme_constant_override("separation", int(8 * f))
@@ -110,7 +110,7 @@ func _build() -> void:
 	_choice("detail", "Detail", [["Auto", -1], ["Low", 0], ["High", 1]])
 	_choice("fps", "Frame rate", [["Auto", -1], ["30", 30], ["60", 60], ["Max", 0]])
 	_choice("res", "Resolution", [["Full", 1.0], ["85%", 0.85], ["70%", 0.7]])
-	var note := _lbl("Phones: Auto runs at 30 fps and low detail to keep it cool. Lower resolution saves battery.", 13, DIM)
+	var note := _lbl("Handhelds (ROG Ally, Steam Deck): 60 fps and 85% resolution save a lot of battery. Phones: Auto runs at 30 fps and low detail.", 13, DIM)
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; body.add_child(note)
 
 # ---------------------------------------------------------------- widgets

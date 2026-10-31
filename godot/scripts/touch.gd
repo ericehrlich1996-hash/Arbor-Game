@@ -22,6 +22,8 @@ var buttons: Array = []           # [{id, label, c (centre), r (radius), small}]
 static func wanted() -> bool:
 	if OS.get_environment("ARBOR_TOUCH") == "1": return true
 	if OS.get_environment("ARBOR_TOUCH") == "0": return false
+	# a computer with a touchscreen (ROG Ally, Surface, a touch laptop) keeps the mouse, keys and pad
+	if not (OS.has_feature("web") or OS.has_feature("mobile")): return false
 	return DisplayServer.is_touchscreen_available()
 
 func setup(g) -> void:

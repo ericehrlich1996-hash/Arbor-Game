@@ -370,7 +370,7 @@ func _render_pc() -> void:
 func _render_trophies() -> void:
 	var n := Ach.count()
 	pc_list.add_child(_crt_label("> ACHIEVEMENTS: %d OF %d" % [n.x, n.y], 18))
-	var sc := ScrollContainer.new(); sc.custom_minimum_size = Vector2(600, 300)
+	var sc := ScrollContainer.new(); sc.custom_minimum_size = Vector2(600, 300); sc.follow_focus = true
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 4); v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sc.add_child(v); pc_list.add_child(sc)
@@ -512,7 +512,9 @@ func shout(msg: String) -> void:
 	get_tree().create_timer(2.5).timeout.connect(func(): toast_lbl.add_theme_font_size_override("font_size", 17))
 
 ## phones: the hints and the help card talk about thumbs, not the mouse and keys
+var touch_text := false
 func use_touch_text() -> void:
+	touch_text = true
 	if title_hint: title_hint.text = "Left thumb to move · swipe to look · USE is your left mouse button, a double-tap your right"
 	if help_lbl: help_lbl.text = "[b]Left stick[/b] walk (push to the edge to run) · in the truck: drive and steer\n[b]Swipe[/b] anywhere on the right to look\n[b]USE[/b] = left mouse: grab, cut, cast, reel, swing the axe\n[b]Double-tap[/b] = right mouse (hold the second tap): rev the saw, set down / throw in the truck, jig the lure\n[b]E[/b] talk / pick up / drive / hitch · [b]JUMP[/b] jump (brake in the truck) · [b]KICK[/b] kick\n[b]Up / down arrows[/b] the mouse wheel: angle the cut · the down arrow sets the hook when the float goes under\n[b]Tap a slot[/b] on the bar to switch tools\n[b]START SAW[/b] pull-start (a few pulls) · [b]DRAG[/b] drag a log · [b]THROW[/b] / [b]DROP[/b] what you carry\n[b]CAMERA[/b] truck view · [b]UNSTICK[/b] free the truck"
 
@@ -520,7 +522,7 @@ var capture = null                       # while doing something for a crew memb
 func toast(msg: String, secs := 3.2) -> void:
 	if capture != null:
 		capture.append([msg, secs]); return
-	toast_lbl.text = msg
+	toast_lbl.text = pad_words(msg)
 	toast_until = _t + secs
 	toast_lbl.modulate.a = 1
 
@@ -532,7 +534,36 @@ func hide_dialog() -> void:
 	dlg_panel.visible = false
 
 var _last_prompt := "-"
+## a controller's in use: the hints name its buttons instead of the keys and mouse
+var pad_on := false
+var _key_help := ""
+const PAD_NAMES := {
+	"[b]E[/b]": "[b]X[/b]", "[b]Left click[/b]": "[b]RT[/b]", "[b]left click[/b]": "[b]RT[/b]", "[b]left mouse[/b]": "[b]RT[/b]",
+	"[b]Left mouse[/b]": "[b]RT[/b]", "[b]Right click[/b]": "[b]LT[/b]", "[b]Right mouse[/b]": "[b]LT[/b]", "[b]right mouse[/b]": "[b]LT[/b]",
+	"[b]Space[/b]": "[b]A[/b]", "[b]F[/b]": "[b]B[/b]", "[b]G[/b]": "[b]Y[/b]", "[b]T[/b]": "[b]D-pad →[/b]", "[b]R[/b]": "[b]View[/b]",
+	"[b]U[/b]": "[b]Y[/b]", "[b]V[/b]": "[b]View[/b]", "[b]W/S[/b]": "[b]left stick[/b]", "[b]A/D[/b]": "[b]left stick[/b]", "[b]W[/b]": "[b]left stick up[/b]",
+	"[b]WASD[/b]": "[b]Left stick[/b]", "[b]Shift[/b]": "[b]L3[/b]", "[b]C[/b]": "[b]R3[/b]", "[b]Wheel[/b]": "[b]D-pad ↑↓[/b]", "[b]H[/b]": "[b]hold View[/b]",
+	"[b]Q[/b]": "[b]LT[/b]", "[b]Esc[/b]": "[b]Menu[/b]",
+	"hold G": "hold Y", "left mouse": "RT", "Left mouse": "RT", "right mouse": "LT", "Right mouse": "LT", "left click": "RT", "Left click": "RT",
+	"Click to look around. Walk with WASD.": "Right stick looks, left stick walks.", "Shift+S": "L3 + back",
+}
+const PAD_HELP := "[b]Left stick[/b] walk · click it ([b]L3[/b]) to run · [b]Right stick[/b] look\n[b]RT[/b] grab · cut · cast · reel · swing · throw the climbing line\n[b]LT[/b] rev the saw · set down / throw in the truck bed · jig the lure\n[b]X[/b] talk / pick up / use / drive / hitch · [b]A[/b] jump · [b]B[/b] kick (hold: flip past a limb) · [b]Y[/b] throw (hold in the tree: lower the rope)\n[b]LB / RB[/b] change tool · [b]D-pad ← [/b] ear muffs · [b]D-pad →[/b] drag · [b]R3[/b] crouch\n[b]D-pad ↑ ↓[/b] angle the cut · ↓ sets the hook\n[b]View[/b] start the saw (truck: camera) · hold it for this card · [b]Menu[/b] pause\n[b]In the truck[/b] RT gas · LT reverse · A brake · left stick steers · Y unstick · X get out\n[b]In menus[/b] d-pad moves · A picks · B backs out"
+
+func pad_words(t: String) -> String:
+	if not pad_on or t == "": return t
+	for k in PAD_NAMES: t = t.replace(k, PAD_NAMES[k])
+	return t
+
+func pad_text(on: bool) -> void:
+	if touch_text: return
+	pad_on = on
+	if help_lbl:
+		if _key_help == "": _key_help = help_lbl.text
+		help_lbl.text = PAD_HELP if on else _key_help
+	var lp := _last_prompt; _last_prompt = "~"; set_prompt(lp)
+
 func set_prompt(t: String) -> void:
+	t = pad_words(t)
 	if t == _last_prompt: return
 	_last_prompt = t
 	prompt.text = ("[center]" + t + "[/center]") if t != "" else ""

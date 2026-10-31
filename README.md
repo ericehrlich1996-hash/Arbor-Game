@@ -70,6 +70,28 @@ Two-player tests run a host and a guest on one machine: `godot --headless --path
 | In the truck | W/S drive, A/D steer, Space brakes, V switches the camera, E gets out |
 | H | help |
 
+### Controller (ROG Ally, Steam Deck, Xbox pad)
+
+Plug in or turn on any Xbox-layout controller and it just works, alongside the keyboard and mouse. The on-screen hints switch to the pad's buttons as soon as you touch it. Hold **View** in the game for the full card.
+
+| Button | Action |
+| --- | --- |
+| Left stick | walk (click **L3** to run) · truck: steer |
+| Right stick | look |
+| RT | left mouse: grab, cut, cast, reel, swing, throw the climbing line · truck: gas |
+| LT | right mouse: rev the saw, set down / throw in the bed, jig · truck: reverse |
+| A | jump · truck: brake · moves a conversation on |
+| X | talk, pick up, use, drive, hitch (the E key) |
+| B | kick (hold it in the tree to flip past a limb) |
+| Y | throw (hold it in the tree to let the lowering rope run) · truck: unstick |
+| LB / RB | previous / next tool |
+| D-pad ↑ ↓ | the mouse wheel: angle the cut, set the hook |
+| D-pad ← / → | ear muffs / drag |
+| R3 | crouch |
+| View | start the saw · truck: camera · hold: controls card |
+| Menu | pause |
+| In menus | d-pad or left stick moves, A picks, B backs out |
+
 ## How it works
 
 - **Cutting is real geometry.** Each piece of wood is a solid (Godot CSG).
@@ -101,6 +123,7 @@ Two-player tests run a host and a guest on one machine: `godot --headless --path
 | `godot/scripts/climb.gd`, `lower.gd` | climbing (line, spurs, lanyard, falls) and the lowering rig |
 | `godot/scripts/saw.gd` | the chainsaw: pose, bar contact, cutting, hands, sawdust |
 | `godot/scripts/haul.gd` | carrying, throwing, dragging, kicking, feeding the chipper |
+| `godot/scripts/gamepad.gd` | controller support: sticks, triggers, buttons, menu focus, the pad's hints |
 | `godot/scripts/sfx.gd` | all sounds, synthesized at startup; ear muffs |
 | `godot/scripts/tests.gd` | scripted playthroughs: `godot --path godot -- --test=job` |
 | `godot/export_web.sh` | exports the web build and copies it to the repo root |

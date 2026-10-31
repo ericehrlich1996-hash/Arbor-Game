@@ -31,6 +31,7 @@ var clock := 0.0
 var seed := 0
 var start_time := 0.0
 var touch: TouchControls          # on-screen controls on phones and tablets
+var gamepad: Gamepad              # controller support (sticks, triggers, menus)
 # a crew job (see net.gd / net_job.gd)
 var net_job: NetJob               # keeping the crew's copies of the job in step (null on your own)
 var storm_Ts: Array = []          # the storm job's tree shapes (so a log can say which tree it came from)
@@ -42,7 +43,7 @@ var lower: Lower                  # the lowering rig
 
 ## the mouse is "ours": captured on a computer, always on a touchscreen (there's no pointer to capture)
 func cap() -> bool:
-	return touch != null or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	return touch != null or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or Gamepad.in_use()
 
 func _capture() -> void:
 	if touch == null and tests == null: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -89,8 +90,10 @@ func _ready() -> void:
 	Net.game = self
 	Net.job = null
 	_setup_input()
+	Gamepad.bind_actions()
 	_setup_env()
 	hud = Hud.new(); add_child(hud)
+	gamepad = Gamepad.new(); gamepad.name = "Gamepad"; add_child(gamepad); gamepad.setup(self)
 	Ach.game = self
 	if TouchControls.wanted():
 		touch = TouchControls.new(); touch.name = "Touch"; add_child(touch)
