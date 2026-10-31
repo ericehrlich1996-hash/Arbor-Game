@@ -321,6 +321,12 @@ static func old_man(look := "earl") -> Dictionary:
 	if look == "gus":
 		# Gus: olive chest waders over a blue flannel, a blaze-orange cap, rubber boots
 		denim = h("#5a6440"); shirt = h("#2f5f86"); plaid_dk = h("#0e1e30"); cap = h("#e0701a"); boot = h("#3a3a30"); skin = h("#d9a888")
+	elif look == "dale":
+		# Dale Kowalski: a red work shirt, jeans, a green cap, white sneakers
+		denim = h("#3a5a8a"); shirt = h("#b03a2a"); plaid_dk = h("#3a1a14"); cap = h("#2f5a2f"); boot = h("#e8e4dc"); skin = h("#e0b090")
+	elif look == "keeper":
+		# Arlo the caretaker: khaki work clothes, a navy cap, old boots
+		denim = h("#6a6448"); shirt = h("#8a8460"); plaid_dk = h("#3a3828"); cap = h("#2a3a4a"); boot = h("#2a2620"); skin = h("#e3b393")
 	var mb := MeshBuilder.new()
 	# flannel shirt, a bit of a belly
 	plaid(mb, [[0.1, 0.2, 0.15], [0.22, 0.225, 0.175], [0.36, 0.225, 0.16], [0.48, 0.215, 0.14], [0.55, 0.17, 0.12], [0.59, 0.07, 0.07]], shirt, plaid_dk, 20, 2)

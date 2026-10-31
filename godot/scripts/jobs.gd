@@ -124,7 +124,68 @@ const STORM := {
 	hit_garage = "",
 }
 
-const LIST := [EARL, HALE, DOCK, STORM]
+const OAK := {
+	id = "oak", n = 5, title = "The Kowalskis' backyard oak", pay = 1500, unlock = 4, needs = "climb", look = "dale", who = "Dale", kind = "climb",
+	text = "Dale Kowalski on Lakeview (Mrs. Hale's sister's neighbor). A big red oak died of oak wilt, standing between the house, the back deck and the kids' swing set. It can't be felled whole: climb it, limb it, top it and bring it down in pieces. Bring the climbing kit.",
+	tree_word = "dead oak", bark_tint = Color(0.8, 0.76, 0.7),
+	fell_txt = "Take the oak down from the top: climb it, cut the limbs off, top it, then drop what's left",
+	talk = [
+		"You're the tree guy? Thank God. Mrs. Hale's sister said you're the only one in the county who didn't laugh at her.",
+		"So that's the oak. Oak wilt, the DNR guy said. Went brown in July and that was that. My dad planted it when I was a kid.",
+		"Problem is where it is. House on one side, the deck on the other, and the kids' swing set right there. You can't just tip it over. Can you?",
+		"Didn't think so. You've got the climbing stuff? Good. Take it down a piece at a time. The lawn strip out back toward the fence is about the only open ground.",
+		"Fifteen hundred. And hey, if you can save me one good slice out of the trunk, my wife wants a table top. No pressure.",
+		"Kids are at their grandma's. Go for it."],
+	idle = [
+		"My dad used to say an oak takes a hundred years to grow and a hundred to die. This one did it in a summer.",
+		"The DNR guy said don't move the wood before it's dried out. Something about beetles carrying the fungus. I wrote it down. Somewhere.",
+		"You ever fall out of one of those? Don't answer that.",
+		"The swing set was a Christmas present. Three hours to put together. Two of them were swearing.",
+		"My wife is watching from the kitchen window. She says hi. She also says mind the deck.",
+		"How do you guys get up there with those spike things? My knees hurt just looking."],
+	porch = "I'll be on the deck. Unless you're dropping stuff on the deck. Then I'll be in the driveway.",
+	fell = ["There it goes! Hey, the yard looks huge!", "Whoa. That's a lot of tree.", "Ha! Right where you said. How do you DO that?"],
+	barber = "Whoa, it ripped right up the middle! You okay?",
+	done = "That's it? Yard's clear! Come on over, I'll get my checkbook.",
+	paid = ["I can see the lake from the deck again. I forgot you could.", "Fifteen hundred, and a little extra for the table slice.",
+		"My buddy's the caretaker out at the township cemetery. Big old spruce dying in there, right in with the graves. I'll tell him to call you."],
+	hit_house = "THE HOUSE! Oh no. Oh no no no. My wife saw that.",
+	hit_garage = "",
+	hits = {deck = "The deck! I just stained that!", swing = "Aw, not the swing set! The kids are gonna kill me.", fence = "There goes the fence. Well. It was ugly anyway."},
+}
+
+const CEMETERY := {
+	id = "cemetery", n = 6, title = "The township cemetery spruce", pay = 1800, unlock = 5, needs = "lowrig", look = "keeper", who = "Arlo", kind = "climb",
+	text = "Arlo, the caretaker at Maple Grove Cemetery off Mill Rd. A dead Norway spruce standing right in among the graves. Nothing gets dropped: every limb and every piece of trunk comes down on a rope. The founder's family plot is under the north side. Bring the climbing kit and the lowering rig.",
+	tree_word = "dead spruce", bark_tint = Color(0.86, 0.8, 0.76),
+	fell_txt = "Take the spruce down from the top, lowering everything on the rope, then drop what's left",
+	pile_txt = "Buck the stem into liftable rounds and stack them outside the gate",
+	talk = [
+		"Afternoon. Arlo Lindgren. Thirty-two years caretaker out here. Dale Kowalski says you're careful. That's the only kind I can use.",
+		"That spruce went in when the chapel burned in 1931. Needles went brown two summers ago and never came back.",
+		"Look around it. Stones on every side. Some of these families still come out every Memorial Day. Some of these stones, there's nobody left to replace them.",
+		"So nothing comes down free. Everything on a rope, down to the gravel. The aisle's the only place I'll let you set wood on.",
+		"And the north side, that's the Halverson plot. The obelisk. Founder of the township. Please. Not the obelisk.",
+		"Eighteen hundred from the township board. I'll sign for it myself."],
+	idle = [
+		"People think a cemetery's a sad place. It's the quietest place in the county. I like it.",
+		"Some of these stones are older than the state. Michigan, I mean. Not the cemetery.",
+		"I had a fella in here with a stump grinder once. Once.",
+		"The squirrels in here are fat. Nobody chases them.",
+		"Halverson came over in 1868 and cleared this whole section by hand. Then they buried him in it. That's a pioneer for you.",
+		"Take your time. Nobody here's in a hurry."],
+	porch = "I'll be by the gate. Holler if you need me.",
+	fell = ["Well. That's done, then.", "Easy does it. That's how it's done.", "Halverson would've liked that."],
+	barber = "Oh, my. It split. Everyone all right?",
+	done = "Not a stone out of place. Come on over, I'll sign you off.",
+	paid = ["Thirty-two years, I've never seen it done that careful.", "Here's the township's eighteen hundred. I put a thank-you note in with it. Board doesn't know about the note.",
+		"You ever need a quiet place to eat your lunch, the gate's always open."],
+	hit_house = "",
+	hit_garage = "",
+	hits = {stone = "Oh, no. That's the Petersons'. That stone's been there since 1902.", plot = "The obelisk! Lord, the Halverson obelisk!", fence = "Watch the fence there."},
+}
+
+const LIST := [EARL, HALE, DOCK, STORM, OAK, CEMETERY]
 
 ## the job list for the computer, open or locked by how many jobs you've done
 static func board(jobs_done: int) -> Array:
@@ -137,7 +198,7 @@ static func board(jobs_done: int) -> Array:
 		var need: String = j.get("needs", "")
 		if not ALL_OPEN and open and need != "" and not bool(c.get(need, false)):
 			open = false
-			text = j.text + ("  >> BUY THE FELLING WEDGES (UPGRADES TAB) BEFORE YOU TAKE THIS ONE." if need == "wedges" else "  >> BUY THE BULL ROPE (UPGRADES TAB) BEFORE YOU TAKE THIS ONE.")
+			text = j.text + "  >> BUY THE %s (UPGRADES TAB) BEFORE YOU TAKE THIS ONE." % {"wedges": "FELLING WEDGES", "rope": "BULL ROPE", "climb": "CLIMBING KIT", "lowrig": "LOWERING RIG"}.get(need, need.to_upper())
 		out.append({title = j.title, pay = j.pay, open = open, text = text})
 	out.append({title = "-- nothing else yet --", pay = 0, open = false, text = "Check back after a job or two."})
 	return out

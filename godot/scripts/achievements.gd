@@ -4,7 +4,7 @@
 class_name Ach
 extends RefCounted
 
-const CATS := ["Getting started", "Felling", "Hauling & cleanup", "Firewood stand", "Fishing", "Weather & cabin", "Money", "Speedruns", "Odd jobs"]
+const CATS := ["Getting started", "Felling", "Climbing", "Hauling & cleanup", "Firewood stand", "Fishing", "Weather & cabin", "Money", "Speedruns", "Odd jobs"]
 
 ## id: [category, title, how to get it, tally name (for progress) or "", target, hidden until earned]
 const LIST := {
@@ -20,6 +20,16 @@ const LIST := {
 	wedge_whisperer = ["Felling", "Wedge Whisperer", "Tip a back-leaning tree over with wedges alone, no rope.", "", 0, false],
 	not_on_my_watch = ["Felling", "Not on My Watch", "Finish Mrs. Hale's job without a scratch on the garage or the house.", "", 0, false],
 	gentle_giant = ["Felling", "Gentle Giant", "Drop Mrs. Hale's big maple with a textbook notch, hinge and aim.", "", 0, false],
+
+	spurs_on = ["Climbing", "Spurs On", "Spike into a tree for the first time.", "", 0, false],
+	fifty_feet = ["Climbing", "Fifty Feet Up", "Get your saddle fifty feet up a tree.", "", 0, false],
+	top_out = ["Climbing", "Topped Out", "Top a tree from up in it.", "tops", 1, false],
+	easy_does_it = ["Climbing", "Easy Does It", "Lower 25 pieces on the rope.", "lowered", 25, false],
+	backyard_surgeon = ["Climbing", "Backyard Surgeon", "Finish the Kowalskis' oak.", "", 0, false],
+	not_a_scratch = ["Climbing", "Not a Scratch", "Finish the Kowalskis' oak without touching the house, the deck, the swing set or the fence.", "", 0, false],
+	rest_in_peace = ["Climbing", "Rest in Peace", "Finish the cemetery spruce.", "", 0, false],
+	grave_respect = ["Climbing", "Grave Respect", "Finish the cemetery spruce without disturbing a single stone.", "", 0, false],
+	dont_look_down = ["Climbing", "Don't Look Down", "Cut through your own line and fall out of a tree.", "", 0, true],
 
 	full_load = ["Hauling & cleanup", "Full Load", "Get paid with 16 or more rounds in the trailer.", "", 0, false],
 	tarp_life = ["Hauling & cleanup", "Tarp Life", "Tarp down a trailer of 12 or more rounds.", "", 0, false],
@@ -57,6 +67,8 @@ const LIST := {
 	speed_earl = ["Speedruns", "Ash in a Flash", "Finish Earl's dead ash in under 10 minutes.", "", 0, false],
 	speed_hale = ["Speedruns", "Maple Minute", "Finish Mrs. Hale's leaning maple in under 15 minutes.", "", 0, false],
 	speed_dock = ["Speedruns", "Dock Dash", "Finish Gus's dock logs in under 12 minutes.", "", 0, false],
+	speed_oak = ["Speedruns", "Acorn Express", "Finish the Kowalskis' oak in under 20 minutes.", "", 0, false],
+	speed_cemetery = ["Speedruns", "Quiet Hours", "Finish the cemetery spruce in under 25 minutes.", "", 0, false],
 
 	ow = ["Odd jobs", "Ow", "Drop a tree on your own truck.", "", 0, true],
 	earl_approved = ["Odd jobs", "Earl Approved", "Talk to Earl 20 times.", "earl_talks", 20, false],

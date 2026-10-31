@@ -96,6 +96,7 @@ func _net_guest() -> void:
 		"hale": await _guest_hale()
 		"dock": await _guest_dock()
 		"storm": note("guest_storm_pieces_at_start", g.pieces().size())
+		"oak", "cemetery": await _guest_climbing()
 	if g.job.id == "earl": await _guest_real_saw()
 	await _guest_limb_and_buck()
 	if g.trailer: await _guest_trailer()
@@ -511,3 +512,71 @@ func _net_figures() -> void:
 	await wait(1.0)
 	await shot("crew-figures-side")
 	Net.roster = {}
+
+## a guest up the tree: their climb is their own; their cuts and their lowering line go to the host
+## a limb just over your head, where you can reach it and see it; work down the stem till there is one
+func _guest_pick(cl: Climb) -> int:
+	var tr: AshTree = g.tree
+	for i in range(7):
+		var eye_y: float = tr.to_wood(g.player.eye()).y
+		var best := -1; var bd := 1e9
+		for id in tr.on_limbs:
+			if not cl.line.is_empty() and int(cl.line.id) == id: continue
+			if float(tr.on_limbs[id]) < 0.6: continue
+			var dy: float = float(tr.T.limbs[id].y) - eye_y
+			if dy < 0.3 or dy > 0.95: continue
+			if absf(dy - 0.6) < bd: bd = absf(dy - 0.6); best = id
+		if best >= 0:
+			var L: Dictionary = tr.T.limbs[best]
+			# off to one side of it, so it comes out of the stem in front of you, not over your head
+			cl.th = atan2(float(L.base.z), float(L.base.x)) + 0.55; cl._place(0.0)
+			return best
+		await _climb_down(15.0, cl.h - 0.6)
+	return -1
+
+func _guest_climbing() -> void:
+	var tr: AshTree = g.tree
+	var cl: Climb = g.climb
+	note("guest_line", await _climb_line(tr.T.H * 0.6))
+	await _climb_on()
+	await _climb_to(float(cl.line.y) - 0.3)
+	note("guest_climbed_ft", roundi(cl.harness() * 3.28))
+	# a limb off with the real saw: the host's tree loses it, and the piece comes back as wood
+	var id := await _guest_pick(cl)
+	if id >= 0:
+		var L: Dictionary = tr.T.limbs[id]
+		var tc := clampf(0.4 / float(L.len), 0.07, 0.4)
+		var n0: int = g.pieces().size()
+		var ok := await _saw_at(tr.to_world(Wood.limb_pt(L, tc)), func(): return float(tr.on_limbs.get(id, 0.0)) < tc + 0.05, 15.0)
+		await wait(1.0)
+		note("guest_limb_cut", [ok, tr.on_limbs.get(id, "gone"), g.pieces().size() - n0])
+	# the lowering line on the next limb, then the cut, then let it down with G
+	var id2 := await _guest_pick(cl)
+	note("guest_second_limb", id2 >= 0)
+	if id2 >= 0:
+		var L2: Dictionary = tr.T.limbs[id2]
+		var tc2 := clampf(0.4 / float(L2.len), 0.07, 0.4)
+		g.equip("rope")
+		look_at_point(tr.to_world(Wood.limb_pt(L2, tc2 + minf(0.1, 0.4 / float(L2.len)))))
+		await wait(0.3)
+		g.tie_lowering_line()
+		note("guest_tied", await until(func(): return not g.lower.net_line.is_empty(), 4.0))
+		await _saw_at(tr.to_world(Wood.limb_pt(L2, tc2)), func(): return float(tr.on_limbs.get(id2, 0.0)) < tc2 + 0.05, 15.0)
+		await wait(1.0)
+		g.equip("hands")
+		Input.action_press("throw")
+		var down := await until(func(): return g.lower.net_line.is_empty(), 25.0) if not g.lower.net_line.is_empty() else false
+		Input.action_release("throw")
+		note("guest_lowered", down)
+		note("guest_second_cut", [tr.on_limbs.get(id2, "gone"), tc2])
+	# top it out above the tie-in
+	await _climb_to(float(cl.line.y) - 0.3)
+	var top0 := tr.top_y
+	var ty: float = float(cl.line.y) + 0.35
+	var topped := await _saw_at(tr.to_world(Vector3(0, ty, 0)), func(): return tr.top_y < top0 - 0.1, 25.0)
+	note("guest_topped", [topped, snappedf(top0, 0.1), snappedf(tr.top_y, 0.1), cl.climbing])
+	g.equip("hands")
+	await _climb_down()
+	g.interact()
+	note("guest_off_tree", not cl.climbing)
+	await wait(2.0)

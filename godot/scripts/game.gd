@@ -37,6 +37,8 @@ var storm_Ts: Array = []          # the storm job's tree shapes (so a log can sa
 var chipper_holder = null         # whoever is walking the chipper by its tongue (you, or a crew member's stand-in)
 var _seat_t := -100.0
 var phone: PhoneUI
+var climb: Climb                  # spurs and a lanyard up the job tree
+var lower: Lower                  # the lowering rig
 
 ## the mouse is "ours": captured on a computer, always on a touchscreen (there's no pointer to capture)
 func cap() -> bool:
@@ -122,6 +124,8 @@ func _ready() -> void:
 		if test_name.begins_with("hale"): job = Jobs.HALE
 		if test_name.begins_with("dock"): job = Jobs.DOCK
 		if test_name.begins_with("storm"): job = Jobs.STORM
+		if test_name.begins_with("oak"): job = Jobs.OAK
+		if test_name.begins_with("cemetery"): job = Jobs.CEMETERY
 		new_level(randi() % 1000000)
 	Sfx.start_ambience()
 	_prewarm_shaders()
@@ -143,6 +147,7 @@ func enter_hub() -> void:
 	world = hub.world
 	truck = hub.truck
 	player = hub.player
+	climb = null; lower = null
 	Net.job = null
 	Net.set_scene("hub")
 	Net.scene_reset()
@@ -193,10 +198,15 @@ func _upgrades() -> Array:
 		{id = "wedges", title = "Felling wedges + sledge", cost = 60, owned = bool(c.get("wedges", false)),
 		text = "Three orange plastic wedges and a short sledge. Tap them into the back cut to tip a tree toward your notch. Key 4."},
 		{id = "rope", title = "Bull rope (150 ft)", cost = 120, owned = bool(c.get("rope", false)),
-		text = "Tie it high on the trunk, hook it to the truck's hitch, and pull the tree where it needs to go. Key 5."}]
+		text = "Tie it high on the trunk, hook it to the truck's hitch, and pull the tree where it needs to go. Key 5."},
+		{id = "climb", title = "Climbing kit", cost = 800, owned = bool(c.get("climb", false)),
+		text = "Saddle, spurs, a steel-core lanyard, a 150 ft climbing line and a throw bag. Throw a line into the crown, spike in and go up. Key 7."},
+		{id = "lowrig", title = "Lowering rig", cost = 450, owned = bool(c.get("lowrig", false)),
+		text = "A pulley block, a friction brake for the base of the tree and a lowering line. Tie a limb off, cut it, let it down easy. Rope tool (5) in the tree."}]
 
-const UPGRADE_COST := {wedges = 60, rope = 120}
-const UPGRADE_MSG := {wedges = "WEDGES AND SLEDGE IN THE TRUCK. PRESS 4 ON THE JOB.", rope = "BULL ROPE IN THE TRUCK. PRESS 5 ON THE JOB."}
+const UPGRADE_COST := {wedges = 60, rope = 120, climb = 800, lowrig = 450}
+const UPGRADE_MSG := {wedges = "WEDGES AND SLEDGE IN THE TRUCK. PRESS 4 ON THE JOB.", rope = "BULL ROPE IN THE TRUCK. PRESS 5 ON THE JOB.",
+	climb = "CLIMBING KIT IN THE TRUCK. PRESS 7 ON THE JOB.", lowrig = "LOWERING RIG IN THE TRUCK. ROPE TOOL (5) WHILE YOU'RE CLIMBING."}
 
 func buy_upgrade(id: String) -> void:
 	var c := Career.load()
@@ -275,7 +285,7 @@ func _setup_input() -> void:
 	var keys := {
 		move_fwd = [KEY_W, KEY_UP], move_back = [KEY_S, KEY_DOWN], move_left = [KEY_A, KEY_LEFT], move_right = [KEY_D, KEY_RIGHT],
 		jump = [KEY_SPACE], run = [KEY_SHIFT], crouch = [KEY_C, KEY_CTRL], interact = [KEY_E], drop = [KEY_Q], kick = [KEY_F],
-		throw = [KEY_G], drag = [KEY_T], tool1 = [KEY_1], tool2 = [KEY_2], tool3 = [KEY_3], tool4 = [KEY_4], tool5 = [KEY_5], tool6 = [KEY_6], unstick = [KEY_U], saw_start = [KEY_R], help = [KEY_H], camera = [KEY_V],
+		throw = [KEY_G], drag = [KEY_T], tool1 = [KEY_1], tool2 = [KEY_2], tool3 = [KEY_3], tool4 = [KEY_4], tool5 = [KEY_5], tool6 = [KEY_6], tool7 = [KEY_7], unstick = [KEY_U], saw_start = [KEY_R], help = [KEY_H], camera = [KEY_V],
 	}
 	for act in keys:
 		if not InputMap.has_action(act): InputMap.add_action(act)
@@ -413,6 +423,7 @@ func new_level(variant: int) -> void:
 	seed = sd
 	in_hub = false
 	storm_Ts = []
+	_gy_cache = {}
 	chipper_holder = null
 	Net.job = null
 	Net.set_scene("job:%s:%d" % [job.id, variant])
@@ -460,6 +471,10 @@ func new_level(variant: int) -> void:
 	rig.setup(self)
 	fishing = Fishing.new(); fishing.name = "Fishing"; level_root.add_child(fishing)
 	fishing.setup(self)
+	climb = Climb.new(); climb.name = "Climb"; level_root.add_child(climb)
+	climb.setup(self)
+	lower = Lower.new(); lower.name = "Lower"; level_root.add_child(lower)
+	lower.setup(self)
 	damage = {}
 	trailer = null
 	if not world.trailer.is_empty():
@@ -470,7 +485,7 @@ func new_level(variant: int) -> void:
 		trailer.global_transform = Transform3D(Basis(Vector3.UP, tw.yaw), Vector3(tw.x, gy, tw.z))
 		chipper.trailer = trailer
 	hud.obj_title.text = "Job %d · %s" % [job.n, job.title]
-	hud.set_owned(Rigging.owned("wedges"), Rigging.owned("rope"), Fishing.owned())
+	hud.set_owned(Rigging.owned("wedges"), Rigging.owned("rope"), Fishing.owned(), Climb.owned())
 	title_cam = Camera3D.new(); title_cam.fov = 60; level_root.add_child(title_cam); title_cam.make_current()
 	timelapse = Timelapse.new(); timelapse.name = "Timelapse"; level_root.add_child(timelapse)
 	timelapse.setup(self)
@@ -698,6 +713,14 @@ func _unhandled_input(ev: InputEvent) -> void:
 	if player.tool == "rod" and ev is InputEventMouseButton and cap():
 		if ev.button_index == MOUSE_BUTTON_LEFT: fishing.press(ev.pressed); return
 		if ev.button_index == MOUSE_BUTTON_RIGHT: fishing.alt(ev.pressed); return
+	if player.tool == "climb" and ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT and cap():
+		climb.press(ev.pressed); return
+	# the lowering line: tie it on from up in the tree; at the base, left mouse is the brake
+	if player.tool == "rope" and ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT and cap():
+		if climb.climbing:
+			if ev.pressed: tie_lowering_line()
+			return
+		if lower.active() and lower.at_brake(): return
 	if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT and (player.tool == "wedge" or player.tool == "rope") and cap():
 		if rig.use(): return
 	if ev.is_action_pressed("interact") and (player.tool == "wedge" or player.tool == "rope") and rig.prompt().begins_with("[b]"):
@@ -713,14 +736,21 @@ func _unhandled_input(ev: InputEvent) -> void:
 	elif ev.is_action_pressed("drop") and haul.carrying(): haul.drop_one()
 	elif ev.is_action_pressed("throw") and haul.carrying(): haul.throw_one()
 	elif ev.is_action_pressed("drag"): toggle_drag()
-	elif ev.is_action_pressed("kick"): haul.kick()
+	elif ev.is_action_pressed("kick"):
+		if not climb.climbing: haul.kick()
 	elif ev.is_action_pressed("tool1"): equip("hands")
 	elif ev.is_action_pressed("tool2"): equip("saw")
 	elif ev.is_action_pressed("tool3"): toggle_muffs()
-	elif ev.is_action_pressed("tool4"): _equip_owned("wedge", "wedges", "felling wedges")
+	elif ev.is_action_pressed("tool4"):
+		if climb.climbing: hud.toast("Not up here.", 1.5)
+		else: _equip_owned("wedge", "wedges", "felling wedges")
 	elif ev.is_action_pressed("tool5"): _equip_owned("rope", "rope", "a pull rope")
+	elif ev.is_action_pressed("tool7"):
+		if climb.climbing: hud.toast("You're wearing it.", 1.5)
+		else: _equip_owned("climb", "climb", "a climbing kit")
 	elif ev.is_action_pressed("tool6"):
-		if Fishing.owned(): equip("rod")
+		if climb.climbing: hud.toast("Not up here.", 1.5)
+		elif Fishing.owned(): equip("rod")
 		else: hud.toast("No fishing rod yet. Somebody down by a lake might lend you one.", 3.0)
 	elif ev.is_action_pressed("crouch"): player.crouch = not player.crouch
 	elif ev.is_action_pressed("unstick"):
@@ -735,11 +765,14 @@ func equip(t: String) -> void:
 	if haul.carrying(): haul.drop_all()
 	if t != "saw" and saw.on: saw.stop()
 	if fishing and (player.tool == "rod") != (t == "rod"): fishing.equip(t == "rod")
+	if climb and (player.tool == "climb") != (t == "climb"): climb.equip(t == "climb")
 	player.tool = t
 	hud.set_tool(t, muffs)
 	if t == "saw" and not saw.on: hud.toast("Press R to pull-start the saw.", 2.2)
 	if t == "wedge": hud.toast("Wedges: make your notch, start the back cut, then tap a wedge into the kerf behind the bar.", 3.5)
-	if t == "rope": hud.toast("Pull rope: tie it on the trunk, hook it on the truck's hitch, then ease the truck away.", 3.5)
+	if t == "rope":
+		if climb and climb.climbing: hud.toast("Lowering line: aim at a limb (or the stem above you) and left click to tie it on. Cut below the tie, then hold G to let it down.", 4.5)
+		else: hud.toast("Pull rope: tie it on the trunk, hook it on the truck's hitch, then ease the truck away.", 3.5)
 
 func _equip_owned(t: String, id: String, what: String) -> void:
 	if not Rigging.owned(id):
@@ -939,6 +972,7 @@ func _tipped_near() -> String:
 	return ""
 
 func interact() -> void:
+	if climb and climb.interact(): return
 	var tipped := _tipped_near()
 	if tipped != "":
 		if Net.is_guest(): Net.ask("use", ["flip_" + tipped, net_pose()]); return
@@ -1263,7 +1297,7 @@ func payday() -> void:
 	if objs.paid: return
 	var g := tree.grade
 	var total: int = job.pay
-	var kind_txt: String = {"logs": "Job: haul, buck and load", "storm": "Job: clear the road (limb, chip, buck, move)"}.get(job.get("kind", ""), "Job: drop, limb, chip and %s" % ("load" if trailer else "pile"))
+	var kind_txt: String = {"logs": "Job: haul, buck and load", "storm": "Job: clear the road (limb, chip, buck, move)", "climb": "Job: climb it and take it down, chip and %s" % ("load" if trailer else "pile")}.get(job.get("kind", ""), "Job: drop, limb, chip and %s" % ("load" if trailer else "pile"))
 	var rows := [[kind_txt, job.pay]]
 	var clean: bool = g.get("open", false) and not g.get("barber", false) and g.notch_pct >= 0.18 and g.notch_pct <= 0.45 and g.notch_angle >= 40 and g.hinge_pct >= 0.05 and g.hinge_pct <= 0.18 and g.dir_err < 15
 	if clean: rows.append(["Textbook felling (notch, hinge, aim)", 50]); total += 50
@@ -1271,12 +1305,21 @@ func payday() -> void:
 	if damage.get("garage", false): rows.append(["Dropped it on the garage", -500]); total -= 500
 	if damage.get("house", false): rows.append(["Dropped it on the house", -500]); total -= 500
 	if job.id == "hale" and not damage.get("garage", false) and not damage.get("house", false): rows.append(["Garage untouched (and polite)", 20]); total += 20
+	var lost := {}
+	for t in world.targets:
+		if damage.has(t.name): lost[t.group] = [t.label, int(lost.get(t.group, [t.label, 0, 0])[1]) + int(t.cost), int(lost.get(t.group, [t.label, 0, 0])[2]) + 1]
+	for gk in lost:
+		var row: Array = lost[gk]
+		var lbl: String = row[0] if int(row[2]) == 1 else "%s (x%d)" % [String(row[0]).replace("Broke a headstone", "Broke headstones"), int(row[2])]
+		rows.append([lbl, -int(row[1])]); total -= int(row[1])
+	if climb and climb.falls > 0:
+		rows.append(["Fell out of the tree" + (" (x%d)" % climb.falls if climb.falls > 1 else ""), -Climb.FALL_COST * climb.falls]); total -= Climb.FALL_COST * climb.falls
 	total = maxi(total, 0)
 	var mins := (clock - start_time) / 60.0
 	if mins < 15: rows.append(["Quick work (under 15 min)", 25]); total += 25
 	var E: String = job.who
 	var plines := []
-	if damage.get("garage", false) or damage.get("house", false):
+	if damage.get("garage", false) or damage.get("house", false) or world.targets.any(func(t): return damage.has(t.name)):
 		plines.append({who = E, text = "Well. It's down. Most of it's down where it should be. Most of it."})
 		plines.append({who = E, text = "I'm taking the damage out of what I owe you. That's only fair."})
 	else:
@@ -1300,6 +1343,10 @@ func _payday_show(d: Dictionary) -> void:
 	var total: int = int(d.total)
 	var crew: int = maxi(1, int(d.crew))
 	var share: int = total if crew == 1 else roundi(float(total) / crew)
+	# a crew member's own falls come out of their own share (the host's are already in the job's total)
+	var fall_cut: int = Climb.FALL_COST * climb.falls if (Net.is_guest() and climb) else 0
+	var share_before: int = share
+	share = maxi(0, share - fall_cut)
 	var mins: float = float(d.mins)
 	start_dialog(d.lines,
 		func():
@@ -1313,7 +1360,8 @@ func _payday_show(d: Dictionary) -> void:
 			Career.save(c); money = c.money
 			_payday_achievements(share, mins)
 			var rows: Array = (d.rows as Array).duplicate()
-			if crew > 1: rows.append(["Split %d ways: the rest goes to the crew" % crew, share - total])
+			if crew > 1: rows.append(["Split %d ways: the rest goes to the crew" % crew, share_before - total])
+			if fall_cut > 0: rows.append(["You fell out of the tree" + (" (x%d)" % climb.falls if climb.falls > 1 else ""), share - share_before])
 			phase = "done"
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			hud.show_summary(rows, share, d.notes, money, "Job done · %s" % job.title)
@@ -1323,8 +1371,11 @@ func _payday_show(d: Dictionary) -> void:
 func _payday_achievements(total: int, mins: float) -> void:
 	var g := tree.grade
 	Ach.earn(total)
-	Ach.unlock({"earl": "first_day", "hale": "widows_peace", "dock": "clear_water"}.get(job.id, "first_day"))
-	if mins < {"earl": 10.0, "hale": 15.0, "dock": 12.0}.get(job.id, 10.0): Ach.unlock({"earl": "speed_earl", "hale": "speed_hale", "dock": "speed_dock"}.get(job.id, "speed_earl"))
+	Ach.unlock({"earl": "first_day", "hale": "widows_peace", "dock": "clear_water", "oak": "backyard_surgeon", "cemetery": "rest_in_peace"}.get(job.id, "first_day"))
+	if mins < {"earl": 10.0, "hale": 15.0, "dock": 12.0, "oak": 20.0, "cemetery": 25.0}.get(job.id, 10.0): Ach.unlock({"earl": "speed_earl", "hale": "speed_hale", "dock": "speed_dock", "oak": "speed_oak", "cemetery": "speed_cemetery"}.get(job.id, "speed_earl"))
+	var clean_site: bool = not world.targets.any(func(t): return damage.has(t.name)) and not damage.get("house", false)
+	if job.id == "oak" and clean_site: Ach.unlock("not_a_scratch")
+	if job.id == "cemetery" and clean_site: Ach.unlock("grave_respect")
 	if job.id == "hale" and not damage.get("garage", false) and not damage.get("house", false): Ach.unlock("not_on_my_watch")
 	if g.has("notch_pct") and job.get("kind", "") != "logs" and g.get("open", false) and not g.get("barber", false):
 		var notch_ok: bool = g.notch_pct >= 0.18 and g.notch_pct <= 0.45 and g.notch_angle >= 40
@@ -1359,7 +1410,7 @@ func _check_damage() -> void:
 	var T: Dictionary = tree.T
 	var pts := []
 	var y := tree.stump_top + 1.2
-	while y < T.H: pts.append(Vector3(0, y, 0)); y += 0.6
+	while y < tree.top_y: pts.append(Vector3(0, y, 0)); y += 0.6
 	for L in T.limbs:
 		if tree.stem.limbs.has(L.id):
 			for k: float in [0.35, 0.65, 0.95]: pts.append(Wood.limb_pt(L, k))
@@ -1372,6 +1423,11 @@ func _check_damage() -> void:
 			var lt: Vector3 = truck.to_local(tree.stem.to_world(p))
 			if absf(lt.x) < 1.1 and lt.z > -3.2 and lt.z < 2.6 and lt.y < 2.2 and lt.y > -0.2:
 				Ach.unlock("ow"); break
+	for t in world.targets:
+		if damage.has(t.name): continue
+		for p in pts:
+			if _in_target(tree.stem.to_world(p), t, 0.3):
+				hit_target(t); break
 	for b in [["garage", world.garage, gar_top], ["house", world.house, house_top]]:
 		var box: Dictionary = b[1]
 		if box.is_empty() or damage.get(b[0], false): continue
@@ -1432,7 +1488,7 @@ func update_objectives() -> void:
 		var attached := pieces().any(func(b): return b.kind == "trunk" and not b.limbs.is_empty() and b.mass > Wood.LIFT_MAX)
 		objs.limbed = not attached and (brush == 0 or brush_kg <= total * 0.05)
 		objs.stacked = objs.limbed and rounds > 0 and done_frac >= 0.95
-	var buck_txt := "Buck the stem into liftable rounds and load them in %s's trailer" % job.who if trailer else "Buck the stem into liftable rounds and pile them behind the shed"
+	var buck_txt: String = "Buck the stem into liftable rounds and load them in %s's trailer" % job.who if trailer else job.get("pile_txt", "Buck the stem into liftable rounds and pile them behind the shed")
 	if objs.felled and rounds > 0:
 		buck_txt += " · %d/%d · %d%%" % [piled, rounds, int(floor(done_frac * 100.0))]
 		if heavy > 0: buck_txt += " · %d too heavy" % heavy
@@ -1461,7 +1517,7 @@ func update_objectives() -> void:
 	else:
 		hud.set_objectives([
 			[objs.talk, "Talk to %s" % job.who],
-			[objs.felled, ("Drop the %s, away from the garage" % job.tree_word) if job.id == "hale" else ("Drop the %s" % job.tree_word)],
+			[objs.felled, job.get("fell_txt", ("Drop the %s, away from the garage" % job.tree_word) if job.id == "hale" else ("Drop the %s" % job.tree_word))],
 			[objs.limbed, "Limb it and chip the brush" + (" · %d left" % brush if objs.felled and not objs.limbed else "")],
 			[objs.stacked, buck_txt]]
 			+ ([[objs.tarped, "Tarp the trailer so nothing falls out"]] if trailer else [])
@@ -1493,6 +1549,7 @@ func _update_hud() -> void:
 	hud.tool_state.text = ("Saw: running" if saw.on else "Saw: off · R to start") if player.tool == "saw" else ""
 	if player.tool == "wedge": hud.tool_state.text = "Wedges: %d in the tree" % rig.wedges.size()
 	elif player.tool == "rope": hud.tool_state.text = "Pull rope" + ("" if rig.rope == "" else (" · on the tree" if rig.rope == "tree" else " · rigged to the truck"))
+	if climb.climbing: hud.tool_state.text = climb.status() + ("" if player.tool != "saw" else ("  ·  saw running" if saw.on else "  ·  saw off (R)"))
 	hud.tilt.visible = player.tool == "saw" and not player.in_truck and phase == "play"
 	hud.set_dial(not saw.guide.is_empty() and not saw.guide.has("ring_c") and player.tool == "saw" and not player.in_truck and phase == "play",
 		saw.guide.get("existing") != null and saw.guide.existing.has("f"), _guide_tilt(), saw.guide.get("too_far", false))
@@ -1504,6 +1561,9 @@ func _update_hud() -> void:
 		elif saw.guide.get("too_far", false): hud.tilt.text = "Step closer to cut there"
 		elif saw.guide.existing != null: hud.tilt.text = "Carrying on your cut · hold right mouse"
 		else: hud.tilt.text = "Wheel to angle the cut · hold right mouse to cut"
+		var dz: String = climb.guide_danger(saw.guide) if climb else ""
+		if dz != "": hud.tilt.text = "[ CAREFUL ] That cut goes through one of your own lines"
+		elif saw.guide.get("kind", "") == "top" and not saw.guide.get("too_far", false): hud.tilt.text = "Topping cut · hold right mouse · it'll tip away from you"
 	else:
 		hud.tilt.text = "Bar roll %d°" % int(rad_to_deg(saw.roll))
 	if player.in_truck:
@@ -1520,6 +1580,12 @@ func _update_hud() -> void:
 	var a := aim
 	var tipped := _tipped_near()
 	if dlg != null: t = ""
+	elif climb.climbing:
+		t = climb.prompt()
+		if t == "" and player.tool == "rope":
+			t = ("Hold [b]G[/b] to let the rope run · lowering it" if lower.active() and lower.tie.is_empty() else "[b]Left click[/b] Tie the lowering line on a limb or the stem above you")
+	elif player.tool == "climb": t = climb.prompt()
+	elif player.tool == "rope" and lower.active() and lower.at_brake(): t = "Hold [b]left mouse[/b] to run the lowering line"
 	elif tipped != "": t = "[b]E[/b] Flip the %s back over" % tipped
 	elif chipper.mode == "hand" and holding_chipper():
 		var nh := chipper.nearest_hitch()
@@ -1565,6 +1631,10 @@ func _physics_process(dt: float) -> void:
 	if chipper and chipper.mode == "hand" and not Net.is_guest():
 		chipper.move_hand(_hand_point(chipper_holder), dt)
 	if rig and phase == "play": rig.physics_step(dt)
+	if climb and phase == "play": climb.physics_step(dt)
+	if lower and phase == "play":
+		lower.run_local = (cap() or tests != null) and not Player.input_off and ((climb.climbing and Input.is_action_pressed("throw")) or (lower.at_brake() and Input.is_action_pressed("use")))
+		lower.physics_step(dt)
 	if phase == "play": _water_step(dt)
 	if haul: haul.step_drag(dt)
 
@@ -1586,6 +1656,8 @@ func _process(dt: float) -> void:
 		return
 	if timelapse: timelapse.step(dt)
 	if fishing: fishing.step(dt)
+	if climb: climb.step(dt)
+	if lower: lower.step(dt)
 	# truck, trailer and chipper all strung together and moving
 	if trailer and chipper and truck and player.in_truck and trailer.mode == "truck" and chipper.tow == trailer and truck.speed_mph() >= 12.0:
 		Ach.unlock("road_train")
@@ -1639,7 +1711,9 @@ func _process(dt: float) -> void:
 	if not Net.is_guest() and objs.felled and not objs.paid and dlg == null and clock - earl.last_bark > 38.0:
 		earl.last_bark = clock
 		earl.bark(earl.idle_lines[randi() % earl.idle_lines.size()], 5.0)
-	if not Net.is_guest(): _check_damage()
+	if not Net.is_guest():
+		_check_damage()
+		_check_drop_damage()
 	# engines
 	var eng = chipper.engine_snd
 	if eng:
@@ -1785,6 +1859,7 @@ func net_pose():
 		if (Input.is_action_pressed("rev") and cap()) or force_rev: fl |= Avatar.F_REV
 		if saw.cutting: fl |= Avatar.F_CUTTING
 	if player.in_truck: fl |= Avatar.F_TRUCK
+	if player.climbing: fl |= Avatar.F_CLIMB
 	if player.crouch: fl |= Avatar.F_CROUCH
 	if haul != null and is_instance_valid(haul) and haul.carrying(): fl |= Avatar.F_CARRY
 	var tool: String = player.tool if not in_hub else "hands"
@@ -1815,6 +1890,12 @@ func net_ask(id: int, name: String, a: Array) -> void:
 
 ## the crew hears it come down on a building
 func net_crunch(kind: String) -> void:
+	if kind.begins_with("t:"):
+		var nm := kind.substr(2)
+		damage[nm] = true
+		world.knock(nm)
+		Sfx.play("crunch", 1.0, 0.8); hud.shout("CRUNCH!")
+		return
 	damage[kind] = true
 	Sfx.play("crunch", 1.0, 0.6); Sfx.play("crack", 0.9, 0.7); Sfx.play("thud", 1.0, 0.8)
 	hud.shout("CRUNCH!")
@@ -1866,3 +1947,62 @@ func open_phone() -> void:
 func phone_closed() -> void:
 	if hub: hub.busy = false
 	_capture()
+
+## the rope tool up in the tree: tie the lowering line where you're aiming (the host's game does it)
+func tie_lowering_line() -> void:
+	if not Lower.owned():
+		hud.toast("No lowering rig yet. It's on the computer at home, under Upgrades.", 3.0); return
+	var ly: float = float(climb.line.y) if not climb.line.is_empty() else -1.0
+	if Net.is_guest(): Net.ask("lower_tie", [net_pose(), ly])
+	else: lower.tie_aimed(ly)
+
+# ================================================================ what's under the tree (the climbing jobs)
+func _in_target(w: Vector3, t: Dictionary, pad: float) -> bool:
+	return absf(w.x - float(t.x)) < float(t.w) / 2.0 + pad and absf(w.z - float(t.z)) < float(t.d) / 2.0 + pad and w.y < _target_ground(t) + float(t.top)
+
+var _gy_cache := {}
+func _target_ground(t: Dictionary) -> float:
+	if not _gy_cache.has(t.name): _gy_cache[t.name] = world.H(float(t.x), float(t.z))
+	return _gy_cache[t.name]
+
+## a piece of the tree came down on something it shouldn't have
+func hit_target(t: Dictionary) -> void:
+	if damage.has(t.name): return
+	damage[t.name] = true
+	world.knock(t.name)
+	Sfx.play("crunch", 1.0, 0.7); Sfx.play("thud", 1.0, 0.8)
+	hud.shout("CRUNCH!")
+	if Net.is_host() and net_job: net_job.event_all("crunch", ["t:" + t.name])
+	var line: String = job.get("hits", {}).get(t.group, "")
+	if line != "" and clock - earl.last_bark > 2.0: earl.bark(line, 4.5)
+
+## limbs and tops dropped out of the crown: anything moving fast that comes down inside a target hits it
+func _check_drop_damage() -> void:
+	if world.targets.is_empty() and world.house.is_empty() and world.garage.is_empty(): return
+	for b in pieces():
+		if not b.has_meta("drop") or b.mode != "dyn": continue
+		var v: float = b.linear_velocity.length()
+		if v < 0.25 and b.sleeping:
+			b.remove_meta("drop"); continue
+		if v < 2.2: continue
+		var ends := [b.center_wood()]
+		if b.kind == "limb":
+			var L: Dictionary = b.T.limbs[b.limb]
+			ends.append(Wood.limb_pt(L, b.t0)); ends.append(Wood.limb_pt(L, b.t1))
+		else:
+			ends.append(Vector3(0, b.span.x, 0)); ends.append(Vector3(0, b.span.y, 0))
+		for e in ends:
+			var w: Vector3 = b.to_world(e)
+			for t in world.targets:
+				if damage.has(t.name): continue
+				if _in_target(w, t, 0.15): hit_target(t)
+			for hb in [["house", world.house, float(world.house.get("wall", 2.7)) + 3.6], ["garage", world.garage, 0.15 + float(world.garage.get("wall", 2.6)) + 1.5]]:
+				var box: Dictionary = hb[1]
+				if box.is_empty() or damage.get(hb[0], false): continue
+				if absf(w.x - box.x) < box.w / 2 + 0.2 and absf(w.z - box.z) < box.d / 2 + 0.2 and w.y < world.H(box.x, box.z) + float(hb[2]):
+					damage[hb[0]] = true
+					Sfx.play("crunch", 1.0, 0.6); hud.shout("CRUNCH!")
+					if hb[0] == "garage": world.crush_garage()
+					if Net.is_host() and net_job: net_job.event_all("crunch", [hb[0]])
+					var hl: String = job.hit_garage if hb[0] == "garage" else job.hit_house
+					if hl != "": earl.bark(hl, 5.0)

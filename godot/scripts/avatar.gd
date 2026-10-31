@@ -34,6 +34,7 @@ const F_CUTTING := 4
 const F_TRUCK := 8
 const F_CROUCH := 16
 const F_CARRY := 32
+const F_CLIMB := 64
 
 func setup(n: String, c: Color) -> void:
 	nm = n; hat = c
@@ -127,6 +128,8 @@ func _process(dt: float) -> void:
 	rotation.y = lerp_angle(rotation.y, _tgt_yaw, minf(1.0, dt * 12.0))
 	var crouch: bool = bool(_flags & F_CROUCH)
 	body.position.y = lerpf(body.position.y, -0.5 if crouch else 0.0, minf(1.0, dt * 10.0))
+	# up a tree: leaning back into the lanyard, feet in toward the trunk
+	body.rotation.x = lerpf(body.rotation.x, -0.22 if (_flags & F_CLIMB) else 0.0, minf(1.0, dt * 6.0))
 	head.rotation.x = clampf(_pitch, -0.9, 0.8) * 0.8
 	var moved := Vector2(global_position.x - _last_pos.x, global_position.z - _last_pos.z).length()
 	_last_pos = global_position

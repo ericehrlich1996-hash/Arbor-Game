@@ -12,7 +12,7 @@ static func load() -> Dictionary:
 	# everything that's saved comes back (achievements, tallies, catch log...), with the core fields typed
 	var out: Dictionary = d.duplicate(true)
 	out.money = int(d.get("money", 0)); out.jobs = int(d.get("jobs", 0)); out.truck_rust = float(d.get("truck_rust", 1.0))
-	for k in ["wedges", "rope", "trailer", "firewood", "rod"]: out[k] = bool(d.get(k, false))
+	for k in ["wedges", "rope", "trailer", "firewood", "rod", "climb", "lowrig"]: out[k] = bool(d.get(k, false))
 	out.rounds = int(d.get("rounds", 18 if bool(d.get("trailer", false)) else 0)); out.bundles = int(d.get("bundles", 0))
 	for k in ["fish", "ach", "stats"]:
 		if typeof(d.get(k, {})) != TYPE_DICTIONARY: out[k] = {}

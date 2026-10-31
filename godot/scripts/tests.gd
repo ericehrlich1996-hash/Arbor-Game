@@ -35,10 +35,16 @@ func note(k: String, v) -> void:
 	print("NOTE ", k, " ", v)
 
 func look_at_point(p: Vector3) -> void:
-	var e: Vector3 = g.player.global_position + Vector3(0, g.player.eye_h, 0)
-	var d := (p - e).normalized()
-	g.player.yaw = atan2(-d.x, -d.z)
-	g.player.pitch = asin(clampf(d.y, -1, 1))
+	var pl: Player = g.player
+	var e: Vector3 = pl.global_position + Vector3(0, pl.eye_h, 0)
+	for i in range(3):
+		var d := (p - e).normalized()
+		pl.yaw = atan2(-d.x, -d.z)
+		pl.pitch = clampf(asin(clampf(d.y, -1, 1)), -1.5, 1.45)
+		# the camera's where it is, not where the feet say: aim from it once it's turned
+		pl.rotation = Vector3(0, pl.yaw, 0); pl.head.rotation = Vector3(pl.pitch, 0, 0)
+		if not pl.is_inside_tree(): break
+		e = pl.eye()
 
 func press(act: String, secs: float) -> void:
 	Input.action_press(act)
@@ -3174,3 +3180,290 @@ func _truck_look() -> void:
 	await wait(0.2)
 	await shot("truck-cab-mirror")
 	Input.action_release("move_fwd")
+
+# ================================================================ climbing
+## throw a line high in the tree (trying throws until one catches up in the crown)
+func _climb_line(min_y: float) -> bool:
+	var cl: Climb = g.climb
+	var tr: AshTree = g.tree
+	var base := tr.global_position
+	var st := base + Vector3(5.0, 0, 3.0)
+	g.player.teleport(Vector3(st.x, g.world.H(st.x, st.z) + 0.05, st.z))
+	g.equip("climb")
+	look_at_point(base + Vector3(0, 9, 0))
+	await wait(0.2)
+	var pw := 0.98
+	while pw > 0.3:
+		cl._throw(pw)
+		if not cl.line.is_empty() and float(cl.line.y) >= min_y: return true
+		pw -= 0.04
+	return not cl.line.is_empty()
+
+func _climb_on() -> void:
+	var tr: AshTree = g.tree
+	var r := Wood.r_at(tr.T, 1.0)
+	var at := tr.to_world(Vector3(r + 0.6, 0, 0))
+	g.player.teleport(Vector3(at.x, g.world.H(at.x, at.z) + 0.05, at.z))
+	look_at_point(tr.to_world(Vector3(0, 1.4, 0)))
+	await wait(0.2)
+	g.interact()
+
+## climb toward a height, flipping past limbs on the way
+func _climb_to(y_harness: float, secs := 60.0) -> void:
+	var cl: Climb = g.climb
+	var t := 0.0
+	Input.action_press("move_fwd")
+	while t < secs and cl.climbing and cl.harness() < y_harness - 0.05 and cl.harness() < cl.top_limit() - 0.02:
+		if cl.block_y >= 0.0: Input.action_press("kick")
+		else: Input.action_release("kick")
+		await wait(0.1); t += 0.1
+	Input.action_release("move_fwd"); Input.action_release("kick")
+
+func _climb_down(secs := 60.0, to_h := 0.05) -> void:
+	var cl: Climb = g.climb
+	var t := 0.0
+	Input.action_press("move_back")
+	while t < secs and cl.climbing and cl.h > to_h:
+		if cl.block_y >= 0.0: Input.action_press("kick")
+		else: Input.action_release("kick")
+		await wait(0.1); t += 0.1
+	Input.action_release("move_back"); Input.action_release("kick")
+
+## saw running, crosshair on a point, throttle held until `done` says so (or time's up)
+func _saw_at(p: Vector3, done: Callable, secs := 20.0) -> bool:
+	g.equip("saw"); g.saw.on = true
+	var t := 0.0
+	g.force_rev = true
+	var told := false
+	while t < secs:
+		look_at_point(p)
+		await wait(0.1); t += 0.1
+		if t > 1.0 and not told:
+			told = true
+			var e: Vector3 = g.player.eye()
+			var q := PhysicsRayQueryParameters3D.create(e, e + g.player.aim_dir() * 2.0)
+			q.collision_mask = 8 | 32 | 64 | 256
+			var hit: Dictionary = g.get_world_3d().direct_space_state.intersect_ray(q)
+			var cc = hit.get("collider")
+			if cc: note("saw_hit_body", [cc.get_parent().name if cc.get_parent() else "", cc.collision_layer, (cc as Node3D).global_position, snappedf(e.y, 0.1)])
+			note("saw_at", [g.saw.guide.get("kind", "none"), g.saw.guide.get("too_far", null), g.saw.guide.get("too_close", null), g.saw.cut != null, hit.get("collider"), snappedf(e.distance_to(p), 0.01), g.saw.k])
+		if done.call(): break
+	g.force_rev = false
+	return done.call()
+
+## the limb nearest your saddle that's in reach: its id, or -1
+func _limb_near(cl: Climb, above := 0.2, below := 0.6) -> int:
+	var tr: AshTree = g.tree
+	var best := -1; var bd := 1e9
+	for id in tr.on_limbs:
+		if not cl.line.is_empty() and int(cl.line.id) == id: continue
+		if float(tr.on_limbs[id]) < 0.6: continue          # already cut back
+		var L: Dictionary = tr.T.limbs[id]
+		var dy: float = float(L.y) - cl.harness()
+		if dy < -below or dy > above + 0.9: continue
+		var dd := absf(dy - 0.4)
+		if dd < bd: bd = dd; best = id
+	# work round the trunk to the limb's side, the way you would
+	if best >= 0:
+		var L: Dictionary = tr.T.limbs[best]
+		cl.th = atan2(float(L.base.z), float(L.base.x))
+		cl._place(0.0)
+	return best
+
+func _climb() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	var tr: AshTree = g.tree
+	var cl: Climb = g.climb
+	note("tree", [snappedf(tr.T.H, 0.1), snappedf(tr.T.cb, 0.1), tr.T.limbs.size()])
+	note("line_set", [await _climb_line(tr.T.H * 0.62), cl.line])
+	await _climb_on()
+	note("climbing", [cl.climbing, g.player.climbing])
+	var y_goal: float = float(cl.line.y) - 0.3
+	await _climb_to(y_goal)
+	note("climbed_to_ft", [roundi(cl.harness() * 3.28), roundi(cl.top_limit() * 3.28), Ach.has("spurs_on")])
+	await shot("climb-up-high")
+	# a limb off, from the tree, with the real saw
+	var id := _limb_near(cl, 1.2, 1.2)
+	note("limb_near", id)
+	if id >= 0:
+		var L: Dictionary = tr.T.limbs[id]
+		var n0: int = g.pieces().size()
+		var ok := await _saw_at(tr.to_world(Wood.limb_pt(L, 0.12)), func(): return float(tr.on_limbs.get(id, 0.0)) < 0.9, 15.0)
+		note("limb_cut", [ok, tr.on_limbs.get(id, "gone"), g.pieces().size() - n0])
+	await wait(1.0)
+	# top it out above the tie-in
+	var ty: float = float(cl.line.y) + 0.35
+	var top0 := tr.top_y
+	note("top_guide_danger", cl.danger("top", ty, -1, 0.0))
+	var topped := await _saw_at(tr.to_world(Vector3(0, ty, 0)), func(): return tr.top_y < top0 - 0.1, 25.0)
+	note("topped", [topped, snappedf(top0, 0.1), snappedf(tr.top_y, 0.1), cl.climbing, cl.falls])
+	await wait(4.0)
+	await shot("climb-topped")
+	# down and off
+	g.equip("hands")
+	await _climb_down()
+	g.interact()
+	note("off", [cl.climbing, snappedf(g.player.global_position.y - g.world.H(g.player.global_position.x, g.player.global_position.z), 0.1)])
+	# drop the spar that's left the usual way
+	await _fell_tree_quick()
+	note("spar_down", [tr.state, tr.stem.limbs.size() if tr.stem else -1, snappedf(tr.stem.y1 if tr.stem else -1.0, 0.1)])
+	note("pieces", g.pieces().size())
+
+## cutting through your own lanyard: you fall, and it costs you
+func _climb_fall() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	var tr: AshTree = g.tree
+	var cl: Climb = g.climb
+	await _climb_line(tr.T.H * 0.6)
+	await _climb_on()
+	await _climb_to(minf(float(cl.line.y) - 0.3, AshTree.CSG_TOP + 3.0))
+	var hz := cl.harness()
+	note("at", snappedf(hz, 0.1))
+	var cut_y := hz + 0.1
+	note("danger", cl.danger("top", cut_y, -1, 0.0))
+	await _saw_at(tr.to_world(Vector3(0, cut_y, 0)), func(): return not cl.climbing, 25.0)
+	note("fell", [cl.climbing, cl.falling, cl.falls])
+	await wait(3.0)
+	note("landed", [cl.falling, g.player.is_on_floor()])
+
+## the lowering rig: tie on a limb, cut it, let it down with G
+func _climb_lower() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	var tr: AshTree = g.tree
+	var cl: Climb = g.climb
+	await _climb_line(tr.T.H * 0.62)
+	await _climb_on()
+	await _climb_to(float(cl.line.y) - 0.3)
+	var id := _limb_near(cl, 0.3, 1.2)
+	note("limb", id)
+	if id < 0: return
+	var L: Dictionary = tr.T.limbs[id]
+	# the bit of the limb nearest your eyes: cut there, tie on a little further out
+	var ew := tr.to_wood(g.player.eye())
+	var tc := clampf((ew - L.base).dot(L.dir) / float(L.len), 0.06, 0.5)
+	g.equip("rope")
+	look_at_point(tr.to_world(Wood.limb_pt(L, tc + 0.1)))
+	await wait(0.2)
+	g.tie_lowering_line()
+	note("tied", g.lower.tie)
+	var ok := await _saw_at(tr.to_world(Wood.limb_pt(L, tc)), func(): return g.lower.load != null, 15.0)
+	note("hanging", [ok, g.lower.load != null])
+	await wait(1.5)
+	var p0: Vector3 = g.lower.load.center_world() if g.lower.load else Vector3.ZERO
+	note("hung_at_ht", snappedf(p0.y - g.world.H(p0.x, p0.z), 0.1))
+	await shot("lower-hanging")
+	g.equip("hands")
+	Input.action_press("throw")
+	var t := 0.0
+	while t < 25.0 and g.lower.load != null:
+		await wait(0.1); t += 0.1
+	Input.action_release("throw")
+	note("lowered", [g.lower.load == null, snappedf(t, 0.1), Ach.has("x") or true])
+	note("damage", g.damage)
+
+# ================================================================ jobs 5 and 6
+func _site_report() -> void:
+	var tr: AshTree = g.tree
+	note("job", [g.job.id, g.job.n, tr.def.get("species", ""), snappedf(tr.T.H, 0.1), snappedf(tr.T.cb, 0.1), tr.T.limbs.size(), snappedf(tr.def.lean, 0.001)])
+	var groups := {}
+	for t in g.world.targets: groups[t.group] = int(groups.get(t.group, 0)) + 1
+	note("targets", groups)
+	note("house", not g.world.house.is_empty())
+	# how close is everything to the tree? (the crown's reach over the targets)
+	var near := 0
+	for t in g.world.targets:
+		if Vector2(float(t.x) - tr.global_position.x, float(t.z) - tr.global_position.z).length() < tr.T.H: near += 1
+	note("targets_within_tree_height", near)
+	var reach := 0.0
+	for L in tr.T.limbs: reach = maxf(reach, Vector2(Wood.limb_pt(L, 1.0).x, Wood.limb_pt(L, 1.0).z).length())
+	note("crown_radius", snappedf(reach, 0.1))
+
+func _view_at(name: String, at: Vector3, look: Vector3) -> void:
+	g.player.teleport(Vector3(at.x, g.world.H(at.x, at.z) + 0.05, at.z))
+	look_at_point(look)
+	await wait(1.0)
+	await shot(name)
+
+func _oak_preview() -> void:
+	await wait(1.0)
+	g._start()
+	_site_report()
+	var tr: AshTree = g.tree
+	var t := tr.global_position
+	var away := Vector3(t.x - g.world.house.x, 0, t.z - g.world.house.z).normalized()
+	await _view_at("oak-yard", t + away * 15 + Vector3(0, 0, -6), t + Vector3(0, 5, 0))
+	await _view_at("oak-deck", Vector3(g.world.deck.x, 0, g.world.deck.z) + Vector3(0, 0, 9), t + Vector3(0, 3, 0))
+
+func _cemetery_preview() -> void:
+	await wait(1.0)
+	g._start()
+	_site_report()
+	var tr: AshTree = g.tree
+	var t := tr.global_position
+	await _view_at("cem-gate", Vector3(g.world.s * 2.6, 0, 1.0), t + Vector3(0, 6, 0))
+	await _view_at("cem-stones", t + Vector3(g.world.s * 7.0, 0, -7.0), t + Vector3(0, 2.5, 0))
+	await _view_at("cem-plot", Vector3(g.world.plot.x, 0, g.world.plot.z) + Vector3(g.world.s * 4.0, 0, 5.0), Vector3(g.world.plot.x, 1.5, g.world.plot.z))
+
+func _oak_climb() -> void:
+	await _climb()
+	note("damage", g.damage)
+
+func _cemetery_lower() -> void:
+	await _climb_lower()
+
+## a limb cut loose over the stones, no rope: it comes down on them
+func _cemetery_drop() -> void:
+	await wait(1.0)
+	g._start()
+	g.objs.talk = true
+	var tr: AshTree = g.tree
+	var cl: Climb = g.climb
+	await _climb_line(tr.T.H * 0.55)
+	await _climb_on()
+	await _climb_to(float(cl.line.y) - 0.3)
+	var id := _limb_near(cl, 1.2, 1.2)
+	note("limb", id)
+	if id < 0: return
+	var L: Dictionary = tr.T.limbs[id]
+	var ew := tr.to_wood(g.player.eye())
+	var tc := clampf((ew - L.base).dot(L.dir) / float(L.len), 0.06, 0.5)
+	await _saw_at(tr.to_world(Wood.limb_pt(L, tc)), func(): return float(tr.on_limbs.get(id, 0.0)) < tc + 0.05, 15.0)
+	await wait(4.0)
+	note("damage", g.damage)
+
+## a limb dropped straight onto a headstone: it's hit, knocked over, and on the bill
+func _cemetery_stonehit() -> void:
+	await wait(1.0)
+	g._start()
+	var tr: AshTree = g.tree
+	var st: Dictionary = g.world.stones[10]
+	var p := WoodPiece.new(); p.T = tr.T; p.kind = "limb"; p.limb = 5; p.t0 = 0.0; p.t1 = 1.0
+	g.level_root.add_child(p)
+	var L: Dictionary = tr.T.limbs[5]
+	var c := Wood.limb_pt(L, 0.5)
+	p.global_transform = Transform3D(Basis(), Vector3(float(st.x), g.world.H(float(st.x), float(st.z)) + 3.5, float(st.z)) - c)
+	p.build()
+	p.set_meta("drop", true)
+	p.linear_velocity = Vector3(0, -6, 0)
+	await wait(2.0)
+	note("hit", [g.damage.has(st.name), g.damage.keys()])
+	var n = g.world._knock_nodes.get(st.name)
+	note("knocked_over", snappedf((n as Node3D).rotation.x, 0.01) if n else -1.0)
+	g.test_job_done = true; g.objs.talk = true
+	g.update_objectives()
+	g.payday()
+	for i in range(40):
+		await wait(0.1)
+		if g.dlg != null: g.advance_dialog()
+	var rows := []
+	for r in g.hud.sum_rows.get_children():
+		var txt := ""
+		for l in r.find_children("*", "Label", true, false): txt += (l as Label).text + " "
+		rows.append(txt.strip_edges())
+	note("pay_rows", rows)

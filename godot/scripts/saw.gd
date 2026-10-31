@@ -160,7 +160,8 @@ func pose(dt: float, rev: bool, carrying: bool) -> void:
 		var reach_d := (wxf * Vector3(0, 0.1, -0.1) - cw0.origin).length()
 		var hand_ahead := -(cw0.affine_inverse() * (wxf * Vector3(0, 0.1, -0.05))).z
 		g.too_far = reach_d > MAX_REACH
-		g.too_close = hand_ahead < 0.36          # the saw would be in your face: stand back from the wood
+		# the saw would be in your face: stand back from the wood (up a tree you work close in to the stem)
+		g.too_close = hand_ahead < (0.1 if player.climbing else 0.36)
 		g.hand_ahead = hand_ahead
 		if g.too_close: g.too_far = true
 		if not g.too_far:
@@ -307,6 +308,11 @@ func _find_guide() -> Dictionary:
 	var tree: AshTree = game.tree
 	# while a cut is under way, the guide stays locked to it
 	if cut != null:
+		if cut.kind == "slimb" or cut.kind == "top":
+			if tree.state != "stand" or not cut.has("gd"): return {}
+			var gk: Dictionary = cut.gd.duplicate()
+			gk.xf = tree.global_transform; gk.existing = cut
+			return gk
 		if cut.has("gd") and is_instance_valid(cut.get("piece")):
 			var gd: Dictionary = cut.gd.duplicate()
 			gd.xf = cut.piece.global_transform
@@ -322,11 +328,19 @@ func _find_guide() -> Dictionary:
 	var cam := player.cam
 	var from := cam.global_position; var dir := -cam.global_transform.basis.z
 	var q := PhysicsRayQueryParameters3D.create(from, from + dir * GUIDE_REACH)
-	q.collision_mask = 8 | 32 | 64
+	q.collision_mask = 8 | 32 | 64 | 256
 	q.exclude = [player.get_rid()]
 	var hit: Dictionary = game.get_world_3d().direct_space_state.intersect_ray(q)
 	if hit.is_empty(): return {}
 	var col = hit.collider
+	# up in the crown: a ring round a limb, or (climbing) a topping cut across the stem
+	if tree.crown_body and is_instance_valid(tree.crown_body) and col == tree.crown_body:
+		var cow = col.shape_owner_get_owner(col.shape_find_owner(hit.shape))
+		var cpart: Dictionary = cow.get_meta("part", {}) if cow else {}
+		if cpart.has("slimb"): return _crown_limb_guide(int(cpart.slimb), hit.position)
+		# topping is done from below the cut: aim at the stem above your saddle (never at limb level by accident)
+		if cpart.has("upper") and game.climb and game.climb.climbing and game.tree.to_wood(hit.position).y > game.climb.harness() + 0.25: return _top_guide(hit.position)
+		return {}
 	if col is WoodPiece and col.mode == "dyn":
 		var lowner = col.shape_owner_get_owner(col.shape_find_owner(hit.shape))
 		var lpart: Dictionary = lowner.get_meta("part", {}) if lowner else {}
@@ -412,6 +426,41 @@ func _limb_guide(pc: WoodPiece, part: Dictionary, hitp: Vector3) -> Dictionary:
 	return {kind = "piece", xf = pc.global_transform, e = e, f = fl, n = u, existing = null, piece = pc, T = pc.T,
 		part = part, ring_c = cp, ring_r = r, heart = cp}
 
+## a limb still on the standing tree: the ring goes round it where you're looking (like _limb_guide)
+func _crown_limb_guide(id: int, hitp: Vector3) -> Dictionary:
+	var tree: AshTree = game.tree
+	var L: Dictionary = tree.T.limbs[id]
+	var reach := float(tree.on_limbs.get(id, 1.0))
+	var a := Wood.limb_pt(L, 0.0); var b := Wood.limb_pt(L, reach)
+	var P := tree.to_wood(hitp)
+	var cp := Geometry3D.get_closest_point_to_segment(P, a, b)
+	var k := clampf((cp - a).dot(b - a) / maxf((b - a).length_squared(), 1e-9), 0.0, 1.0)
+	var tt := reach * k
+	var r := Wood.limb_r(L, tt)
+	var u := (b - a).normalized()
+	var inv_b := tree.global_transform.basis.inverse()
+	var cf := (inv_b * -player.cam.global_transform.basis.z).normalized()
+	var bar := cf - u * cf.dot(u)
+	if bar.length() < 0.05: bar = u.cross(inv_b * Vector3.UP)
+	bar = bar.normalized()
+	var fl := u.cross(bar).normalized()
+	if fl.dot(inv_b * Vector3.DOWN) < 0: fl = -fl
+	return {kind = "slimb", id = id, t = tt, xf = tree.global_transform, e = cp - fl * r, f = fl, n = u, existing = null, piece = null,
+		T = tree.T, part = {slimb = id}, ring_c = cp, ring_r = r, heart = cp}
+
+## the stem above the cut zone, climbing: a level cut straight across, from your side toward the heart
+func _top_guide(hitp: Vector3) -> Dictionary:
+	var tree: AshTree = game.tree
+	var P := tree.to_wood(hitp)
+	var y := P.y
+	if y <= AshTree.CSG_TOP + 0.2 or y >= tree.top_y - 0.3: return {}
+	var fh := -Vector3(P.x, 0, P.z)
+	if fh.length() < 0.01: return {}
+	fh = fh.normalized()
+	var r := Wood.r_at(tree.T, y)
+	return {kind = "top", y = y, xf = tree.global_transform, e = Vector3(0, y, 0) - fh * (r + 0.01), f = fh, n = Vector3.UP,
+		existing = null, piece = null, T = tree.T, heart = Vector3(0, y, 0)}
+
 ## the line where the cut will meet the bark (green when you'd be carrying on an old cut), and how deep it is
 func _draw_guide() -> void:
 	guide_im.clear_surfaces()
@@ -422,6 +471,8 @@ func _draw_guide() -> void:
 	var e: Vector3 = g.e; var nn: Vector3 = g.n
 	var col := Color(1.0, 0.62, 0.15, 0.9) if g.existing == null else Color(0.45, 1.0, 0.35, 0.9)
 	if g.get("too_far", false): col = Color(1, 1, 1, 0.45)
+	# up a tree: red when this cut would go through one of your own lines
+	if game.climb and (g.kind == "slimb" or g.kind == "top") and game.climb.guide_danger(g) != "": col = Color(1.0, 0.15, 0.1, 0.95)
 	if g.has("ring_c"):
 		var c0: Vector3 = g.ring_c; var rr: float = g.ring_r * 1.12 + 0.004
 		var ax: Vector3 = nn.normalized()
@@ -463,7 +514,7 @@ func _draw_guide() -> void:
 # ---------------------------------------------------------------- what does the bar touch?
 func wood_hit(from: Vector3, dir: Vector3, max_t: float) -> Dictionary:
 	var q := PhysicsRayQueryParameters3D.create(from, from + dir * max_t)
-	q.collision_mask = 8 | 32 | 64
+	q.collision_mask = 8 | 32 | 64 | 256
 	q.exclude = [player.get_rid()]
 	var hit: Dictionary = game.get_world_3d().direct_space_state.intersect_ray(q)
 	if hit.is_empty(): return {}
@@ -495,7 +546,7 @@ func wood_hit(from: Vector3, dir: Vector3, max_t: float) -> Dictionary:
 
 func cut_world(c: Dictionary) -> Dictionary:
 	var xf: Transform3D
-	if c.kind == "tree" or c.kind == "stump": xf = game.tree.global_transform
+	if c.kind == "tree" or c.kind == "stump" or c.kind == "slimb" or c.kind == "top": xf = game.tree.global_transform
 	else:
 		if not is_instance_valid(c.piece) or c.piece.mode != "dyn": return {}
 		xf = c.piece.global_transform
@@ -534,7 +585,8 @@ func step(dt: float, rev: bool, carrying: bool) -> void:
 	if W.is_empty(): cut = null; return
 	var aligned: bool = cut.get("guided", false) or (f.dot(W.f) > 0.93 and absf(n.dot(W.n)) > 0.97)
 	var grain: Vector3
-	if cut.kind == "tree" or cut.kind == "stump": grain = game.tree.global_transform.basis.y
+	if cut.kind == "tree" or cut.kind == "stump" or cut.kind == "top": grain = game.tree.global_transform.basis.y
+	elif cut.kind == "slimb": grain = game.tree.global_transform.basis * (game.tree.T.limbs[int(cut.id)].dir as Vector3)
 	else: grain = cut.piece.grain_world(cut.part)
 	var crosses: bool = absf(W.n.dot(grain)) > 0.34
 	cutting = true
@@ -545,6 +597,8 @@ func step(dt: float, rev: bool, carrying: bool) -> void:
 	var kind_k := 1.0
 	if cut.kind == "piece": kind_k = 0.75 if cut.part.has("limb") else 0.32
 	elif cut.kind == "tree": kind_k = 0.5
+	elif cut.kind == "slimb": kind_k = 0.8
+	elif cut.kind == "top": kind_k = 0.45
 	var rate := Wood.CUT_SPEED * (0.35 + 0.65 * rpm) * kind_k
 	var max_s: float = cut.exit + 0.004
 	# the moment the tree starts to go, the bar stops eating the hinge
@@ -559,6 +613,12 @@ func step(dt: float, rev: bool, carrying: bool) -> void:
 		"tree":
 			if game.tree.state != "stand": cut = null; return
 			game.tree.cut_progress(cut)
+		"slimb", "top":
+			if game.tree.state != "stand": cut = null; return
+			if cut.s >= cut.exit:
+				var done: Dictionary = cut
+				cut = null
+				game.climb.finish_crown_cut(done)
 		"stump":
 			if cut.s >= cut.exit:
 				game.tree.finish_stump_cut(cut); cut = null; game.update_objectives()
@@ -601,6 +661,12 @@ func _start_guided(g: Dictionary):
 	match g.kind:
 		"tree": c = tree.start_cut(g.e, g.f, g.n)
 		"stump": c = tree.stump_start_cut(g.e, g.f, g.n)
+		"slimb":
+			c = {kind = "slimb", type = "ring", id = g.id, t = g.t, e = g.e, f = g.f, n = g.n, s = 0.0, exit = maxf(0.02, float(g.ring_r) * 2.0)}
+			var gd1: Dictionary = g.duplicate(); gd1.erase("existing"); c.gd = gd1
+		"top":
+			c = {kind = "top", type = "ring", y = g.y, e = g.e, f = g.f, n = g.n, s = 0.0, exit = 2.0 * Wood.r_at(tree.T, float(g.y)) + 0.01}
+			var gd2: Dictionary = g.duplicate(); gd2.erase("existing"); c.gd = gd2
 		_:
 			if not is_instance_valid(g.piece): return null
 			c = _start_cut({kind = "piece", piece = g.piece, part = g.get("part", {trunk = true}), p = (g.xf as Transform3D) * g.e, fl = g.f, nl = g.n})

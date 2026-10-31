@@ -14,6 +14,10 @@ Drop it on the garage and the roof caves in, and the damage comes out of your pa
 
 **Level 3 · Gus's dock logs.** Unlocks after two jobs (bring the bull rope). Old log-drive timber is floating in the waist-deep shallows where Gus wants his dock. Wade out, tie the rope round a log, hook it to the truck, and drive up the lawn to drag it onto the beach. Then buck the logs and load the rounds in your trailer. Gus pays in cash and his old spinning rod.
 
+**Level 5 · The Kowalskis' oak.** A big white oak leans over Dale's deck, the kids' swing set and the picket fence, and there's no room to drop it whole. Buy the **climbing kit** ($800), climb it, take the limbs off one at a time, top it, and fell what's left. Anything you drop on the deck, the swing set or the fence comes out of your pay.
+
+**Level 6 · Maple Grove Cemetery.** A 60-foot spruce in the middle of the old stones. Every limb that hits a headstone costs you. Bring the **lowering rig** ($450): tie each piece off before you cut it and let it down on the rope.
+
 **Walter's trailer.** The rounds go in Mrs. Hale's long utility trailer, tarped over the top. Back the truck up to its tongue and press E to hitch it (the load comes along), and walk the chipper's tongue to the ball on the trailer's back bumper to tow both: truck, trailer, chipper.
 
 ## Play it
@@ -35,7 +39,14 @@ Pick up the 90s phone on the cabin wall by the computer (E).
 
 How it works: the host's game runs the shared world (`scripts/net.gd`, `scripts/net_job.gd`). Each player moves themselves; cuts, pick-ups, throws and the rest go to the host, and the host sends the result back. Crew play is in the PC game only (not the browser build). Steam lobbies can replace the direct connection later.
 
-Two-player tests run a host and a guest on one machine: `godot --headless --path . -- --test=net_host --job=0` and, alongside it, `--test=net_guest --job=0` (jobs 0 to 3).
+Two-player tests run a host and a guest on one machine: `godot --headless --path . -- --test=net_host --job=0` and, alongside it, `--test=net_guest --job=0` (jobs 0 to 5; 4 and 5 test a guest climbing, cutting, lowering and topping).
+
+## Climbing and rigging
+
+- **Throw line:** climbing kit in hand (7), hold left mouse to fill the meter, let go to throw. The line catches in the highest crotch it reaches.
+- **Get on:** walk up to the trunk and press E. W/S climb up and down, A/D work around the trunk, Shift+S rappels on your line. A limb in the way stops your lanyard; hold F to flip past it.
+- **Cut in the tree:** the chainsaw shows a guide on the limb or the stem you aim at. It turns red if the cut would drop you: your own lanyard, the limb your line is in, or the stem above your tie-in. Get it wrong and you fall, and it's $150 off your pay.
+- **Lowering:** rope tool (5) in the tree, aim at a limb or the stem and click to tie on. Cut it, then run the brake: hold G from the tree, or a crewmate stands at the base with the rope and holds left mouse. Let it drop and catch it hard and it shock-loads the tree; too hard and the rope snaps.
 
 ## Controls
 
@@ -46,6 +57,7 @@ Two-player tests run a host and a guest on one machine: `godot --headless --path
 | E | talk, pick up (several pieces at once), use, drive, hitch/unhitch, hop in the truck bed |
 | 1 / 2 / 3 | hands / chainsaw / ear muffs |
 | 4 / 5 | felling wedges / pull rope (once bought); left click to set or drive a wedge, tie or hook the rope |
+| 7 | climbing kit (throw line, spurs and lanyard) |
 | 6 | fishing rod (Gus gives it to you after Job 3). Works at Earl's creek and both lakes. Hold left mouse to fill the cast meter and let go to cast. An underwater window dives in: watch fish cruise in, circle and nibble. When the float goes under, scroll the wheel down to set the hook (too early on a nibble spooks it). Right mouse jigs the lure. Fighting: hold left to reel; tension follows where you point - aim at the fish to ease off, pull up or away to load the rod. Keep it out of the red, let it run, tire it, and land it. Keep it ($) or let it go |
 | U | unstick the truck: lifts it onto its wheels at the nearest clear spot (whatever's hitched comes along) |
 | R | pull-start or stop the saw |
@@ -85,7 +97,8 @@ Two-player tests run a host and a guest on one machine: `godot --headless --path
 | `godot/scripts/models.gd`, `mesh_builder.gd` | every model, built in code (truck, chipper, Earl, saw, hands) |
 | `godot/scripts/truck.gd`, `chipper.gd` | the truck and the towed chipper |
 | `godot/scripts/wood.gd`, `wood_piece.gd`, `lumber.gd` | tree shape, solid wood pieces and their cuts, splitting |
-| `godot/scripts/ash_tree.gd` | the standing tree, felling analysis, the fall, the stump |
+| `godot/scripts/ash_tree.gd` | the standing tree, felling analysis, the fall, the stump, the crown left standing |
+| `godot/scripts/climb.gd`, `lower.gd` | climbing (line, spurs, lanyard, falls) and the lowering rig |
 | `godot/scripts/saw.gd` | the chainsaw: pose, bar contact, cutting, hands, sawdust |
 | `godot/scripts/haul.gd` | carrying, throwing, dragging, kicking, feeding the chipper |
 | `godot/scripts/sfx.gd` | all sounds, synthesized at startup; ear muffs |

@@ -150,13 +150,13 @@ func _ready() -> void:
 	# hotbar
 	hotbar = HBoxContainer.new(); hotbar.set_anchors_preset(Control.PRESET_CENTER_BOTTOM); hotbar.position = Vector2(-190, -62)
 	hotbar.add_theme_constant_override("separation", 10)
-	for k in [["hands", "1  Hands"], ["saw", "2  Chainsaw"], ["muffs", "3  Ear muffs"], ["wedge", "4  Wedges"], ["rope", "5  Pull rope"], ["rod", "6  Fishing rod"]]:
+	for k in [["hands", "1  Hands"], ["saw", "2  Chainsaw"], ["muffs", "3  Ear muffs"], ["wedge", "4  Wedges"], ["rope", "5  Rope"], ["rod", "6  Fishing rod"], ["climb", "7  Climbing kit"]]:
 		var p := PanelContainer.new(); var sb := _panel(0.8); sb.content_margin_top = 8; sb.content_margin_bottom = 8
 		p.add_theme_stylebox_override("panel", sb)
 		var l := _label(k[1], 15); p.add_child(l)
 		hotbar.add_child(p); slots[k[0]] = p
 	root.add_child(hotbar)
-	slots.wedge.visible = false; slots.rope.visible = false; slots.rod.visible = false
+	slots.wedge.visible = false; slots.rope.visible = false; slots.rod.visible = false; slots.climb.visible = false
 	_center_hotbar.call_deferred()
 	# bar tilt readout (bottom right)
 	tilt = _label("", 16, DIM); tilt.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
@@ -484,10 +484,11 @@ func set_objectives(lines: Array) -> void:
 	obj_list.text = s.strip_edges()
 
 ## the wedges and rope only show on the hotbar once you've bought them
-func set_owned(wedges: bool, rope: bool, rod := false) -> void:
+func set_owned(wedges: bool, rope: bool, rod := false, climb := false) -> void:
 	if slots.has("wedge"): slots.wedge.visible = wedges
-	if slots.has("rope"): slots.rope.visible = rope
+	if slots.has("rope"): slots.rope.visible = rope or climb
 	if slots.has("rod"): slots.rod.visible = rod
+	if slots.has("climb"): slots.climb.visible = climb
 	_center_hotbar.call_deferred()
 
 ## keep the hotbar centred along the bottom, however many slots are showing

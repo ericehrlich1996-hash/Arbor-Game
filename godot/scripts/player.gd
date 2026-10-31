@@ -14,6 +14,7 @@ var bob := 0.0
 var step_t := 0.0
 var tool := "hands"
 var in_truck := false
+var climbing := false           # on spurs up the job tree: Climb moves you (see climb.gd)
 var speed_mult := 1.0
 var wade := 1.0                 # slowed down wading in water
 var col_shape: CollisionShape3D
@@ -62,6 +63,9 @@ func _physics_process(dt: float) -> void:
 	rotation = Vector3(0, yaw, 0)
 	head.rotation = Vector3(pitch, 0, 0)
 	if in_truck: return
+	if climbing:
+		head.position.y = eye_h
+		return
 	var target_eye := 0.98 if crouch else 1.62
 	eye_h = lerpf(eye_h, target_eye, minf(1, dt * 8))
 	var mv := Input.get_vector("move_left", "move_right", "move_fwd", "move_back") if not input_off else Vector2.ZERO

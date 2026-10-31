@@ -22,17 +22,30 @@ static func make_tree_def(t: Dictionary) -> Dictionary:
 	var R := RandomNumberGenerator.new(); R.seed = t.seed
 	var H: float = t.h
 	var T := {H = H, dbh = t.dbh, seed = t.seed, limbs = []}
+	var sp: String = t.get("species", "")
 	T.k = (t.dbh / 2.0) / _shape(1.37, H)
 	T.cb = H * R.randf_range(0.38, 0.46)
 	var n := R.randi_range(9, 12)
+	# an oak spreads wide and low; a spruce is a cone of short limbs in whorls nearly to the ground
+	if sp == "oak": T.cb = H * R.randf_range(0.3, 0.34); n = R.randi_range(9, 11)
+	elif sp == "spruce": T.cb = H * R.randf_range(0.2, 0.24); n = R.randi_range(17, 21)
 	for i in range(n):
 		var f := (i + R.randf_range(0.1, 0.9)) / n
 		var y: float = T.cb + f * (H * 0.9 - T.cb)
 		var az := i * 2.39996 + R.randf_range(-0.4, 0.4)
 		var el := lerpf(0.42, 1.05, f) + R.randf_range(-0.15, 0.15)
-		var dir := Vector3(cos(az) * cos(el), sin(el), sin(az) * cos(el)).normalized()
 		var len := clampf((H - y) * 0.5 + R.randf_range(1.2, 2.4), 1.6, 5.6)
 		var r0 := minf(0.085, r_at(T, y) * R.randf_range(0.45, 0.6))
+		if sp == "oak":
+			el = lerpf(0.22, 0.85, f) + R.randf_range(-0.12, 0.12)
+			len = clampf((H - y) * 0.62 + R.randf_range(1.6, 2.8), 2.2, 7.0)
+			r0 = minf(0.12, r_at(T, y) * R.randf_range(0.5, 0.62))
+		elif sp == "spruce":
+			az = i * 2.0944 + floor(i / 3.0) * 0.6 + R.randf_range(-0.25, 0.25)       # whorls of three
+			el = R.randf_range(-0.22, 0.18) + f * 0.35
+			len = clampf((H - y) * 0.3 + R.randf_range(0.6, 1.2), 0.9, 4.2)
+			r0 = minf(0.06, r_at(T, y) * R.randf_range(0.32, 0.42))
+		var dir := Vector3(cos(az) * cos(el), sin(el), sin(az) * cos(el)).normalized()
 		var base := Vector3(0, y, 0) + Vector3(dir.x, 0, dir.z) * r_at(T, y) * 0.6
 		var subs := []
 		for s in range(R.randi_range(2, 3)):

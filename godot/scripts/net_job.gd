@@ -30,6 +30,7 @@ var _def_t := 0.0
 var _slow_t := 0.0
 var _last := {}           # what was last sent of each slow state, to send only changes
 var _last_tree_state := "stand"
+var _lower_on := false
 
 # ---------------------------------------------------------------- guest
 var mirrors := {}         # nid -> WoodPiece
@@ -223,6 +224,9 @@ func _host_step(dt: float) -> void:
 				pi.append(ids[i]); px.append(xfs[i])
 			if not pi.is_empty(): Net.stream("xf", [pi, px], peer)
 		Net.stream("veh", veh, peer)
+		if game.lower.active() or _lower_on:
+			Net.stream("lower", [game.lower.line_points()], peer)
+	_lower_on = game.lower.active()
 	if _slow_t >= SLOW_EVERY:
 		_slow_t = 0.0
 		_send_slow(false)
@@ -256,7 +260,7 @@ func _send_slow(all: bool, to := 0) -> void:
 		var holes := []
 		for w in tree.freed.values():
 			if w.has("pts"): holes.append(w.pts)
-		states.tree = [cuts, tree.net, holes]
+		states.tree = [cuts, tree.net, holes, tree.crown_state()]
 	if tree.state != _last_tree_state:
 		if tree.state == "down": _tell_ready("tree_down", [])
 		_last_tree_state = tree.state
@@ -381,6 +385,11 @@ func on_ask(id: int, name: String, a: Array) -> void:
 		"rig":
 			if a.size() > 0 and a[0] is Array: on_pose(id, a[0])
 			as_peer(id, func(): game.rig.use())
+		# up in the tree: a guest climber's cut through a limb or the stem, and their lowering line
+		"crown": game.climb.cut_crown(str(a[0]), float(a[1]), int(a[2]), float(a[3]), a[4])
+		"lower_tie":
+			on_pose(id, a[0])
+			as_peer(id, func(): game.lower.tie_aimed(float(a[1])))
 		"use":
 			if a.size() > 1 and a[1] is Array: on_pose(id, a[1])
 			as_peer(id, func(): game.net_use(str(a[0])))
@@ -462,6 +471,7 @@ func on_stream_up(id: int, name: String, a: Array) -> void:
 		"drive":
 			var tr: Truck = game.truck
 			if tr.remote_driver == id: tr.remote_in = {thr = float(a[0]), st = float(a[1]), br = bool(a[2])}
+		"lrun": game.lower.remote_run()
 
 func on_peer_left(id: int) -> void:
 	ready_peers.erase(id)
@@ -555,6 +565,8 @@ func _guest_step(dt: float) -> void:
 				if b == null or not is_instance_valid(b): mine.erase(nid); continue
 				ids.append(nid); xfs.append(b.global_transform)
 			if not ids.is_empty(): Net.stream_up("own", [ids, xfs])
+	# working the lowering line's brake (from up in the tree, or at the base): keep telling the host
+	if game.lower and game.lower.run_local and _up_t == 0.0: Net.stream_up("lrun", [true])
 	if game.player and game.player.in_truck:
 		_drive_t += dt
 		if _drive_t >= 1.0 / 30.0:
@@ -583,6 +595,7 @@ func on_stream(name: String, a: Array) -> void:
 		"veh":
 			veh_tgt.truck = a[0]; truck_speed = float(a[1]); veh_tgt.chipper = a[2]
 			if a[3] != null: veh_tgt.trailer = a[3]
+		"lower": game.lower.net_line = a[0]
 
 func on_event(name: String, a: Array) -> void:
 	if host: return
@@ -599,7 +612,9 @@ func on_event(name: String, a: Array) -> void:
 				if game.haul.drag != null and game.haul.drag.b == b: game.haul.drag = null
 				_mirror_phys(b)
 			game.hud.toast("Somebody's already got that one.", 2.0)
-		"tree": game.tree.net_apply(a[0], a[1], a[2])
+		"tree":
+			game.tree.net_apply(a[0], a[1], a[2])
+			if a.size() > 3: game.tree.net_crown(a[3])
 		"fall":
 			var d: Dictionary = a[0]
 			_pending_stem = int(d.stem)

@@ -47,6 +47,11 @@ var slab_size := Vector3.ONE
 var down_t := 0.0
 var t := 0.0
 var _net_holes := 0            # on a crew member's game: notches the host's tree has already opened here
+# taken down from the top (climbing): what's left of the crown
+var top_y := 0.0               # how tall it still stands (T.H until it's been topped)
+var on_limbs := {}             # limb id -> how far out it still reaches (1 = all of it); limbs cut off are gone
+var stand_stubs: Array = []    # limbs cut off at the collar: a short stub stays on the trunk
+var crown_body: StaticBody3D   # the crown's limbs and the trunk above the cut zone, solid (for climbing and cutting)
 
 const CSG_TOP := 3.2           # cuts happen below this; above it the standing trunk is a plain mesh
 
@@ -54,6 +59,9 @@ func setup(g, w: WorldGen) -> void:
 	game = g
 	def = w.tree
 	T = Wood.make_tree_def(def)
+	top_y = T.H
+	on_limbs = {}
+	for L in T.limbs: on_limbs[L.id] = 1.0
 	lean_dir = Vector3(cos(def.lean_dir), 0, sin(def.lean_dir))
 	var axis := Vector3.UP.cross(lean_dir).normalized()
 	base_pos = Vector3(def.x, w.H(def.x, def.z), def.z)
@@ -115,25 +123,133 @@ func _build_standing() -> void:
 	var tm := CSGMesh3D.new(); tm.mesh = Wood.trunk_mesh(T, -0.45, CSG_TOP, 24); tm.material = Mats.bark
 	stand_csg.add_child(tm)
 	add_child(stand_csg)
+	_build_upper()
+	stand_body = StaticBody3D.new(); stand_body.collision_layer = 32; stand_body.collision_mask = 0
+	var cs := CollisionShape3D.new(); var cy := CylinderShape3D.new()
+	cy.radius = Wood.r_at(T, 0.6); cy.height = CSG_TOP + 0.3          # (the crown body takes over above the cut zone)
+	cs.shape = cy; cs.position = Vector3(0, (CSG_TOP + 0.3) / 2 - 0.3, 0)
+	stand_body.add_child(cs)
+	add_child(stand_body)
+
+## the trunk above the cut zone and whatever's left of the crown: drawn, and solid (layer 256) so a
+## climber's saw and rope can find the limbs and the stem up there
+func _build_upper() -> void:
+	if stand_upper and is_instance_valid(stand_upper): stand_upper.queue_free()
+	if crown_body and is_instance_valid(crown_body): crown_body.queue_free()
 	stand_upper = Node3D.new(); add_child(stand_upper)
-	var up := MeshInstance3D.new(); up.mesh = Wood.trunk_mesh(T, CSG_TOP - 0.01, T.H, 24); up.material_override = Mats.bark
-	stand_upper.add_child(up)
-	# limbs (no collision while standing)
+	if top_y > CSG_TOP:
+		var up := MeshInstance3D.new(); up.mesh = Wood.trunk_mesh(T, CSG_TOP - 0.01, top_y, 24); up.material_override = Mats.bark
+		stand_upper.add_child(up)
+	var mb := MeshBuilder.new()
+	if top_y < T.H - 0.01:
+		# the cut face where it's been topped
+		var r := Wood.r_at(T, top_y) * 0.99
+		mb.cyl(0, top_y - 0.002, 0, r, r, 0.004, Color("#e6d3a6"), 20, true, Color("#e6d3a6"))
+	for id in stand_stubs:
+		var L: Dictionary = T.limbs[id]
+		if L.y < top_y: mb.tube(L.base, L.base + L.dir * 0.06, L.r0 * 1.05, L.r0, Color("#6a5a48"), 7, true, Color("#e6d3a6"))
+	if not mb.is_empty(): stand_upper.add_child(mb.instance())
+	# limbs, as far out as each still reaches
 	var tmp := WoodPiece.new(); tmp.T = T
-	for L in T.limbs: tmp._add_limb(L, 0.0, 1.0, true)
+	for id in on_limbs: tmp._add_limb(T.limbs[id], 0.0, float(on_limbs[id]), true)
 	for c in tmp.get_children():
 		if c is MeshInstance3D:
 			tmp.remove_child(c); stand_upper.add_child(c)
 	tmp.free()
-	stand_body = StaticBody3D.new(); stand_body.collision_layer = 32; stand_body.collision_mask = 0
-	var cs := CollisionShape3D.new(); var cy := CylinderShape3D.new()
-	cy.radius = Wood.r_at(T, 0.6); cy.height = T.cb
-	cs.shape = cy; cs.position = Vector3(0, T.cb / 2 - 0.3, 0)
-	stand_body.add_child(cs)
-	add_child(stand_body)
+	crown_body = StaticBody3D.new(); crown_body.name = "Crown"
+	# its own layer (256): the saw and the ropes find it, falling wood and walkers don't catch on it
+	crown_body.collision_layer = 256; crown_body.collision_mask = 0
+	# the stem from the crown base up, in a few tapering lengths
+	var y0 := minf(CSG_TOP, T.cb - 0.4)
+	var n := maxi(1, int(ceil((top_y - y0) / 2.5)))
+	for i in range(n):
+		var a := lerpf(y0, top_y, float(i) / n); var b := lerpf(y0, top_y, float(i + 1) / n)
+		if b - a < 0.05: continue
+		var cs := CollisionShape3D.new(); var cy := CylinderShape3D.new()
+		cy.radius = Wood.r_at(T, (a + b) * 0.5); cy.height = b - a
+		cs.shape = cy; cs.position = Vector3(0, (a + b) * 0.5, 0)
+		cs.set_meta("part", {upper = true})
+		crown_body.add_child(cs)
+	for id in on_limbs:
+		var L: Dictionary = T.limbs[id]
+		var reach := float(on_limbs[id])
+		# in a few lengths, so a limb that bends (spruce droop, oak sweep) is solid where it's drawn
+		var segs := clampi(int(ceil(float(L.len) * reach / 1.2)), 1, 5)
+		for si in range(segs):
+			var ta := lerpf(0.04, reach, float(si) / segs); var tb := lerpf(0.04, reach, float(si + 1) / segs)
+			var pa := Wood.limb_pt(L, ta); var pb := Wood.limb_pt(L, tb)
+			var d := pb - pa
+			if d.length() < 0.05: continue
+			var cs := CollisionShape3D.new(); var cap := CapsuleShape3D.new()
+			cap.radius = maxf(0.055, Wood.limb_r(L, (ta + tb) * 0.5) * 1.15); cap.height = d.length() + cap.radius * 2.0
+			cs.shape = cap
+			cs.transform = Transform3D(Basis(Quaternion(Vector3.UP, d.normalized())), (pa + pb) * 0.5)
+			cs.set_meta("part", {slimb = id})
+			crown_body.add_child(cs)
+	add_child(crown_body)
+
+## the crown as it stands, for the crew: [top_y, {id: reach}, stubs]
+func crown_state() -> Array:
+	return [top_y, on_limbs.duplicate(), stand_stubs.duplicate()]
+
+func net_crown(c: Array) -> void:
+	if state != "stand": return
+	if is_equal_approx(top_y, float(c[0])) and on_limbs == c[1] and stand_stubs == c[2]: return
+	top_y = float(c[0]); on_limbs = (c[1] as Dictionary).duplicate(); stand_stubs = (c[2] as Array).duplicate()
+	_build_upper()
+
+## a limb cut while the tree's standing: the part beyond t comes down as its own piece (which the
+## lowering line may be tied to). Cut at the collar (t near 0) the limb's gone, a stub stays.
+func cut_standing_limb(id: int, t: float) -> WoodPiece:
+	if state != "stand" or not on_limbs.has(id): return null
+	var reach := float(on_limbs[id])
+	t = clampf(t, 0.0, reach)
+	if reach - t < 0.04: return null
+	var p := WoodPiece.new(); p.T = T; p.kind = "limb"; p.limb = id; p.t0 = t; p.t1 = reach
+	game.level_root.add_child(p)
+	p.global_transform = global_transform
+	p.build()
+	p.set_meta("drop", true)
+	var L: Dictionary = T.limbs[id]
+	p.linear_velocity = (global_transform.basis * Vector3(L.dir.x, 0, L.dir.z)).normalized() * 0.3
+	if t < 0.07:
+		on_limbs.erase(id); stand_stubs.append(id)
+	else:
+		on_limbs[id] = t
+	_build_upper()
+	Sfx.play("crunch")
+	return p
+
+## a topping cut: everything above y comes off as one piece, limbs and all, and tips over toward
+## `toward` (world, flat): the side the climber cut from, pushed off the stem
+func top_out(y: float, toward: Vector3) -> WoodPiece:
+	if state != "stand" or y <= CSG_TOP + 0.2 or y >= top_y - 0.3: return null
+	var p := WoodPiece.new(); p.T = T; p.kind = "trunk"; p.y0 = y - 0.2; p.y1 = top_y
+	p.ops = [{type = "clip", p = Vector3(0, y - Wood.KERF, 0), n = Vector3.DOWN}]
+	if top_y < T.H - 0.01: p.ops.append({type = "clip", p = Vector3(0, top_y, 0), n = Vector3.UP})
+	for id in on_limbs.keys():
+		if float(T.limbs[id].y) > y:
+			p.limbs.append(id)
+			if float(on_limbs[id]) < 1.0: p.lt[id] = on_limbs[id]
+			on_limbs.erase(id)
+	for id in stand_stubs:
+		if float(T.limbs[id].y) > y: p.stubs.append(id)
+	game.level_root.add_child(p)
+	p.global_transform = global_transform
+	p.build()
+	p.set_meta("drop", true)
+	var tw := toward; tw.y = 0
+	if tw.length() < 0.01: tw = lean_dir
+	tw = tw.normalized()
+	p.angular_velocity = Vector3.UP.cross(tw).normalized() * 0.9
+	p.linear_velocity = tw * 0.6
+	top_y = y
+	_build_upper()
+	Sfx.play("crack"); Sfx.play("crunch", 0.7)
+	return p
 
 func standing_inside(p: Vector3) -> bool:
-	return p.y > -0.4 and p.y < T.H and Vector2(p.x, p.z).length() <= Wood.r_at(T, maxf(p.y, 0.0))
+	return p.y > -0.4 and p.y < top_y and Vector2(p.x, p.z).length() <= Wood.r_at(T, maxf(p.y, 0.0))
 
 ## march along a line in the wood frame: (first distance inside, where it leaves) or null
 static func chord(inside: Callable, e: Vector3, f: Vector3, t0: float, t1: float):
@@ -400,9 +516,13 @@ func start_fall(kind: String) -> void:
 		slab_size = Vector3(r * 2.4, 1.5, r * 0.55)
 		slab_xf = Transform3D(Basis(across, Vector3.UP, fd), Vector3(0, yc + 0.75, 0) - fd * r * 0.6)
 		sops.append({type = "cutbox", xf = slab_xf, size = slab_size})
-	stem = WoodPiece.new(); stem.T = T; stem.kind = "trunk"; stem.y0 = yc - 0.5; stem.y1 = T.H
+	stem = WoodPiece.new(); stem.T = T; stem.kind = "trunk"; stem.y0 = yc - 0.5; stem.y1 = top_y
 	stem.ops = sops + kops
-	for L in T.limbs: stem.limbs.append(L.id)
+	if top_y < T.H - 0.01: stem.ops.append({type = "clip", p = Vector3(0, top_y, 0), n = Vector3.UP})
+	for id in on_limbs:
+		stem.limbs.append(id)
+		if float(on_limbs[id]) < 1.0: stem.lt[id] = on_limbs[id]
+	stem.stubs = stand_stubs.duplicate()
 	stem.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 	stem.freeze = true
 	game.level_root.add_child(stem)
@@ -413,13 +533,14 @@ func start_fall(kind: String) -> void:
 	stump_top = yc
 	_rebuild_stump()
 	stand_csg.queue_free(); stand_upper.queue_free(); stand_body.queue_free()
+	if crown_body and is_instance_valid(crown_body): crown_body.queue_free()
 	# hinge pivot: the middle of the wood still holding
 	var piv_w := Vector3(cx, yc, cz) if not Hc.is_empty() else Vector3(0, yc, 0)
 	var piv := to_world(piv_w)
 	var fdw := (global_transform.basis * fd); fdw.y = 0; fdw = fdw.normalized()
 	var axis := Vector3.UP.cross(fdw).normalized()
-	var com_h: float = yc + (T.H - yc) * 0.36
-	var Lst: float = T.H - yc
+	var com_h: float = yc + (top_y - yc) * 0.36
+	var Lst: float = top_y - yc
 	hinge = {axis = axis, P = piv, th = 0.0, td = 0.12 if kind == "hinge" else 0.35, x0 = stem.global_transform,
 		com = to_world(Vector3(0, com_h, 0)), I = stem.mass * (pow(com_h - yc, 2) + Lst * Lst / 12.0), brk = 1.2 if kind == "hinge" else 0.45, t = 0.0, kind = kind, fd = fdw}
 	state = "hinge"
@@ -443,7 +564,7 @@ func _hinge_step(dt: float) -> void:
 	# let go once it's well over, or as soon as the top or a limb touches the ground
 	var touch := false
 	if h.th > 0.45:
-		for p in [Vector3(0, T.H, 0)] + T.limbs.map(func(L): return Wood.limb_pt(L, 1.0)):
+		for p in [Vector3(0, top_y, 0)] + stem.limbs.map(func(id): return Wood.limb_pt(T.limbs[id], float(stem.lt.get(id, 1.0)))):
 			var w := stem.to_world(p)
 			if w.y < game.world.H(w.x, w.z) + 0.05: touch = true; break
 	if h.th > h.brk or touch:
@@ -576,6 +697,7 @@ func net_fall(d: Dictionary) -> void:
 	if is_instance_valid(stand_csg): stand_csg.queue_free()
 	if is_instance_valid(stand_upper): stand_upper.queue_free()
 	if is_instance_valid(stand_body): stand_body.queue_free()
+	if crown_body and is_instance_valid(crown_body): crown_body.queue_free()
 	_rebuild_stump()
 	go_kind = ""
 	if str(d.kind) == "":

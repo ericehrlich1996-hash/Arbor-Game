@@ -45,6 +45,14 @@ var bridge := {}                # {x0, x1, z, w, y}: the deck
 var falls := {}                 # {lip (Vector3), foot (Vector3), brook (Array of Vector2)}
 var cruiser := {}               # {x, z, yaw}
 var ridge := {}                 # {a, b (Vector2), r}
+# the climbing jobs: what's under the tree that mustn't be hit (each {name, group, x, z, w, d, top, cost, label})
+var targets: Array = []
+var deck := {}                  # the Kowalskis' back deck
+var swing := {}                 # ...and the kids' swing set
+var cemetery := {}              # the township cemetery's fenced ground {x, z, w, d}
+var plot := {}                  # the founder's family plot
+var stones: Array = []          # the headstones [{name, x, z, w, d, h, style, tilt}]
+var _knock_nodes := {}          # target name -> the node that topples when it's hit
 
 func _pick(a: Array):
 	return a[rng.randi_range(0, a.size() - 1)]
@@ -104,6 +112,8 @@ func setup(sd: int, job_id := "earl", variant := -1) -> void:
 	if job == "hale": _hale_layout()
 	if job == "dock": _dock_layout()
 	if job == "storm": _storm_layout()
+	if job == "oak": _oak_layout()
+	if job == "cemetery": _cemetery_layout()
 	old_man = Vector2(park.x - s * 3.2, park.z + 4.5)
 	if job == "storm": old_man = Vector2(s * 43.0, road_z + 3.4)       # the sheriff, by his cruiser
 	mailbox = Vector2(drive[0].x + s * 2.4, road_z + 3.2) if job != "storm" else Vector2(1e5, 1e5)
@@ -121,6 +131,8 @@ func setup(sd: int, job_id := "earl", variant := -1) -> void:
 		for p in drive: d_drive = minf(d_drive, Vector2(x, z).distance_to(p))
 		if Vector2(x, z).distance_to(Vector2(tree.x, tree.z)) < tree.h + 8 or _box_dist(x, z, house) < 5 or _box_dist(x, z, shed) < 5: continue
 		if not garage.is_empty() and _box_dist(x, z, garage) < 5: continue
+		if not cemetery.is_empty() and _box_dist(x, z, cemetery) < 4: continue
+		if not swing.is_empty() and _box_dist(x, z, swing) < 4: continue
 		if Vector2(x, z).distance_to(Vector2(park.x, park.z)) < 12 or d_drive < 6 or z - road_z < 8: continue
 		yard_trees.push_back({x = x, z = z, h = _range(6, 10), pine = rng.randf() < 0.5, r = _range(1.6, 2.6), c = rng.randf()})
 	# the ground is exactly the triangles that get drawn (and collided with)
@@ -486,6 +498,62 @@ func _dock_layout() -> void:
 		var z := _shore_z(x) + 8.5 + float(k % 2) * 1.8                 # out where it's waist deep
 		logs.append({x = x, z = z, yaw = _range(-0.5, 0.5) + (PI / 2 if k % 2 else 0.0), len = _range(3.6, 4.6)})
 
+## The Kowalskis' place: a grey house with a back deck, the kids' swing set out on the lawn, a picket
+## fence along the back, and a big red oak killed by oak wilt standing right in the middle of all of it,
+## leaning at the house. There's no felling it whole: it comes down from the top.
+func _oak_layout() -> void:
+	house.siding = Color.html("#cfd2cf"); house.roof = Color.html("#3d3f42"); house.door = Color.html("#8a2a22")
+	var hx: float = house.x; var hz: float = house.z
+	var hw: float = house.w; var hd: float = house.d
+	var right: float = hx + s * hw / 2.0
+	var back: float = hz + hd / 2.0
+	deck = {x = right - s * 3.0, z = back + 1.6, w = 5.6, d = 3.2, y = 0.75}
+	var tx: float = right + s * 3.6; var tz: float = back + 2.6
+	var to := Vector2(hx - tx, hz - tz)
+	tree = {x = tx, z = tz, h = trng.randf_range(18.0, 19.5), dbh = 0.8, lean = trng.randf_range(0.035, 0.05),
+		lean_dir = atan2(to.y, to.x) + trng.randf_range(-0.25, 0.25), seed = trng.randi_range(1, 1000000), species = "oak"}
+	swing = {x = tx + s * 6.2, z = tz + 2.2, w = 3.8, d = 2.0}
+	var fz: float = back + 11.0
+	var fx0: float = hx - s * (hw / 2.0 + 5.0); var fx1: float = tx + s * 11.0
+	flat.append({x = deck.x, z = deck.z, r = 4.5}); flat.append({x = swing.x, z = swing.z, r = 3.5}); flat.append({x = tx, z = tz, r = 4.0})
+	targets = [
+		{name = "deck", group = "deck", x = deck.x, z = deck.z, w = deck.w, d = deck.d, top = float(deck.y) + 1.1, cost = 300, label = "Dropped wood on the deck"},
+		{name = "swing", group = "swing", x = swing.x, z = swing.z, w = swing.w, d = swing.d, top = 2.5, cost = 200, label = "Flattened the kids' swing set"},
+		{name = "fence", group = "fence", x = (fx0 + fx1) / 2.0, z = fz, w = absf(fx1 - fx0), d = 0.5, top = 1.3, cost = 100, label = "Broke the back fence"}]
+
+## The township cemetery off Mill Rd: an iron fence round a few acres of old stones, a gravel aisle up
+## the middle from the gate, the founder's family plot with its obelisk, and a big dead Norway spruce
+## standing among the graves. Nothing can be dropped here: every piece comes down on the rope.
+func _cemetery_layout() -> void:
+	house = {}; garage = {}
+	shed = {x = s * 140.0, z = 160.0, w = 0.1, d = 0.1}
+	cemetery = {x = s * -6.0, z = 18.0, w = 28.0, d = 24.0}
+	pile = {x = s * 8.5, z = 2.0, w = 3.6, d = 2.6}
+	flat = [{x = cemetery.x, z = cemetery.z, r = 17.0}, {x = park.x, z = park.z, r = 9.0}, {x = pile.x, z = pile.z, r = 3.5}]
+	tree = {x = s * -6.0, z = 18.6, h = trng.randf_range(19.0, 21.0), dbh = 0.64, lean = trng.randf_range(0.01, 0.03),
+		lean_dir = trng.randf_range(0, TAU), seed = trng.randi_range(1, 1000000), species = "spruce"}
+	plot = {x = s * -6.0, z = 23.6, w = 4.2, d = 2.6}
+	stones = []
+	targets = []
+	var r := RandomNumberGenerator.new(); r.seed = seed + 1868
+	var k := 0
+	for z: float in [8.0, 10.4, 12.8, 16.4, 18.8, 21.2, 26.3, 28.5]:
+		var u := -18.5
+		while u <= 0.6:
+			var x := s * u
+			var skip := (absf(u + 6.0) < 1.3 and absf(z - 18.6) < 1.4) or _box_dist(x, z, plot) < 0.6
+			if not skip:
+				var st := {name = "stone_%d" % k, x = x + r.randf_range(-0.12, 0.12), z = z + r.randf_range(-0.1, 0.1), w = r.randf_range(0.5, 0.72), d = 0.18,
+					h = r.randf_range(0.62, 1.05), style = r.randi_range(0, 3), tilt = r.randf_range(-0.06, 0.06), c = r.randf()}
+				stones.append(st)
+				targets.append({name = st.name, group = "stone", x = st.x, z = st.z, w = st.w + 0.25, d = 0.6, top = float(st.h) + 0.3, cost = 150, label = "Broke a headstone"})
+				k += 1
+			u += 1.9
+	targets.append({name = "plot", group = "plot", x = plot.x, z = plot.z, w = plot.w, d = plot.d, top = 2.6, cost = 400, label = "Damaged the founder's family plot"})
+	var C := cemetery
+	for side in [[C.x, C.z - C.d / 2.0, C.w, 0.4], [C.x, C.z + C.d / 2.0, C.w, 0.4], [C.x - C.w / 2.0, C.z, 0.4, C.d], [C.x + C.w / 2.0, C.z, 0.4, C.d]]:
+		targets.append({name = "fence_%d" % targets.size(), group = "fence", x = side[0], z = side[1], w = side[2], d = side[3], top = 1.3, cost = 100, label = "Bent the iron fence"})
+
 ## The sheriff's call: the county road where it crosses the creek. Last night's storm put four trees down
 ## across it on the near side of the bridge. A ridge on the far bank has a brook running along its top that
 ## goes over as a waterfall into the creek, right beside the bridge. Everything sits round the road (z = road_z),
@@ -708,6 +776,8 @@ func build(root: Node3D) -> void:
 	if not garage.is_empty(): _build_garage(root)
 	if job == "hale": _build_hale_yard(root)
 	if job == "dock": _build_dock_site(root)
+	if job == "oak": _build_oak_yard(root)
+	if job == "cemetery": _build_cemetery(root)
 	var forest := Forest.new(); forest.build(self, root)
 	_build_grass(root)
 
@@ -773,6 +843,201 @@ func _build_garage(root: Node3D) -> void:
 	_static_box(root, Vector3(g.x, y0 + top / 2, g.z), Vector3(W, top, D))
 	_static_box(root, Vector3(g.x, y0 + top + rise * 0.45, g.z), Vector3(W * 0.75, rise * 0.9, D + 0.4))
 	garage_roof_body = root.get_child(root.get_child_count() - 1)
+
+## the Kowalskis' back yard: the deck (boards, rail, steps down to the lawn), the swing set and the fence
+func _build_oak_yard(root: Node3D) -> void:
+	var mb := MeshBuilder.new()
+	var r := RandomNumberGenerator.new(); r.seed = seed + 55
+	var D := deck
+	var dy: float = H(D.x, D.z) + float(D.y)
+	var wood := Color("#9a7a58"); var wood2 := Color("#86684a"); var white := Color("#f2f0ea")
+	# deck boards on joists and posts
+	var x0: float = D.x - D.w / 2.0; var z0: float = D.z - D.d / 2.0
+	var bz := z0
+	while bz < z0 + D.d:
+		mb.box(D.x, dy, bz + 0.07, D.w, 0.04, 0.13, wood.lerp(wood2, r.randf()))
+		bz += 0.145
+	for px: float in [-0.48, 0.0, 0.48]:
+		for pz: float in [-0.45, 0.45]:
+			var xx: float = D.x + px * D.w; var zz: float = D.z + pz * D.d
+			var gy := H(xx, zz)
+			mb.box(xx, (gy + dy) / 2.0 - 0.05, zz, 0.12, dy - gy, 0.12, wood2)
+	# the rail on the two open sides, and steps down to the lawn
+	var rx: float = D.x - s * D.w / 2.0
+	for pp in [[D.x, z0 + D.d, D.w, 0.06], [D.x + s * D.w / 2.0, D.z, 0.06, D.d]]:
+		mb.box(pp[0], dy + 0.95, pp[1], pp[2], 0.06, pp[3], white)
+		mb.box(pp[0], dy + 0.5, pp[1], pp[2], 0.04, pp[3], white)
+	var n := 12
+	for i in range(n + 1):
+		var t := float(i) / n
+		mb.box(lerpf(D.x - D.w / 2.0, D.x + D.w / 2.0, t), dy + 0.48, z0 + D.d, 0.05, 0.95, 0.05, white)
+		mb.box(D.x + s * D.w / 2.0, dy + 0.48, lerpf(z0, z0 + D.d, t), 0.05, 0.95, 0.05, white)
+	for k in range(4):
+		mb.box(D.x + s * (D.w / 2.0 - 0.9), dy - 0.18 * (k + 1), z0 + D.d + 0.25 + k * 0.28, 1.2, 0.05, 0.28, wood)
+	# a grill and two chairs, so you know somebody lives here
+	mb.cyl(D.x - s * 1.6, dy + 0.02, D.z - 0.6, 0.05, 0.05, 0.85, Color("#2a2a2a"), 8, true)
+	mb.sphere(D.x - s * 1.6, dy + 0.95, D.z - 0.6, 0.3, 0.22, 0.3, Color("#1e1e1e"), 12, 6)
+	_adirondack(mb, Vector3(D.x + s * 0.6, dy + 0.02, D.z + 0.4), PI + 0.4, Color("#2a6a8a"))
+	_adirondack(mb, Vector3(D.x + s * 1.6, dy + 0.02, D.z + 0.2), PI - 0.3, Color("#c24a2a"))
+	_static_box(root, Vector3(D.x, dy - 0.2, D.z), Vector3(D.w, 0.42, D.d))
+	var mi := mb.instance(); mi.name = "Deck"; root.add_child(mi)
+	# the swing set: an A-frame each end, a top bar, two swings on chains and a slide
+	var sw := MeshBuilder.new()
+	var S2 := swing
+	var gy0 := H(S2.x, S2.z)
+	var pipe := Color("#3a7a3a"); var chain := Color("#9a9ea2"); var seat := Color("#e8c020")
+	for sx: float in [-1.0, 1.0]:
+		var ex: float = sx * S2.w / 2.0
+		for sz: float in [-1.0, 1.0]: sw.tube(Vector3(ex, 0.0, sz * S2.d / 2.0), Vector3(ex, 2.3, 0.0), 0.045, 0.045, pipe, 8)
+	sw.tube(Vector3(-S2.w / 2.0 - 0.1, 2.3, 0), Vector3(S2.w / 2.0 + 0.1, 2.3, 0), 0.055, 0.055, pipe, 8)
+	for k in range(2):
+		var px := -0.8 + k * 1.3
+		for dz: float in [-0.2, 0.2]: sw.tube(Vector3(px, 2.28, dz * 0.4), Vector3(px, 0.5, dz), 0.008, 0.008, chain, 4)
+		sw.box(px, 0.48, 0, 0.5, 0.04, 0.48, seat)
+	sw.box(S2.w / 2.0 + 0.9, 0.85, 0.0, 0.5, 0.05, 2.4, Color("#e0402a"))       # the slide, leaning off one end
+	var sn := Node3D.new(); sn.name = "SwingSet"; root.add_child(sn)
+	sn.position = Vector3(S2.x, gy0, S2.z)
+	var smi := sw.instance(); sn.add_child(smi)
+	smi.rotation.z = -0.0
+	_knock_nodes["swing"] = sn
+	# the back fence: white pickets
+	var fen := MeshBuilder.new()
+	for t in targets:
+		if t.group != "fence": continue
+		var fx0: float = t.x - t.w / 2.0; var fx1: float = t.x + t.w / 2.0
+		var xx := fx0
+		while xx <= fx1:
+			var gy := H(xx, t.z)
+			fen.box(xx, gy + 0.6, t.z, 0.08, 1.2, 0.03, white)
+			fen.box(xx, gy + 1.22, t.z, 0.06, 0.06, 0.03, white)
+			xx += 0.16
+		var segs := int((fx1 - fx0) / 2.4)
+		for k in range(segs):
+			var a := fx0 + k * 2.4; var b := a + 2.4
+			for yy: float in [0.3, 0.95]:
+				fen.tube(Vector3(a, H(a, t.z) + yy, t.z - 0.03), Vector3(b, H(b, t.z) + yy, t.z - 0.03), 0.025, 0.025, white, 4)
+	var fmi := fen.instance(); fmi.name = "Fence"; root.add_child(fmi)
+
+## the cemetery: iron fence and gate with its arch, the gravel aisle, each headstone its own little
+## node (so a falling limb can knock it over), the founder's obelisk in its curbed plot, a bench
+func _build_cemetery(root: Node3D) -> void:
+	var C := cemetery
+	var r := RandomNumberGenerator.new(); r.seed = seed + 77
+	var iron := Color("#262826"); var gravel := Color("#a8a294")
+	var mb := MeshBuilder.new()
+	var gx: float = s * 2.6
+	# the fence: pickets with spear tips, two rails, a gap for the gate by the drive
+	var x0: float = C.x - C.w / 2.0; var x1: float = C.x + C.w / 2.0; var z0: float = C.z - C.d / 2.0; var z1: float = C.z + C.d / 2.0
+	var sides := [[Vector2(x0, z0), Vector2(x1, z0)], [Vector2(x1, z0), Vector2(x1, z1)], [Vector2(x1, z1), Vector2(x0, z1)], [Vector2(x0, z1), Vector2(x0, z0)]]
+	for sd in sides:
+		var a: Vector2 = sd[0]; var b: Vector2 = sd[1]
+		var L := a.distance_to(b)
+		var n := int(L / 0.14)
+		for i in range(n + 1):
+			var p := a.lerp(b, float(i) / n)
+			if absf(p.y - z0) < 0.01 and absf(p.x - gx) < 1.6: continue
+			var gy := H(p.x, p.y)
+			mb.box(p.x, gy + 0.62, p.y, 0.025, 1.24, 0.025, iron)
+			mb.box(p.x, gy + 1.28, p.y, 0.05, 0.08, 0.05, iron)
+		for yy: float in [0.25, 1.1]:
+			var k := 0
+			while k < n:
+				var pa := a.lerp(b, float(k) / n); var pb := a.lerp(b, float(mini(k + 8, n)) / n)
+				if not (absf(pa.y - z0) < 0.01 and absf((pa.x + pb.x) * 0.5 - gx) < 1.8):
+					mb.tube(Vector3(pa.x, H(pa.x, pa.y) + yy, pa.y), Vector3(pb.x, H(pb.x, pb.y) + yy, pb.y), 0.018, 0.018, iron, 4)
+				k += 8
+	# the gate posts and the arch over them
+	for sx: float in [-1.0, 1.0]:
+		var px: float = gx + sx * 1.6
+		var gy := H(px, z0)
+		mb.bevel_box(px, gy + 1.0, z0, 0.32, 2.0, 0.32, Color("#8a8680"), 0.03)
+		mb.sphere(px, gy + 2.1, z0, 0.18, 0.14, 0.18, Color("#8a8680"), 10, 6)
+	var agy := H(gx, z0)
+	for k in range(13):
+		var t := float(k) / 12.0
+		var px := gx - 1.6 + t * 3.2
+		mb.box(px, agy + 2.4 + sin(t * PI) * 0.35, z0, 0.28, 0.05, 0.05, iron)
+	mb.box(gx, agy + 2.62, z0, 2.0, 0.34, 0.03, iron)
+	var arch := Label3D.new(); arch.text = "MAPLE GROVE CEMETERY\nEST. 1868"; arch.font_size = 46; arch.pixel_size = 0.0038
+	arch.modulate = Color("#d8d0b8"); arch.outline_size = 0
+	arch.position = Vector3(gx, agy + 2.62, z0 - 0.03); arch.rotation.y = PI
+	root.add_child(arch)
+	# the gravel aisle up the middle from the gate, and a cross aisle
+	var z := z0 + 0.2
+	while z < z1 - 0.2:
+		mb.box(gx, H(gx, z) + 0.03, z, 2.2, 0.05, 0.42, gravel.lerp(Color("#9a9486"), r.randf()))
+		z += 0.4
+	var xx := x0 + 0.3
+	while xx < x1 - 0.3:
+		mb.box(xx, H(xx, 14.6) + 0.03, 14.6, 0.42, 0.05, 1.6, gravel.lerp(Color("#9a9486"), r.randf()))
+		xx += 0.4
+	# a bench by the aisle
+	var bx: float = gx + s * 1.8; var bz := 9.5
+	var by := H(bx, bz)
+	mb.box(bx, by + 0.45, bz, 0.45, 0.05, 1.6, Color("#6a5a46"))
+	mb.box(bx + s * 0.22, by + 0.75, bz, 0.05, 0.4, 1.6, Color("#6a5a46"))
+	for dz: float in [-0.65, 0.65]: mb.box(bx, by + 0.22, bz + dz, 0.4, 0.44, 0.06, iron)
+	# the founder's plot: a granite curb, the obelisk and four small stones
+	var P := plot
+	var py := H(P.x, P.z)
+	for pp in [[P.x, P.z - P.d / 2.0, P.w, 0.18], [P.x, P.z + P.d / 2.0, P.w, 0.18], [P.x - P.w / 2.0, P.z, 0.18, P.d], [P.x + P.w / 2.0, P.z, 0.18, P.d]]:
+		mb.bevel_box(pp[0], py + 0.12, pp[1], pp[2], 0.24, pp[3], Color("#8a8884"), 0.02)
+	mb.bevel_box(P.x, py + 0.25, P.z, 0.9, 0.5, 0.9, Color("#9a9894"), 0.03)
+	mb.bevel_box(P.x, py + 0.65, P.z, 0.62, 0.3, 0.62, Color("#a4a29e"), 0.03)
+	mb.cyl(P.x, py + 0.8, P.z, 0.26, 0.12, 1.9, Color("#b0aea8"), 4, true)
+	mb.cyl(P.x, py + 2.7, P.z, 0.12, 0.0, 0.25, Color("#b0aea8"), 4, true)
+	for k in range(4):
+		var sx := (-1.0 if k % 2 == 0 else 1.0) * 1.35; var sz2 := (-0.6 if k < 2 else 0.6)
+		mb.bevel_box(P.x + sx, py + 0.22, P.z + sz2, 0.4, 0.44, 0.14, Color("#9a9894"), 0.04)
+	var mi := mb.instance(); mi.name = "Cemetery"; root.add_child(mi)
+	_static_box(root, Vector3(P.x, py + 1.2, P.z), Vector3(0.9, 2.4, 0.9))
+	# the stones, each its own node
+	var col := StaticBody3D.new(); col.name = "Stones"; root.add_child(col)
+	var greys := [Color("#8a8a88"), Color("#a9a7a2"), Color("#6e6c69"), Color("#b8b2a6"), Color("#7a7670")]
+	for st in stones:
+		var sm := MeshBuilder.new()
+		var c: Color = greys[int(float(st.c) * greys.size()) % greys.size()]
+		var w: float = st.w; var h: float = st.h; var d: float = st.d
+		match int(st.style):
+			0:      # rounded top
+				sm.bevel_box(0, h * 0.42, 0, w, h * 0.84, d, c, 0.02)
+				sm.cyl(0, h * 0.84 - 0.001, 0, w * 0.5, w * 0.5, d, c, 14, true)
+				sm.push(Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, h * 0.84, -d / 2.0)))
+				sm.cyl(0, 0, 0, w * 0.5, w * 0.5, d, c, 14, true)
+				sm.pop()
+			1:      # flat slab with a base
+				sm.bevel_box(0, 0.08, 0, w + 0.12, 0.16, d + 0.14, MeshBuilder.shade(c, 0.85), 0.02)
+				sm.bevel_box(0, 0.16 + h * 0.45, 0, w, h * 0.9, d, c, 0.02)
+			2:      # a cross
+				sm.bevel_box(0, 0.1, 0, w * 0.8, 0.2, d + 0.12, MeshBuilder.shade(c, 0.85), 0.02)
+				sm.bevel_box(0, 0.2 + h * 0.45, 0, 0.14, h * 0.9, d, c, 0.02)
+				sm.bevel_box(0, 0.2 + h * 0.62, 0, w * 0.75, 0.13, d, c, 0.02)
+			_:      # pointed gothic top
+				sm.bevel_box(0, h * 0.4, 0, w, h * 0.8, d, c, 0.02)
+				sm.push(Transform3D(Basis(Vector3.BACK, PI / 4), Vector3(0, h * 0.8, 0)))
+				sm.box(0, 0, 0, w * 0.707, w * 0.707, d, c)
+				sm.pop()
+		sm.box(0, h * 0.55, -d / 2.0 - 0.002, w * 0.6, 0.012, 0.004, MeshBuilder.shade(c, 0.6))      # carved lines
+		sm.box(0, h * 0.45, -d / 2.0 - 0.002, w * 0.5, 0.01, 0.004, MeshBuilder.shade(c, 0.6))
+		var node := Node3D.new(); node.name = st.name; root.add_child(node)
+		node.position = Vector3(st.x, H(st.x, st.z) - 0.03, st.z)
+		node.rotation = Vector3(float(st.tilt), 0, float(st.tilt) * 0.5)
+		node.add_child(sm.instance())
+		_knock_nodes[st.name] = node
+		var cs := CollisionShape3D.new(); var bs := BoxShape3D.new(); bs.size = Vector3(w, h, d + 0.04)
+		cs.shape = bs; cs.position = Vector3(st.x, H(st.x, st.z) + h * 0.5, st.z)
+		col.add_child(cs)
+
+## a falling limb hit something: a headstone goes over backwards, the swing set gets bent
+func knock(name: String) -> void:
+	var n = _knock_nodes.get(name)
+	if n == null or not is_instance_valid(n): return
+	var tw: Tween = (n as Node3D).create_tween()
+	if name == "swing":
+		tw.tween_property(n, "rotation", Vector3(0.0, 0.0, s * 0.35), 0.4).set_ease(Tween.EASE_OUT)
+		tw.parallel().tween_property(n, "scale", Vector3(1.0, 0.82, 1.0), 0.4)
+	else:
+		tw.tween_property(n, "rotation", Vector3(1.35, (n as Node3D).rotation.y, 0.15), 0.45).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
 
 ## a tree came down on the garage: the roof caves in at the ridge, sagging down into the bay
 func crush_garage() -> void:
