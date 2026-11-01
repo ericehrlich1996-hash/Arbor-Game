@@ -7,7 +7,7 @@ name: Ship to itch.io
 on:
   push:
     branches: [main]
-    paths: ["godot/**", ".github/workflows/itch.yml"]
+    paths: ["godot/**", "itch/**", ".github/workflows/itch.yml"]
   workflow_dispatch: {}           # or run it by hand from the Actions tab
 
 concurrency:
@@ -58,6 +58,7 @@ jobs:
           cp ../README.md "$out/README.md"
           if [ "${{ matrix.channel }}" = "linux" ]; then
             chmod +x "$out/${{ matrix.binary }}"
+            cp "../itch/linux/README - Steam Deck.txt" "$out/"
             # tells the itch app (and Steam Deck players using it) which file to launch
             printf '[[actions]]\nname = "play"\npath = "%s"\n' "${{ matrix.binary }}" > "$out/.itch.toml"
           fi
