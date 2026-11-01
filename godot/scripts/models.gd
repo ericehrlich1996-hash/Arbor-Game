@@ -672,6 +672,42 @@ static func fist(_side: float) -> MeshBuilder:
 	mb.tube(Vector3(0, 0.015, 0.03), Vector3(0, 0.02, 0.075), 0.034, 0.04, cuff, 10)
 	return mb
 
+## a work glove closed round a bar that runs along local X through the origin. The forearm comes in from +Z (the
+## cuff ends at HAND_WRIST), the back of the hand faces +Y, the fingers come over the far side (-Z) and curl
+## underneath, and the thumb wraps the near side. side: 1 right hand, -1 left (the thumb goes on the inside).
+## curl < 1 opens the fingers (a relaxed, empty hand: 0.35 or so).
+const HAND_WRIST := Vector3(0, 0.004, 0.125)
+static func hand(side: float, curl := 1.0) -> MeshBuilder:
+	var mb := MeshBuilder.new()
+	var gl := h("#c9a46a"); var seam := h("#b08d58"); var cuff := h("#8a6a3a")
+	# palm and back of the hand: a flattened block behind the bar, a little higher at the knuckles
+	mb.bevel_box(0, 0.006, 0.05, 0.084, 0.04, 0.07, gl, 0.016)
+	mb.bevel_box(0, 0.012, 0.014, 0.082, 0.032, 0.022, sh(gl, 0.96), 0.012)        # knuckle ridge
+	mb.box(0, 0.027, 0.05, 0.05, 0.002, 0.05, seam)                                 # stitched back panel
+	# four fingers: off the knuckles, over the bar, down and back under it (opened up by curl)
+	for k in range(4):
+		var x := (-0.03 + k * 0.02) * side
+		var r := 0.0105 if k < 3 else 0.009
+		var c := clampf(curl, 0, 1)
+		var p0 := Vector3(x, 0.014, 0.004)
+		var p1 := Vector3(x, lerpf(0.004, 0.022, c), lerpf(-0.034, -0.026, c))
+		var p2 := Vector3(x, lerpf(-0.018, -0.016, c), lerpf(-0.052, -0.04, c))
+		var p3 := Vector3(x, lerpf(-0.036, -0.032, c), lerpf(-0.052, -0.006, c))
+		var col := sh(gl, 0.98 - k * 0.025)
+		mb.tube(p0, p1, r, r, col, 6, false); mb.sphere(p1.x, p1.y, p1.z, r, r, r, col, 6, 4)
+		mb.tube(p1, p2, r, r * 0.95, col, 6, false); mb.sphere(p2.x, p2.y, p2.z, r * 0.95, r * 0.95, r * 0.95, col, 6, 4)
+		mb.tube(p2, p3, r * 0.95, r * 0.9, col, 6, true)
+	# the thumb: from the heel of the hand on the inside, round under the bar toward the fingers
+	var tx := -0.042 * side
+	var c2 := clampf(curl, 0, 1)
+	var t0 := Vector3(tx, -0.004, 0.058); var t1 := Vector3(tx * 1.05, -0.026, 0.026)
+	var t2 := Vector3(tx * 0.75, lerpf(-0.03, -0.034, c2), lerpf(-0.005, -0.012, c2))
+	mb.tube(t0, t1, 0.0125, 0.012, sh(gl, 1.03), 6, false); mb.sphere(t1.x, t1.y, t1.z, 0.012, 0.012, 0.012, sh(gl, 1.03), 6, 4)
+	mb.tube(t1, t2, 0.012, 0.011, sh(gl, 1.03), 6, true)
+	# the cuff, closed at both ends so you never see inside it
+	mb.tube(Vector3(0, 0.004, 0.078), HAND_WRIST, 0.036, 0.04, cuff, 10, true)
+	return mb
+
 ## open glove + sleeve reaching back toward the camera (idle hands)
 static func glove(side: float) -> MeshBuilder:
 	var mb := MeshBuilder.new()

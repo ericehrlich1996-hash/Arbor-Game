@@ -1207,6 +1207,39 @@ func _hands() -> void:
 	await wait(0.5)
 	await shot("hands-idle")
 
+## first-person hands in each pose: empty hands standing and mid-stride, the saw at the hip (off and idling),
+## revved up in the air, and laid on the trunk
+func _viewhands() -> void:
+	await wait(0.5)
+	g._start()
+	var tp: Vector3 = g.tree.global_position
+	var p := tp + Vector3(2.2, 0, 0)
+	g.player.teleport(Vector3(p.x, g.world.H(p.x, p.z) + 0.05, p.z))
+	look_at_point(tp + Vector3(0, 1.4, 0)); g.player.pitch = -0.1
+	await wait(0.5)
+	await shot("vh-idle")
+	for b in [0.8, 2.4]:
+		g.player.bob = b
+		await get_tree().process_frame
+		await shot("vh-walk-%.1f" % b)
+	g.player.bob = 0.0
+	g.equip("saw")
+	await wait(0.4)
+	await shot("vh-saw-off")
+	g.saw.on = true; g.saw.engine_snd = Sfx.engine("saw")
+	await wait(0.4)
+	await shot("vh-saw-idle")
+	g.player.pitch = 0.5
+	g.force_rev = true
+	await wait(0.5)
+	await shot("vh-saw-rev-air")
+	g.force_rev = false
+	look_at_point(tp + Vector3(0, 0.6, 0))
+	g.force_rev = true
+	await wait(0.6)
+	await shot("vh-saw-trunk")
+	g.force_rev = false
+
 func _weather() -> void:
 	await wait(0.5)
 	g._start()

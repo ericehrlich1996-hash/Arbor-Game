@@ -47,8 +47,21 @@ const CHAIN_Z0 := -0.24        # drive sprocket centre
 const CHAIN_Z1 := -0.83        # nose sprocket centre
 const CHAIN_R := 0.041
 const CHAIN_LINKS := 60
-const SHOULDER_R := Vector3(0.24, -0.72, 0.2)
+const SHOULDER_R := Vector3(0.24, -0.72, 0.2)    # (the old straight-sleeve anchors, still used by the axe)
 const SHOULDER_L := Vector3(-0.32, -0.7, 0.18)
+# arms: real shoulders just below and beside the eyes, an upper arm and a forearm meeting at an elbow that bends
+# down and out (two-bone IK), so the sleeves angle in from the bottom corners like arms do
+const SH_R := Vector3(0.19, -0.3, 0.1)
+const SH_L := Vector3(-0.19, -0.3, 0.1)
+const UPPER := 0.31
+const FORE := 0.29
+var grip_mesh := {}              # side -> closed glove; relax_mesh: side -> loose, empty glove
+var relax_mesh := {}
+var upper_r: MeshInstance3D      # upper arms ride on the fists (so hiding a hand hides its whole arm)
+var upper_l: MeshInstance3D
+var _sway := Vector2.ZERO        # the hands trail behind when you turn and look up or down
+var _prev_look := Vector2.ZERO
+var _walk := 0.0                 # 0 standing .. 1 walking, eased
 # sawdust
 var chips: Array = []
 var chip_mm: MultiMeshInstance3D
@@ -68,8 +81,14 @@ func setup(g, p: Player) -> void:
 	chain_mm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	model.add_child(chain_mm)
 	_place_chain()
-	fist_r = Models.fist(1).instance(); fist_l = Models.fist(-1).instance()
+	for sd in [1.0, -1.0]:
+		grip_mesh[sd] = Models.hand(sd, 1.0).commit(); relax_mesh[sd] = Models.hand(sd, 0.3).commit()
+	fist_r = MeshInstance3D.new(); fist_r.mesh = grip_mesh[1.0]; fist_r.material_override = Mats.vcol
+	fist_l = MeshInstance3D.new(); fist_l.mesh = grip_mesh[-1.0]; fist_l.material_override = Mats.vcol
 	arm_r = Models.arm().instance(); arm_l = Models.arm().instance()
+	upper_r = Models.arm().instance(); upper_l = Models.arm().instance()
+	fist_r.add_child(upper_r); fist_l.add_child(upper_l)
+	for m in [upper_r, upper_l]: m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for m in [model, fist_r, fist_l, arm_r, arm_l]:
 		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for m in [fist_r, fist_l, arm_r, arm_l]:
@@ -119,7 +138,9 @@ func pose(dt: float, rev: bool, carrying: bool) -> void:
 		var kk := sin((1 - pull / 0.5) * PI); pull_y = -0.06 * kk; pull_r = 0.25 * kk
 	# idle at the hip
 	var iq := Quaternion(Vector3.UP, 0.55) * Quaternion(Vector3.RIGHT, 0.1 + pull_r) * Quaternion(Vector3.BACK, -0.22) * Quaternion(Vector3.BACK, roll)
-	var ip := Vector3(0.3 + bobx, -0.36 + pull_y + boby, -0.42)
+	_look_sway(dt)
+	var stride := sin(player.bob) * 0.022 * _walk
+	var ip := Vector3(0.27 + bobx + _sway.x, -0.33 + pull_y + boby + _sway.y + absf(stride) * 0.4, -0.44 + stride)
 	# engaged: the bar runs out along the line of sight with the tip just under the crosshair
 	var reach := 1.0 + clampf(-player.pitch, 0, 1.2) * 0.5
 	var tip := Vector3(0, -0.03, -1.12 * reach)
@@ -195,8 +216,13 @@ func pose(dt: float, rev: bool, carrying: bool) -> void:
 	f = (T_ - B).normalized()
 	n = (mw.basis * Vector3.RIGHT).normalized()
 	# hands on the handles, sleeves back to the shoulders
-	_fist_at(fist_r, arm_r, model.transform * Vector3(0, 0.098, 0.035), SHOULDER_R)
-	_fist_at(fist_l, arm_l, model.transform * Vector3(-0.05, 0.172, -0.233), SHOULDER_L)
+	# right hand round the rear handle (trigger finger in), left hand over the top of the front handle loop;
+	# the arms trail a touch when you turn
+	fist_r.mesh = grip_mesh[1.0]; fist_l.mesh = grip_mesh[-1.0]
+	var mb := model.transform.basis
+	var sw := Vector3(_sway.x, _sway.y, 0) * 0.5
+	_grip(fist_r, arm_r, 1.0, model.transform * Vector3(0, 0.098, 0.035), mb * Vector3(0, 0, 1), mb * Vector3(0, 1, 0), SH_R + sw)
+	_grip(fist_l, arm_l, -1.0, model.transform * Vector3(-0.035, 0.17, -0.235), mb * Vector3(0.13, 0, 0.04).normalized(), mb * Vector3(0, 0.6, -1).normalized(), SH_L + sw)
 	_draw_guide()
 
 ## a bar held close to a cut you've already made wants to drop back into it: the roll eases toward
@@ -278,25 +304,101 @@ func _fist_at(fist: MeshInstance3D, arm: MeshInstance3D, p: Vector3, shoulder: V
 	to_sh = to_sh.normalized()
 	var up := Vector3.UP if absf(to_sh.y) < 0.95 else Vector3.BACK
 	fist.transform = Transform3D(Basis.looking_at(-to_sh, up), p)
-	_arm(arm, p + to_sh * 0.065, shoulder, 0.037)
+	fist.mesh = grip_mesh[1.0 if fist == fist_r else -1.0]
+	if fist.get_child_count() > 0: (fist.get_child(0) as Node3D).visible = false     # (a straight sleeve here: no upper arm)
+	_arm(arm, p + to_sh * 0.12, shoulder, 0.037)
 
 func _arm(m: MeshInstance3D, a: Vector3, b: Vector3, r := 0.042) -> void:
 	var d := b - a; var L := d.length()
 	if L < 1e-3: return
 	m.transform = Transform3D(Basis(Quaternion(Vector3.UP, d / L)) * Basis.from_scale(Vector3(r, L, r)), a)
 
-## idle gloved hands when not holding the saw (also used while carrying)
+## the hands lag a little behind the view: turning right swings them left, looking up drops them, then they settle
+func _look_sway(dt: float) -> void:
+	var look := Vector2(player.yaw, player.pitch)
+	var d := look - _prev_look
+	d.x = wrapf(d.x, -PI, PI)
+	_prev_look = look
+	if dt <= 0.0: return
+	var want := Vector2(clampf(d.x / dt * 0.012, -0.05, 0.05), clampf(-d.y / dt * 0.01, -0.04, 0.04))
+	_sway = _sway.lerp(want, minf(1.0, dt * 8.0))
+	var hv := Vector2(player.velocity.x, player.velocity.z).length()
+	_walk = lerpf(_walk, clampf(hv / 3.0, 0, 1) if player.is_on_floor() else 0.0, minf(1.0, dt * 6.0))
+
+## a glove closed on a bar through p (bar: the bar's direction; back: which way the back of the hand should face),
+## with a forearm and upper arm back to the shoulder, bent at the elbow. knuckles (optional) overrides which way
+## the fingers point for an empty hand. Everything in the hands' frame (the camera's).
+func _grip(fist: MeshInstance3D, arm: MeshInstance3D, side: float, p: Vector3, bar: Vector3, back: Vector3, shoulder: Vector3, knuckles := Vector3.ZERO) -> void:
+	var pole := Vector3(side * 0.75, -1.0, 0.15).normalized()
+	var elbow := _elbow(shoulder, p + Vector3(0, -0.02, 0.1), pole)
+	var hb := Basis()
+	for it in range(2):
+		var z := (elbow - p).normalized()
+		if knuckles != Vector3.ZERO: z = (z - knuckles * knuckles.dot(z)).normalized() if absf(knuckles.dot(z)) < 0.95 else z
+		var x := bar - z * bar.dot(z)
+		if x.length() < 1e-3: x = z.cross(Vector3.UP)
+		x = x.normalized()
+		var y := z.cross(x)
+		if y.dot(back) < 0: x = -x; y = -y
+		hb = Basis(x, y, z)
+		elbow = _elbow(shoulder, p + hb * Models.HAND_WRIST, pole)
+	fist.transform = Transform3D(hb, p)
+	if fist.get_child_count() > 0: (fist.get_child(0) as Node3D).visible = true
+	var wrist := p + hb * Models.HAND_WRIST
+	# a stretched reach pulls the shoulder forward rather than pulling the hand off the handle
+	var sh := shoulder
+	var over := (wrist - sh).length() - (UPPER + FORE) * 0.995
+	if over > 0: sh += (wrist - sh).normalized() * minf(over, 0.3)
+	elbow = _elbow(sh, wrist, pole)
+	_arm(arm, wrist - (elbow - wrist).normalized() * 0.01, elbow, 0.038)
+	var up_mi: MeshInstance3D = fist.get_child(0) if fist.get_child_count() > 0 else null
+	if up_mi:
+		var d := sh - elbow; var L := d.length()
+		if L > 1e-3:
+			var want := Transform3D(Basis(Quaternion(Vector3.UP, d / L)) * Basis.from_scale(Vector3(0.046, L, 0.046)), elbow - d / L * 0.03)
+			up_mi.transform = fist.transform.affine_inverse() * want
+
+## two-bone IK: where the elbow goes for a hand at w, bending toward pole
+func _elbow(sh: Vector3, w: Vector3, pole: Vector3) -> Vector3:
+	var d := w - sh; var L := d.length()
+	if L < 1e-4: return sh + pole * UPPER
+	var dir := d / L
+	var Lc := clampf(L, absf(UPPER - FORE) + 0.01, UPPER + FORE - 0.001)
+	var ca := clampf((UPPER * UPPER + Lc * Lc - FORE * FORE) / (2.0 * UPPER * Lc), -1, 1)
+	var perp := pole - dir * pole.dot(dir)
+	if perp.length() < 1e-4: perp = dir.cross(Vector3.RIGHT)
+	perp = perp.normalized()
+	return sh + dir * UPPER * ca + perp * UPPER * sqrt(1.0 - ca * ca)
+
+## idle gloved hands when not holding the saw (also used while carrying): loose, low in the bottom corners,
+## swinging opposite each other as you walk, breathing when you stand, trailing when you turn
 func pose_hands(carrying: bool) -> void:
-	var bobx := sin(player.bob) * 0.012; var boby := -absf(cos(player.bob)) * 0.012
+	var dt := get_process_delta_time()
+	_t += dt
+	_look_sway(dt)
+	var breathe := sin(_t * 1.6) * 0.006
+	var wood_on_shoulder: bool = carrying and game.haul.carry.any(func(b): return not b.brushy())
 	for side in [1.0, -1.0]:
 		var fist: MeshInstance3D = fist_r if side > 0 else fist_l
 		var arm: MeshInstance3D = arm_r if side > 0 else arm_l
-		var p := Vector3(side * 0.24, -0.3 + boby, -0.55) if carrying else Vector3(side * (0.25 + bobx), -0.255 + boby, -0.52)
-		# the forearm runs straight back and down from the fist, in line with it (no kink at the wrist)
-		_fist_at(fist, arm, p, p + Vector3(side * 0.02, -0.3, 0.55))
+		fist.visible = true; arm.visible = true
+		var sh: Vector3 = SH_R if side > 0 else SH_L
+		if carrying:
+			# both hands up under the load, gripping
+			var cp := Vector3(side * 0.22, -0.32 + breathe, -0.5) + Vector3(_sway.x, _sway.y, 0)
+			fist.mesh = grip_mesh[side]
+			_grip(fist, arm, side, cp, Vector3.RIGHT, Vector3(side * 0.4, -1, 0).normalized(), sh)
+		else:
+			# arms swing opposite each other with the stride: the right hand forward as the left goes back
+			var swing: float = sin(player.bob) * side * _walk
+			var p := Vector3(side * (0.28 + absf(swing) * 0.01), -0.43 + breathe - absf(swing) * 0.012, -0.36 - swing * 0.08)
+			p += Vector3(_sway.x, _sway.y, 0)
+			fist.mesh = relax_mesh[side]
+			# knuckles forward and a little in, back of the hand out to the side, tipping with the swing
+			var knuckles := Vector3(-side * 0.25, -0.35 - swing * 0.3, -1).normalized()
+			_grip(fist, arm, side, p, Vector3(-side, 0.15, 0).normalized(), Vector3(side, 0.35, 0.2).normalized(), sh, knuckles)
 		# rounds ride on the right shoulder: that hand's up holding them, out of sight
-		var shouldering: bool = carrying and side > 0 and game.haul.carry.any(func(b): return not b.brushy())
-		if shouldering: fist.visible = false; arm.visible = false
+		if wood_on_shoulder and side > 0: fist.visible = false; arm.visible = false
 		# the rod's in the right hand: the rod model has its own grip, so that glove goes away like it does with a log
 		if side > 0 and player.tool == "rod" and not carrying: fist.visible = false; arm.visible = false
 	guide = {}
