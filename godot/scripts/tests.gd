@@ -2589,10 +2589,17 @@ func _hubach() -> void:
 	Ach.unlock("smoke_signals")
 	await wait(0.5)
 	await shot("ach-popup")
+	for id in ["first_day", "widows_peace", "on_the_line", "textbook_notch", "spurs_on"]: Ach.unlock(id)
+	Ach.add("lowered", 9)
+	await wait(0.3)
 	g.open_computer()
 	g.hud.pc_tab = "trophies"; g.hud._render_pc()
 	await wait(0.5)
 	await shot("ach-computer")
+	if g.hud.pc_scroll:
+		g.hud.pc_scroll.scroll_vertical = 520
+		await wait(0.3)
+		await shot("ach-computer-2")
 	note("count", [Ach.count().x, Ach.count().y, Career.load().get("ach", {}).keys()])
 
 ## touch controls: walk with the stick, look with a swipe, pick the saw from the hotbar, USE
