@@ -17,6 +17,7 @@ var hub
 var game
 var block_c := Vector3.ZERO      # centre of the chopping block's top
 var stand_p := Vector3.ZERO
+const ORBIT_SPEED := 1.5         # rad/s round the block at full stick
 var pile_c := Vector3.ZERO
 var rack_p := Vector3.ZERO
 var rack_yaw := 0.0
@@ -655,7 +656,7 @@ func _split(pc: Dictionary, sa: float, h: Dictionary) -> void:
 		if round_clean: Ach.unlock("sweet_spot")
 		get_tree().create_timer(0.9).timeout.connect(func():
 			if active and pieces.is_empty():
-				lbl_main.text = "That round's done. E to step away, then grab another from the trailer (%d left)." % rounds_left())
+				lbl_main.text = game.hud.pad_words("That round's done. E to step away, then grab another from the trailer (%d left)." % rounds_left()))
 
 ## a finished stick tumbles off the block onto the pile beside it
 func _fly_to_pile(np: Dictionary, out: Vector2) -> void:
@@ -728,9 +729,21 @@ func step(dt: float) -> void:
 	if not active:
 		if aim_mark: aim_mark.visible = false
 		return
-	# step away if you walk off
-	if Input.get_vector("move_left", "move_right", "move_fwd", "move_back").length() > 0.5:
+	# left/right (A/D, or the left stick) walks you round the block to come at the round from
+	# another side; pulling right back steps you away
+	var mv := Input.get_vector("move_left", "move_right", "move_fwd", "move_back")
+	if mv.y > 0.8 and absf(mv.x) < 0.4:
 		stop_chopping(); return
+	if absf(mv.x) > 0.15 and swing < 0.0:
+		var to := stand_p - block_c; to.y = 0.0
+		var th := mv.x * ORBIT_SPEED * dt
+		var nt := to.rotated(Vector3.UP, th)
+		# keep it "right means right" as you see it
+		var right := Vector3(cos(p.yaw), 0, -sin(p.yaw))
+		if (nt - to).dot(right) * mv.x < 0.0: th = -th; nt = to.rotated(Vector3.UP, th)
+		stand_p = block_c + nt.normalized() * 0.95
+		p.teleport(Vector3(stand_p.x, hub.world.H(stand_p.x, stand_p.z) + 0.05, stand_p.z))
+		p.yaw += th
 	if hold >= 0.0: hold += dt
 	if recoil > 0.0: recoil = maxf(0.0, recoil - dt)
 	if swing >= 0.0:
@@ -751,7 +764,7 @@ func step(dt: float) -> void:
 		lbl_pop.scale = Vector2.ONE * lerpf(1.0, 1.25, clampf((pop_t - 0.6) / 0.3, 0.0, 1.0))
 		lbl_pop.modulate.a = clampf(pop_t / 0.35, 0.0, 1.0)
 	if not pieces.is_empty():
-		lbl_main.text = "Hold left mouse to raise the axe, let go to swing · %d/%d sticks to the next bundle · E to step away" % [pile.size(), PILE_PER_BUNDLE]
+		lbl_main.text = game.hud.pad_words("Hold left mouse to raise the axe, let go to swing · A/D to walk round the block · %d/%d sticks to the next bundle · E to step away") % [pile.size(), PILE_PER_BUNDLE]
 	ring.queue_redraw()
 
 ## the axe in your hands, camera space: at rest across your body, raised overhead as you wind up,

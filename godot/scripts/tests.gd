@@ -3732,3 +3732,24 @@ func _hub_pcshots() -> void:
 	g.hud.pc_tab = "trophies"; g.hud._render_pc()
 	await wait(0.4)
 	await shot("pc-trophies")
+
+## splitting wood: walk round the block with left/right while you've got the axe
+func _hub_orbit() -> void:
+	await wait(1.0)
+	g.hub_begin()
+	await wait(0.5)
+	var c := Career.load(); c.trailer = true; c.rounds = maxi(int(c.get("rounds", 0)), 3); Career.save(c)
+	var ws: WoodSplit = g.hub.split
+	ws.take_round()
+	ws.use_block()
+	await wait(0.3)
+	var p: Player = g.player
+	var a0 := Vector2(p.global_position.x - ws.block_c.x, p.global_position.z - ws.block_c.z)
+	var y0 := p.yaw
+	Input.action_press("move_right", 1.0); await wait(1.0); Input.action_release("move_right")
+	await wait(0.1)
+	var a1 := Vector2(p.global_position.x - ws.block_c.x, p.global_position.z - ws.block_c.z)
+	note("orbit", [ws.active, snappedf(rad_to_deg(a0.angle_to(a1)), 1.0), snappedf(a1.length(), 0.01), snappedf(rad_to_deg(p.yaw - y0), 1.0)])
+	await shot("split-orbit")
+	Input.action_press("move_back", 1.0); await wait(0.3); Input.action_release("move_back")
+	note("stepped_away", not ws.active)

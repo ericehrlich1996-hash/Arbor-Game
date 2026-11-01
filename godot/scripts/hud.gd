@@ -688,6 +688,7 @@ const PAD_NAMES := {
 	"press E": "press X", "Press E": "Press X", "Press R to pull-start the saw.": "Pull RT to start the saw.",
 	"Shift + S": "L3 and pull back", "Shift+S": "L3 and pull back", "Rope tool (5)": "Rope (hold LB)", "ROPE TOOL (5)": "ROPE (HOLD LB)",
 	"Click to look around. Walk with WASD.": "Right stick looks, left stick walks.", " with E.": " with X.",
+	"A/D to walk round the block": "left stick walks you round the block", "E to step away": "X to step away",
 }
 const PAD_HELP := "[b]Left stick[/b] walk · click it ([b]L3[/b]) to run · [b]Right stick[/b] look\n[b]RT[/b] grab · cast · reel · swing · throw the climbing line\n[b]RT with the saw[/b] pull-start it (a few pulls), then it's the throttle: rev and cut\n[b]LT[/b] rev the saw · set down / throw in the truck bed · jig the lure\n[b]X[/b] talk / pick up / use / drive / hitch · [b]A[/b] jump · [b]B[/b] kick (hold: flip past a limb) · [b]Y[/b] throw (hold in the tree: lower the rope) · by the truck: unstick\n[b]Hold LB[/b] tool wheel: point the right stick, let go · [b]RB[/b] back to your last tool\n[b]D-pad ← →[/b] angle the cut · → sets the hook · [b]D-pad ↑[/b] ear muffs · [b]D-pad ↓[/b] drag · [b]R3[/b] crouch\n[b]View[/b] stop the saw (truck: camera) · hold it for this card · [b]Menu[/b] pause\n[b]In the truck[/b] RT gas · LT reverse · A brake · left stick steers · Y unstick · X get out\n[b]In menus[/b] d-pad moves · A picks · B backs out"
 
