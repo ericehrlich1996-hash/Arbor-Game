@@ -82,10 +82,10 @@ Plug in or turn on any Xbox-layout controller and it just works, alongside the k
 | LT | rev the saw, set down / throw in the bed, jig · truck: reverse |
 | A | jump · truck: brake · moves a conversation on (never jumps while you're in a menu or talking) |
 | X | talk, pick up, use, drive, hitch (the E key) |
-| B | kick (hold it in the tree to flip past a limb) · backs out of menus |
+| RB | kick (hold it in the tree to flip past a limb) |
+| B | drop one piece · backs out of menus |
 | Y | throw (hold it in the tree to let the lowering rope run) · by the truck or in it: unstick |
 | Hold LB | the tool wheel: point the right stick at a tool and let go |
-| RB | swap back to the tool you had before |
 | D-pad ← → | angle the cut (→ also sets the fishing hook) |
 | D-pad ↑ / ↓ | ear muffs / drag |
 | R3 | crouch |

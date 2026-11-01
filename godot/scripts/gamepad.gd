@@ -9,10 +9,10 @@
 ##   RT           left mouse: grab, cast, reel, swing, throw the climbing line · saw in hand: pull-start
 ##                it, then it's the throttle (rev and cut) · truck: gas
 ##   LT           right mouse: rev the saw, set down / throw in the bed, jig · truck: reverse
-##   A jump (truck: brake)   X talk / pick up / use / drive   B kick (hold: flip past a limb)
+##   A jump (truck: brake)   X talk / pick up / use / drive   B drop one piece
 ##   Y throw (hold in the tree: let the lowering rope run) · by the truck or in it: unstick
 ##   LB (hold)    the tool wheel: point the right stick at a tool, let go to take it
-##   RB           swap back to the tool you had before
+##   RB           kick (hold it in the tree to flip your lanyard past a limb)
 ##   D-pad ← →    the mouse wheel: angle the cut (→ sets the hook)
 ##   D-pad ↑      ear muffs        D-pad ↓  drag
 ##   R3 crouch    View: stop the saw (truck: camera), hold it for help    Menu: pause
@@ -67,7 +67,7 @@ static func _dev() -> int:
 ## the buttons that are just actions, added alongside the keys
 static func bind_actions() -> void:
 	var btn := {
-		jump = [JOY_BUTTON_A], interact = [JOY_BUTTON_X], kick = [JOY_BUTTON_B],
+		jump = [JOY_BUTTON_A], interact = [JOY_BUTTON_X], kick = [JOY_BUTTON_RIGHT_SHOULDER], drop = [JOY_BUTTON_B],
 		throw = [JOY_BUTTON_Y],
 		crouch = [JOY_BUTTON_RIGHT_STICK], drag = [JOY_BUTTON_DPAD_DOWN], tool3 = [JOY_BUTTON_DPAD_UP],
 	}
@@ -251,7 +251,6 @@ func _input(ev: InputEvent) -> void:
 		JOY_BUTTON_LEFT_SHOULDER:
 			if down: wheel.open_for(self)
 			else: wheel.close_pick()
-		JOY_BUTTON_RIGHT_SHOULDER: if down: _swap_back()
 		JOY_BUTTON_DPAD_LEFT:
 			_wheel_dir = 1 if down else (0 if _wheel_dir == 1 else _wheel_dir)
 			if down: _wheel(MOUSE_BUTTON_WHEEL_UP); _wheel_t = 0.35

@@ -3604,10 +3604,11 @@ func _gamepad() -> void:
 	await _jtap(JOY_BUTTON_DPAD_UP)
 	note("pad_dpad_up_muffs", g.muffs)
 	await _jtap(JOY_BUTTON_DPAD_UP)
-	await _jtap(JOY_BUTTON_RIGHT_SHOULDER)
-	note("pad_rb_back", p.tool)
-	await _jtap(JOY_BUTTON_RIGHT_SHOULDER)
-	note("pad_rb_again", p.tool)
+	# RB kicks
+	g.kick_t = -1.0
+	_jb(JOY_BUTTON_RIGHT_SHOULDER, true); await wait(0.05)
+	note("pad_rb_kick", g.kick_t >= 0.0)
+	_jb(JOY_BUTTON_RIGHT_SHOULDER, false); await wait(0.6)
 	await _jtap(JOY_BUTTON_BACK)
 	await wait(0.5)
 	note("pad_view_stops_saw", not g.saw.on)
