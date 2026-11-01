@@ -447,31 +447,89 @@ func _render_pc() -> void:
 	if pc_msg != "":
 		pc_list.add_child(_crt_label("> " + pc_msg, 15))
 
-## the achievement tracker: every one by category, ticked with the date you got it, tallies for the
-## count-based ones, and the secret ones kept secret until you find them
+## the achievement tracker: the overall count and a bar up top, then one category at a time (flip through
+## with the arrows), each achievement a row: a star when you've got it, the title and what it takes, and on
+## the right the day you got it or how far along you are. The secret ones stay secret until you find them.
+var ach_cat := 0
+const MONTHS := ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+
 func _render_trophies() -> void:
 	var n := Ach.count()
-	pc_list.add_child(_crt_label("> ACHIEVEMENTS: %d OF %d" % [n.x, n.y], 15))
-	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 3); v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	pc_list.add_child(v)
 	var got: Dictionary = Career.load().get("ach", {})
-	for cat in Ach.CATS:
-		var ids := Ach.LIST.keys().filter(func(id): return Ach.LIST[id][0] == cat)
-		var have := ids.filter(func(id): return got.has(id)).size()
-		var h := _crt_label("%s  (%d/%d)" % [cat.to_upper(), have, ids.size()], 14)
-		v.add_child(h)
-		for id in ids:
-			var e: Array = Ach.LIST[id]
-			var on := got.has(id)
-			var title: String = e[1] if (on or not e[5]) else "???"
-			var how: String = e[2] if (on or not e[5]) else "A secret. Keep playing."
-			var line := ("[X] " if on else "[ ] ") + title
-			if on: line += "   " + str(got[id])
-			elif e[3] != "": line += "   %d/%d" % [mini(Ach.tally(e[3]), int(e[4])), int(e[4])]
-			var l := _crt_label(line, 13, CRT if on else CRT_DIM)
-			v.add_child(l)
-			v.add_child(_crt_indent(how, 12, CRT_DIM))
-		v.add_child(_crt_label(" ", 8))
+	# --- the overview: count, percent and a block bar
+	var top := HBoxContainer.new(); top.add_theme_constant_override("separation", int(14 * pc_k))
+	top.add_child(_crt_label("%d / %d" % [n.x, n.y], 22))
+	var tv := VBoxContainer.new(); tv.add_theme_constant_override("separation", 0); tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tv.add_child(_crt_label("ACHIEVEMENTS EARNED   %d%%" % roundi(100.0 * n.x / maxf(1.0, n.y)), 12, CRT_DIM))
+	tv.add_child(_crt_label(_crt_bar(n.x, n.y, 30), 14))
+	top.add_child(tv)
+	pc_list.add_child(top)
+	# --- the category pager
+	ach_cat = posmod(ach_cat, Ach.CATS.size())
+	var cat: String = Ach.CATS[ach_cat]
+	var ids := Ach.LIST.keys().filter(func(id): return Ach.LIST[id][0] == cat)
+	var have := ids.filter(func(id): return got.has(id)).size()
+	var pg := HBoxContainer.new(); pg.add_theme_constant_override("separation", int(6 * pc_k))
+	var prev := _crt_button(" < "); prev.pressed.connect(func(): ach_cat -= 1; pc_msg = ""; _render_pc(); _focus_pager(0))
+	var next := _crt_button(" > "); next.pressed.connect(func(): ach_cat += 1; pc_msg = ""; _render_pc(); _focus_pager(2))
+	var mid := _crt_label("%s" % cat.to_upper(), 16)
+	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL; mid.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var cnt := _crt_label("%d/%d" % [have, ids.size()], 14, CRT if have == ids.size() else CRT_DIM)
+	pg.add_child(prev); pg.add_child(mid); pg.add_child(cnt); pg.add_child(next)
+	pg.set_meta("ach_pager", true)
+	pc_list.add_child(pg)
+	# which page of how many, as dots
+	var dots := ""
+	for i in Ach.CATS.size(): dots += ("#" if i == ach_cat else ".") + " "
+	var dl := _crt_label(dots.strip_edges(), 11, CRT_DIM); dl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pc_list.add_child(dl)
+	pc_list.add_child(_crt_label("-".repeat(46), 10, CRT_DIM))
+	# --- the rows: earned ones first, then the rest in their order
+	ids.sort_custom(func(a, b): return got.has(a) and not got.has(b))
+	for id in ids:
+		var e: Array = Ach.LIST[id]
+		var on := got.has(id)
+		var secret: bool = e[5] and not on
+		var row := HBoxContainer.new(); row.add_theme_constant_override("separation", int(10 * pc_k))
+		var mark := _crt_label("*" if on else ("?" if secret else "o"), 18, CRT if on else CRT_DIM)
+		mark.custom_minimum_size = Vector2(18 * pc_k, 0); mark.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+		row.add_child(mark)
+		var txt := VBoxContainer.new(); txt.add_theme_constant_override("separation", 0); txt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		txt.add_child(_crt_label("SECRET" if secret else (e[1] as String).to_upper(), 14, CRT if on else CRT_DIM))
+		var how := _crt_label("Keep playing to find this one." if secret else e[2], 11, CRT_DIM)
+		how.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		how.custom_minimum_size = Vector2(pc_text_w - 150 * pc_k, 0)
+		txt.add_child(how)
+		row.add_child(txt)
+		var right := ""
+		if on: right = _short_date(str(got[id]))
+		elif e[3] != "" and not secret:
+			var t := mini(Ach.tally(e[3]), int(e[4]))
+			right = "%s %d/%d" % [_crt_bar(t, int(e[4]), 6), t, int(e[4])]
+		var rl := _crt_label(right, 12, CRT if on else CRT_DIM)
+		rl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT; rl.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+		rl.custom_minimum_size = Vector2(110 * pc_k, 0)
+		row.add_child(rl)
+		pc_list.add_child(row)
+
+## [#####.....] for n of total, w blocks wide
+func _crt_bar(n: int, total: int, w: int) -> String:
+	var k := 0 if total <= 0 else clampi(roundi(float(n) / total * w), 0, w)
+	if n > 0 and k == 0: k = 1
+	return "[" + "#".repeat(k) + ".".repeat(w - k) + "]"
+
+## 2026-10-31 -> OCT 31 '26
+func _short_date(d: String) -> String:
+	var p := d.split("-")
+	if p.size() != 3: return d
+	return "%s %d '%s" % [MONTHS[clampi(int(p[1]) - 1, 0, 11)], int(p[2]), p[0].right(2)]
+
+## after flipping a page, keep the pad's cursor on the arrow you pressed
+func _focus_pager(i: int) -> void:
+	await get_tree().process_frame
+	for pg in pc_list.get_children():
+		if pg.has_meta("ach_pager") and not pg.is_queued_for_deletion() and pg.get_child_count() > i:
+			(pg.get_child(i) as Control).grab_focus(); return
 
 func _pc_text(t: String, bright: bool) -> void:
 	pc_list.add_child(_crt_indent(t, 12, CRT if bright else CRT_DIM))

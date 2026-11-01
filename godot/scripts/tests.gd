@@ -2596,10 +2596,10 @@ func _hubach() -> void:
 	g.hud.pc_tab = "trophies"; g.hud._render_pc()
 	await wait(0.5)
 	await shot("ach-computer")
-	if g.hud.pc_scroll:
-		g.hud.pc_scroll.scroll_vertical = 520
-		await wait(0.3)
-		await shot("ach-computer-2")
+	for k in [1, 2]:
+		g.hud.ach_cat = k; g.hud._render_pc()
+		await wait(0.4)
+		await shot("ach-computer-cat%d" % k)
 	note("count", [Ach.count().x, Ach.count().y, Career.load().get("ach", {}).keys()])
 
 ## touch controls: walk with the stick, look with a swipe, pick the saw from the hotbar, USE
