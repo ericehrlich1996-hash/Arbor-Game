@@ -6,14 +6,16 @@
 ##
 ##   Left stick   walk (click it to run) · in the truck: steer
 ##   Right stick  look
-##   RT           left mouse: grab, cut, cast, reel, swing, throw the climbing line · truck: gas
+##   RT           left mouse: grab, cast, reel, swing, throw the climbing line · saw in hand: pull-start
+##                it, then it's the throttle (rev and cut) · truck: gas
 ##   LT           right mouse: rev the saw, set down / throw in the bed, jig · truck: reverse
 ##   A jump (truck: brake)   X talk / pick up / use / drive   B kick (hold: flip past a limb)
-##   Y throw (hold in the tree: let the lowering rope run) · truck: unstick
-##   LB / RB      previous / next tool
-##   D-pad ↑ ↓    the mouse wheel: angle the cut, set the hook
-##   D-pad ←      ear muffs        D-pad →  drag
-##   R3 crouch    View: start the saw (truck: camera), hold it for help    Menu: pause
+##   Y throw (hold in the tree: let the lowering rope run) · by the truck or in it: unstick
+##   LB (hold)    the tool wheel: point the right stick at a tool, let go to take it
+##   RB           swap back to the tool you had before
+##   D-pad ← →    the mouse wheel: angle the cut (→ sets the hook)
+##   D-pad ↑      ear muffs        D-pad ↓  drag
+##   R3 crouch    View: stop the saw (truck: camera), hold it for help    Menu: pause
 class_name Gamepad
 extends Node
 
@@ -35,6 +37,10 @@ var _view_t := -1.0
 var _view_help := false
 var _pad_last := false
 var _moving := false
+var _saw_rt := false             # RT is down as the saw's throttle (rev), not the left mouse
+var wheel: ToolWheel
+var _prev_tool := "hands"
+var _cur_tool := "hands"
 
 static var me: Gamepad = null
 static var fake := {}            # tests: axis -> value, standing in for a real pad
@@ -62,8 +68,8 @@ static func _dev() -> int:
 static func bind_actions() -> void:
 	var btn := {
 		jump = [JOY_BUTTON_A], interact = [JOY_BUTTON_X], kick = [JOY_BUTTON_B],
-		throw = [JOY_BUTTON_Y], unstick = [JOY_BUTTON_Y],
-		crouch = [JOY_BUTTON_RIGHT_STICK], drag = [JOY_BUTTON_DPAD_RIGHT], tool3 = [JOY_BUTTON_DPAD_LEFT],
+		throw = [JOY_BUTTON_Y],
+		crouch = [JOY_BUTTON_RIGHT_STICK], drag = [JOY_BUTTON_DPAD_DOWN], tool3 = [JOY_BUTTON_DPAD_UP],
 	}
 	for act in btn:
 		if not InputMap.has_action(act): InputMap.add_action(act)
@@ -98,6 +104,7 @@ func setup(g) -> void:
 	game = g
 	me = self
 	process_mode = Node.PROCESS_MODE_ALWAYS      # the pause menu needs the pad too
+	wheel = ToolWheel.new(); add_child(wheel)
 	Input.joy_connection_changed.connect(func(_d, on):
 		if on and game and is_instance_valid(game) and game.hud:
 			game.hud.toast("Controller connected. Hold View for the button layout.", 3.5))
@@ -118,7 +125,7 @@ func _first_control(n: Node) -> Control:
 	return null
 
 func _focusable(n: Node) -> Control:
-	if n is Control and (n as Control).is_visible_in_tree() and (n as Control).focus_mode == Control.FOCUS_ALL and (n is BaseButton or n is Range or n is LineEdit):
+	if n is Control and (n as Control).is_visible_in_tree() and (n as Control).focus_mode == Control.FOCUS_ALL and (n is BaseButton or n is Range):
 		if not (n is BaseButton and (n as BaseButton).disabled): return n
 	for c in n.get_children():
 		var f := _focusable(c)
@@ -130,6 +137,8 @@ func _focusable(n: Node) -> Control:
 func _let_focus(n: Node) -> void:
 	if (n is BaseButton or n is Range) and (n as Control).focus_mode == Control.FOCUS_NONE and not (n is ScrollBar):
 		(n as Control).focus_mode = Control.FOCUS_ALL
+	# (a text box is never a pad stop: the d-pad would move its cursor, not the focus)
+	if n is LineEdit: (n as LineEdit).focus_mode = Control.FOCUS_CLICK
 	for c in n.get_children(): _let_focus(c)
 
 var _focus_t := 0.0
@@ -181,14 +190,19 @@ func _input(ev: InputEvent) -> void:
 	match b:
 		JOY_BUTTON_LEFT_STICK:
 			if down: _run = not _run; _act("run", _run)
-		JOY_BUTTON_LEFT_SHOULDER: if down: _cycle(-1)
-		JOY_BUTTON_RIGHT_SHOULDER: if down: _cycle(1)
-		JOY_BUTTON_DPAD_UP:
+		JOY_BUTTON_LEFT_SHOULDER:
+			if down: wheel.open_for(self)
+			else: wheel.close_pick()
+		JOY_BUTTON_RIGHT_SHOULDER: if down: _swap_back()
+		JOY_BUTTON_DPAD_LEFT:
 			_wheel_dir = 1 if down else (0 if _wheel_dir == 1 else _wheel_dir)
 			if down: _wheel(MOUSE_BUTTON_WHEEL_UP); _wheel_t = 0.35
-		JOY_BUTTON_DPAD_DOWN:
+		JOY_BUTTON_DPAD_RIGHT:
 			_wheel_dir = -1 if down else (0 if _wheel_dir == -1 else _wheel_dir)
 			if down: _wheel(MOUSE_BUTTON_WHEEL_DOWN); _wheel_t = 0.35
+		JOY_BUTTON_Y:
+			# unstick: in the truck, or standing by it with nothing in your arms (otherwise Y throws)
+			if down: _maybe_unstick()
 		JOY_BUTTON_BACK:
 			# tap: the action (start the saw / truck camera, bound above). Held: the help card
 			if down: _view_t = 0.0; _view_help = false
@@ -220,34 +234,51 @@ func _wheel(b: MouseButton) -> void:
 	if game.player and game.player.in_truck: return
 	_mouse(b, true); _mouse(b, false)
 
-## LB / RB: the tools you own, in hotbar order
-func _cycle(dir: int) -> void:
+## the tools you've got, in hotbar order: [slot id, label, action]
+func tools() -> Array:
+	var out := []
+	var h = game.hud
+	for t in [["hands", "Hands", "tool1"], ["saw", "Chainsaw", "tool2"], ["muffs", "Ear muffs", "tool3"], ["wedge", "Wedges", "tool4"],
+			["rope", "Rope", "tool5"], ["rod", "Fishing rod", "tool6"], ["climb", "Climbing kit", "tool7"]]:
+		if h.slots.has(t[0]) and not h.slots[t[0]].visible: continue
+		if game.climb and game.climb.climbing and t[0] in ["wedge", "rod"]: continue
+		out.append(t)
+	return out
+
+func can_switch() -> bool:
 	var p = game.player
-	if p == null or p.in_truck or game.dlg != null: return
-	if game.in_hub: return
-	var order := [["hands", "tool1"], ["saw", "tool2"]]
-	if Rigging.owned("wedges"): order.append(["wedge", "tool4"])
-	if Rigging.owned("rope"): order.append(["rope", "tool5"])
-	if Fishing.owned(): order.append(["rod", "tool6"])
-	if Rigging.owned("climb"): order.append(["climb", "tool7"])
-	if game.climb and game.climb.climbing:
-		order = order.filter(func(o): return o[0] in ["hands", "saw", "rope", "climb"])
-	var i := 0
-	for k in range(order.size()):
-		if order[k][0] == p.tool: i = k
-	var n: Array = order[(i + dir + order.size()) % order.size()]
-	var e := InputEventAction.new(); e.action = n[1]; e.pressed = true
-	game._unhandled_input(e)
+	return p != null and not p.in_truck and game.dlg == null and not game.in_hub and game.phase == "play"
+
+func equip_slot(id: String) -> void:
+	for t in tools():
+		if t[0] == id:
+			var e := InputEventAction.new(); e.action = t[2]; e.pressed = true
+			game._unhandled_input(e)
+			return
+
+## RB: back to whatever you had in your hands before this
+func _swap_back() -> void:
+	if not can_switch(): return
+	if _prev_tool != game.player.tool: equip_slot(_prev_tool)
+
+func _maybe_unstick() -> void:
+	var p = game.player
+	if p == null or game.dlg != null or game.in_hub: return
+	var near: bool = p.in_truck or (game.truck != null and p.global_position.distance_to(game.truck.global_position) < 6.0 and not game.haul.carrying() and not (game.climb != null and game.climb.climbing))
+	if near:
+		var e := InputEventAction.new(); e.action = "unstick"; e.pressed = true
+		game._unhandled_input(e)
 
 # ---------------------------------------------------------------- sticks and triggers
 func _process(dt: float) -> void:
 	_clock += dt
-	if Input.get_connected_joypads().is_empty() and fake.is_empty(): return
+	_jump_guard()
 	var m := _menu()
 	if m != null:
 		if _pad_last: _menu_focus(m)
 		_triggers_off()
 		return
+	if Input.get_connected_joypads().is_empty() and fake.is_empty(): return
 	if game.phase != "play" and game.phase != "hub": _triggers_off(); return
 	var p = game.player
 	if p == null: return
@@ -268,7 +299,8 @@ func _process(dt: float) -> void:
 	# look
 	var look := Vector2(Gamepad.axis(JOY_AXIS_RIGHT_X), Gamepad.axis(JOY_AXIS_RIGHT_Y))
 	var mag := look.length()
-	if mag > DEAD and game.dlg == null and not Player.input_off:
+	if wheel.visible: wheel.aim(look)
+	elif mag > DEAD and game.dlg == null and not Player.input_off:
 		var k := pow((minf(mag, 1.0) - DEAD) / (1.0 - DEAD), 1.7) * LOOK_SPEED * Settings.look_sens * dt
 		var v := look / mag * k
 		var vy := v.y * (-1.0 if Settings.invert_y else 1.0)
@@ -281,11 +313,27 @@ func _process(dt: float) -> void:
 	if p.in_truck:
 		_triggers_off()
 	else:
-		if not _rt and rt > TRIGGER_ON: _rt = true; _act("use", true); _mouse(MOUSE_BUTTON_LEFT, true)
-		elif _rt and rt < TRIGGER_OFF: _rt = false; _act("use", false); _mouse(MOUSE_BUTTON_LEFT, false)
+		if not _rt and rt > TRIGGER_ON:
+			_rt = true
+			if p.tool == "saw" and not game.in_hub:
+				# the saw: a pull on the cord while it's off, the throttle once it's running
+				if game.saw.on: _saw_rt = true; _act("rev", true)
+				else: game.saw.pull_start()
+			else: _act("use", true); _mouse(MOUSE_BUTTON_LEFT, true)
+		elif _rt and rt < TRIGGER_OFF:
+			_rt = false
+			if _saw_rt:
+				_saw_rt = false
+				if not _lt: _act("rev", false)
+			elif p.tool != "saw" or game.in_hub: _act("use", false); _mouse(MOUSE_BUTTON_LEFT, false)
 		if not _lt and lt > TRIGGER_ON: _lt = true; _act("rev", true); _mouse(MOUSE_BUTTON_RIGHT, true)
-		elif _lt and lt < TRIGGER_OFF: _lt = false; _act("rev", false); _mouse(MOUSE_BUTTON_RIGHT, false)
-	# d-pad up/down held: keep turning the cut
+		elif _lt and lt < TRIGGER_OFF:
+			_lt = false; _mouse(MOUSE_BUTTON_RIGHT, false)
+			if not _saw_rt: _act("rev", false)
+	# what's in your hands (RB goes back to the one before)
+	if p.tool != _cur_tool:
+		_prev_tool = _cur_tool; _cur_tool = p.tool
+	# d-pad left/right held: keep turning the cut
 	if _wheel_dir != 0:
 		_wheel_t -= dt
 		if _wheel_t <= 0.0:
@@ -299,8 +347,92 @@ func _process(dt: float) -> void:
 
 func _triggers_off() -> void:
 	if _rt: _rt = false; _act("use", false); _mouse(MOUSE_BUTTON_LEFT, false)
-	if _lt: _lt = false; _act("rev", false); _mouse(MOUSE_BUTTON_RIGHT, false)
+	if _lt: _lt = false; _mouse(MOUSE_BUTTON_RIGHT, false)
+	if _saw_rt or Input.is_action_pressed("rev"): _saw_rt = false; _act("rev", false)
+	if wheel and wheel.visible: wheel.visible = false
 
 # ---------------------------------------------------------------- what the hints say
 func _hints_changed() -> void:
 	if game and is_instance_valid(game) and game.hud: game.hud.pad_text(_pad_last)
+
+## no jumping off the A button while it's pressing a menu button or moving a conversation on (and for
+## a moment after, so the press that closes one doesn't hop you either)
+func _jump_guard() -> void:
+	if game == null or game.hud == null: return
+	var busy: bool = game.dlg != null or _menu() != null or (wheel != null and wheel.visible)
+	if busy: Player.no_jump_until = Time.get_ticks_msec() + 350
+
+# ---------------------------------------------------------------- the tool wheel
+## hold LB: the tools you've got round a ring; point the right stick (or the left) at one and let go
+class ToolWheel extends CanvasLayer:
+	var pad
+	var items: Array = []
+	var pick := -1
+	var face: Control
+
+	func _init() -> void:
+		layer = 12
+		visible = false
+		face = Control.new(); face.set_anchors_preset(Control.PRESET_FULL_RECT); face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		face.draw.connect(_draw_face)
+		add_child(face)
+
+	func open_for(p) -> void:
+		pad = p
+		if not pad.can_switch(): return
+		items = pad.tools()
+		pick = -1
+		for i in range(items.size()):
+			if items[i][0] == pad.game.player.tool: pick = i
+		visible = true
+		Sfx.play("pick", 0.5, 1.4)
+		face.queue_redraw()
+
+	func close_pick() -> void:
+		if not visible: return
+		visible = false
+		if pick >= 0 and pick < items.size() and pad.can_switch():
+			var id: String = items[pick][0]
+			if id == "muffs" or id != pad.game.player.tool: pad.equip_slot(id)
+
+	func aim(v: Vector2) -> void:
+		var lv := Vector2(Gamepad.axis(JOY_AXIS_LEFT_X), Gamepad.axis(JOY_AXIS_LEFT_Y))
+		if v.length() < 0.5 and lv.length() > 0.6: v = lv
+		if v.length() < 0.5 or items.is_empty(): return
+		# item 0 at the top, going round clockwise
+		var a := fposmod(atan2(v.x, -v.y), TAU)
+		var n := items.size()
+		var i := int(round(a / (TAU / n))) % n
+		if i != pick:
+			pick = i
+			Sfx.play("pick", 0.25, 1.8)
+			face.queue_redraw()
+
+	func _draw_face() -> void:
+		if items.is_empty(): return
+		var s := face.get_viewport_rect().size
+		var c := s / 2.0
+		var R := minf(s.x, s.y) * 0.26
+		var n := items.size()
+		var font := ThemeDB.fallback_font
+		face.draw_circle(c, R * 1.32, Color(0.05, 0.05, 0.045, 0.62))
+		face.draw_arc(c, R * 1.32, 0, TAU, 64, Color(1, 1, 1, 0.12), 2.0, true)
+		for i in range(n):
+			var a := -PI / 2 + TAU * i / n
+			var at := c + Vector2(cos(a), sin(a)) * R
+			var on := i == pick
+			var r := R * (0.34 if on else 0.28)
+			face.draw_circle(at, r, Color(0.94, 0.63, 0.19, 0.95) if on else Color(0.16, 0.16, 0.14, 0.92))
+			face.draw_arc(at, r, 0, TAU, 40, Color(1, 1, 1, 0.35 if on else 0.15), 2.0, true)
+			var txt: String = items[i][1]
+			if items[i][0] == "muffs": txt += " (on)" if pad.game.muffs else " (off)"
+			var fs := int(R * (0.13 if on else 0.115))
+			var w := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+			if w > r * 1.8:
+				fs = int(fs * r * 1.8 / w)
+				w = font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+			face.draw_string(font, at + Vector2(-w / 2.0, fs * 0.35), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("#1b1b1b") if on else Color("#f3ead8"))
+		var hint := "Right stick to pick · let go of LB"
+		var hs := int(R * 0.09)
+		var hw := font.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, hs).x
+		face.draw_string(font, c + Vector2(-hw / 2.0, hs * 0.35), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, hs, Color(1, 1, 1, 0.6))

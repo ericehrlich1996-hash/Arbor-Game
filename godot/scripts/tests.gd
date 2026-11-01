@@ -3500,14 +3500,34 @@ func _gamepad() -> void:
 	var p1 := p.global_position
 	Input.action_press("move_fwd"); await wait(0.8); Input.action_release("move_fwd")
 	note("key_walked", snappedf(p.global_position.distance_to(p1), 0.1))
-	# RB to the saw, View to start it, LT to rev
-	await _jtap(JOY_BUTTON_RIGHT_SHOULDER)
+	# hold LB: the wheel; push the right stick at the saw (slot 1, clockwise from the top), let go
+	_jb(JOY_BUTTON_LEFT_SHOULDER, true); await wait(0.2)
+	var wh: Gamepad.ToolWheel = g.gamepad.wheel
+	note("pad_wheel_open", [wh.visible, wh.items.size()])
 	note("pad_hints", [g.hud.pad_on, g.hud.help_lbl.text.begins_with("[b]Left stick[/b]"), g.hud.pad_words("Talk with [b]E[/b], cut with [b]Left click[/b]")])
-	note("pad_rb_tool", p.tool)
-	for i in range(6):
+	var n: int = wh.items.size()
+	var ang := TAU * 1.0 / n
+	var y_before := p.yaw
+	Gamepad.fake = {JOY_AXIS_RIGHT_X: sin(ang), JOY_AXIS_RIGHT_Y: -cos(ang)}
+	await wait(0.2)
+	await shot("pad-wheel")
+	note("pad_wheel_pick", [wh.pick, wh.items[wh.pick][0] if wh.pick >= 0 else "", snappedf(p.yaw - y_before, 0.01)])
+	Gamepad.fake = {}
+	_jb(JOY_BUTTON_LEFT_SHOULDER, false); await wait(0.2)
+	note("pad_wheel_tool", [p.tool, wh.visible])
+	# A while the wheel's up: no hop
+	# RT pulls the cord until it catches, then it's the throttle
+	for i in range(8):
 		if g.saw.on: break
-		await _jtap(JOY_BUTTON_BACK); await wait(0.4)
-	note("pad_saw_on", g.saw.on)
+		Gamepad.fake = {JOY_AXIS_TRIGGER_RIGHT: 1.0}; await wait(0.15)
+		Gamepad.fake = {JOY_AXIS_TRIGGER_RIGHT: 0.0}; await wait(0.5)
+	note("pad_rt_started_saw", g.saw.on)
+	Gamepad.fake = {JOY_AXIS_TRIGGER_RIGHT: 1.0}
+	await wait(0.3)
+	note("pad_rt_throttle", Input.is_action_pressed("rev"))
+	Gamepad.fake = {JOY_AXIS_TRIGGER_RIGHT: 0.0}
+	await wait(0.2)
+	note("pad_rt_off", not Input.is_action_pressed("rev"))
 	Gamepad.fake = {JOY_AXIS_TRIGGER_LEFT: 1.0}
 	await wait(0.3)
 	note("pad_lt_rev", Input.is_action_pressed("rev"))
@@ -3515,10 +3535,18 @@ func _gamepad() -> void:
 	await wait(0.2)
 	note("pad_lt_off", not Input.is_action_pressed("rev"))
 	var r0: float = g.saw.roll
-	await _jtap(JOY_BUTTON_DPAD_UP)
+	await _jtap(JOY_BUTTON_DPAD_LEFT)
 	note("pad_dpad_roll", absf(g.saw.roll - r0) > 0.01 or not g.saw.guide.is_empty())
-	await _jtap(JOY_BUTTON_LEFT_SHOULDER)
-	note("pad_lb_tool", p.tool)
+	await _jtap(JOY_BUTTON_DPAD_UP)
+	note("pad_dpad_up_muffs", g.muffs)
+	await _jtap(JOY_BUTTON_DPAD_UP)
+	await _jtap(JOY_BUTTON_RIGHT_SHOULDER)
+	note("pad_rb_back", p.tool)
+	await _jtap(JOY_BUTTON_RIGHT_SHOULDER)
+	note("pad_rb_again", p.tool)
+	await _jtap(JOY_BUTTON_BACK)
+	await wait(0.5)
+	note("pad_view_stops_saw", not g.saw.on)
 	# Menu pauses, the pad lands on a button, B backs out
 	await _jtap(JOY_BUTTON_START)
 	await wait(0.3)
@@ -3542,10 +3570,17 @@ func _gamepad() -> void:
 	await _jtap(JOY_BUTTON_X)
 	await wait(0.3)
 	note("pad_x_talk", g.dlg != null)
+	var hop := false
 	for i in range(12):
 		if g.dlg == null: break
-		await _jtap(JOY_BUTTON_A); await wait(0.3)
+		await _jtap(JOY_BUTTON_A)
+		for j in range(3):
+			if p.velocity.y > 1.0: hop = true
+			await wait(0.1)
+	await wait(0.4)
+	if p.velocity.y > 1.0: hop = true
 	note("pad_a_through_talk", g.dlg == null)
+	note("pad_no_hop_in_talk", not hop)
 	# the pedals
 	Gamepad.fake = {JOY_AXIS_TRIGGER_RIGHT: 1.0}
 	note("pad_gas", Gamepad.drive_axis())
@@ -3559,3 +3594,34 @@ func _gamepad() -> void:
 	var ku := InputEventKey.new(); ku.physical_keycode = KEY_W; ku.keycode = KEY_W; ku.pressed = false
 	Input.parse_input_event(ku)
 	note("pad_keys_back", not g.hud.pad_on)
+
+## the cabin computer with a pad: A presses its buttons and never hops you, B closes it
+func _hub_gamepad() -> void:
+	await wait(1.0)
+	g.hub_begin()
+	await wait(1.0)
+	var p: Player = g.player
+	await _jtap(JOY_BUTTON_X)          # any pad press: the pad's in use
+	g.open_computer()
+	await wait(0.4)
+	var fo: Control = g.get_viewport().gui_get_focus_owner()
+	note("hub_pc_focus", [g.hud.pc_screen.visible, fo != null and g.hud.pc_screen.is_ancestor_of(fo), (fo.get("text") if fo else "")])
+	var hop := false
+	var y0 := p.global_position.y
+	for i in range(4):
+		await _jtap(JOY_BUTTON_A)          # on the JOBS tab: a menu press that doesn't start a job
+		for j in range(4):
+			if p.velocity.y > 1.0 or p.global_position.y > y0 + 0.15: hop = true
+			await wait(0.1)
+		if not g.hud.pc_screen.visible: g.open_computer(); await wait(0.3)
+	note("hub_pc_no_hop", not hop)
+	await _jtap(JOY_BUTTON_B)
+	await wait(0.3)
+	note("hub_pc_closed_by_b", not g.hud.pc_screen.visible)
+	await wait(0.5)
+	await _jtap(JOY_BUTTON_A)
+	var hopped := false
+	for j in range(5):
+		if p.velocity.y > 1.0: hopped = true
+		await wait(0.05)
+	note("hub_jump_works_after", hopped)

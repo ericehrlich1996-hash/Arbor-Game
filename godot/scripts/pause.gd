@@ -110,7 +110,7 @@ func _build() -> void:
 	_choice("detail", "Detail", [["Auto", -1], ["Low", 0], ["High", 1]])
 	_choice("fps", "Frame rate", [["Auto", -1], ["30", 30], ["60", 60], ["Max", 0]])
 	_choice("res", "Resolution", [["Full", 1.0], ["85%", 0.85], ["70%", 0.7]])
-	var note := _lbl("Handhelds (ROG Ally, Steam Deck): 60 fps and 85% resolution save a lot of battery. Phones: Auto runs at 30 fps and low detail.", 13, DIM)
+	var note := _lbl("Handhelds (ROG Ally, Steam Deck): cap it at 60 fps for much better battery life. Phones: Auto runs at 30 fps and low detail.", 13, DIM)
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; body.add_child(note)
 
 # ---------------------------------------------------------------- widgets
@@ -126,6 +126,13 @@ func _box(col: Color, edge := Color(0, 0, 0, 0)) -> StyleBoxFlat:
 	if edge.a > 0: b.border_color = edge; b.set_border_width_all(max(1, int(1.5 * f)))
 	return b
 
+## where the pad's cursor is: a bright ring round the button or slider
+func _focus_ring() -> StyleBoxFlat:
+	var r := StyleBoxFlat.new(); r.bg_color = Color(0, 0, 0, 0); r.draw_center = false
+	r.border_color = Color("#ffe1b8"); r.set_border_width_all(maxi(2, int(2 * f))); r.set_corner_radius_all(int(8 * f))
+	r.expand_margin_left = 3; r.expand_margin_right = 3; r.expand_margin_top = 3; r.expand_margin_bottom = 3
+	return r
+
 func _btn(text: String, primary: bool) -> Button:
 	var b := Button.new(); b.text = text
 	b.add_theme_font_size_override("font_size", int(18 * f))
@@ -133,7 +140,7 @@ func _btn(text: String, primary: bool) -> Button:
 	var n := _box(Color("#d9861c") if primary else Color(1, 1, 1, 0.08), Color(0, 0, 0, 0) if primary else Color(1, 1, 1, 0.25))
 	var h := _box(Color("#f0a030") if primary else Color(1, 1, 1, 0.16), Color(0, 0, 0, 0) if primary else Color(1, 1, 1, 0.4))
 	b.add_theme_stylebox_override("normal", n); b.add_theme_stylebox_override("hover", h); b.add_theme_stylebox_override("pressed", h)
-	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	b.add_theme_stylebox_override("focus", _focus_ring())
 	var fc := Color("#1b1b1b") if primary else INK
 	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]: b.add_theme_color_override(k, fc)
 	return b
@@ -164,6 +171,7 @@ func _slider(key: String, label: String, lo: float, hi: float, step: float, fmt:
 	var knob := _knob(int(22 * f))
 	sl.add_theme_icon_override("grabber", knob); sl.add_theme_icon_override("grabber_highlight", knob)
 	sl.focus_mode = Control.FOCUS_NONE
+	sl.add_theme_stylebox_override("focus", _focus_ring())
 	r.add_child(sl)
 	var val := _lbl(fmt.call(sl.value), 16, DIM); val.custom_minimum_size = Vector2(64 * f, 0)
 	val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -182,6 +190,7 @@ func _choice(key: String, label: String, opts: Array) -> void:
 		b.add_theme_font_size_override("font_size", int(16 * f))
 		b.custom_minimum_size = Vector2(64 * f, 38 * f)
 		b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_stylebox_override("focus", _focus_ring())
 		var off := _box(Color(1, 1, 1, 0.06), Color(1, 1, 1, 0.2))
 		var on := _box(Color(0.94, 0.63, 0.19, 0.9))
 		var hov := _box(Color(1, 1, 1, 0.12), Color(1, 1, 1, 0.3))

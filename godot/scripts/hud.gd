@@ -315,7 +315,10 @@ func _crt_button(t: String) -> Button:
 	var n := StyleBoxFlat.new(); n.bg_color = Color(0, 0, 0, 0); n.content_margin_left = 6; n.content_margin_right = 6
 	var hv := StyleBoxFlat.new(); hv.bg_color = CRT; hv.content_margin_left = 6; hv.content_margin_right = 6
 	b.add_theme_stylebox_override("normal", n); b.add_theme_stylebox_override("hover", hv); b.add_theme_stylebox_override("pressed", hv)
-	b.add_theme_stylebox_override("focus", n); b.add_theme_stylebox_override("disabled", n)
+	# focus (the pad's cursor): a green box round it, so you can see where you are
+	var fc := StyleBoxFlat.new(); fc.bg_color = Color(0, 0, 0, 0); fc.border_color = CRT; fc.set_border_width_all(2)
+	fc.content_margin_left = 6; fc.content_margin_right = 6
+	b.add_theme_stylebox_override("focus", fc); b.add_theme_stylebox_override("disabled", n)
 	b.add_theme_color_override("font_color", CRT); b.add_theme_color_override("font_hover_color", Color("#06140a"))
 	b.add_theme_color_override("font_pressed_color", Color("#06140a")); b.add_theme_color_override("font_disabled_color", CRT_DIM)
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -538,29 +541,41 @@ var _last_prompt := "-"
 var pad_on := false
 var _key_help := ""
 const PAD_NAMES := {
+	"Hold right mouse": "Hold RT", "hold right mouse": "hold RT", "Saw: off · R to start": "Saw: off · RT to start", "Wheel to angle": "D-pad ← → to angle", "saw off (R)": "saw off (RT to start)",
+	"[b]W/S[/b] drive": "[b]RT / LT[/b] drive", "[b]A/D[/b] steer": "[b]left stick[/b] steer", "[b]Space[/b] brake": "[b]A[/b] brake",
 	"[b]E[/b]": "[b]X[/b]", "[b]Left click[/b]": "[b]RT[/b]", "[b]left click[/b]": "[b]RT[/b]", "[b]left mouse[/b]": "[b]RT[/b]",
 	"[b]Left mouse[/b]": "[b]RT[/b]", "[b]Right click[/b]": "[b]LT[/b]", "[b]Right mouse[/b]": "[b]LT[/b]", "[b]right mouse[/b]": "[b]LT[/b]",
-	"[b]Space[/b]": "[b]A[/b]", "[b]F[/b]": "[b]B[/b]", "[b]G[/b]": "[b]Y[/b]", "[b]T[/b]": "[b]D-pad →[/b]", "[b]R[/b]": "[b]View[/b]",
+	"[b]Space[/b]": "[b]A[/b]", "[b]F[/b]": "[b]B[/b]", "[b]G[/b]": "[b]Y[/b]", "[b]T[/b]": "[b]D-pad ↓[/b]", "[b]R[/b]": "[b]RT[/b]",
 	"[b]U[/b]": "[b]Y[/b]", "[b]V[/b]": "[b]View[/b]", "[b]W/S[/b]": "[b]left stick[/b]", "[b]A/D[/b]": "[b]left stick[/b]", "[b]W[/b]": "[b]left stick up[/b]",
-	"[b]WASD[/b]": "[b]Left stick[/b]", "[b]Shift[/b]": "[b]L3[/b]", "[b]C[/b]": "[b]R3[/b]", "[b]Wheel[/b]": "[b]D-pad ↑↓[/b]", "[b]H[/b]": "[b]hold View[/b]",
+	"[b]WASD[/b]": "[b]Left stick[/b]", "[b]Shift[/b]": "[b]L3[/b]", "[b]C[/b]": "[b]R3[/b]", "[b]Wheel[/b]": "[b]D-pad ← →[/b]", "[b]H[/b]": "[b]hold View[/b]",
 	"[b]Q[/b]": "[b]LT[/b]", "[b]Esc[/b]": "[b]Menu[/b]",
+	"[b]1[/b]": "[b]LB[/b]", "[b]2[/b]": "[b]LB[/b]", "[b]3[/b]": "[b]D-pad ↑[/b]", "[b]4[/b]": "[b]LB[/b]", "[b]5[/b]": "[b]LB[/b]", "[b]6[/b]": "[b]LB[/b]", "[b]7[/b]": "[b]LB[/b]",
 	"hold G": "hold Y", "left mouse": "RT", "Left mouse": "RT", "right mouse": "LT", "Right mouse": "LT", "left click": "RT", "Left click": "RT",
-	"Click to look around. Walk with WASD.": "Right stick looks, left stick walks.", "Shift+S": "L3 + back",
+	"press E": "press X", "Press E": "Press X", "Press R to pull-start the saw.": "Pull RT to start the saw.",
+	"Shift + S": "L3 and pull back", "Shift+S": "L3 and pull back", "Rope tool (5)": "Rope (hold LB)", "ROPE TOOL (5)": "ROPE (HOLD LB)",
+	"Click to look around. Walk with WASD.": "Right stick looks, left stick walks.", " with E.": " with X.",
 }
-const PAD_HELP := "[b]Left stick[/b] walk · click it ([b]L3[/b]) to run · [b]Right stick[/b] look\n[b]RT[/b] grab · cut · cast · reel · swing · throw the climbing line\n[b]LT[/b] rev the saw · set down / throw in the truck bed · jig the lure\n[b]X[/b] talk / pick up / use / drive / hitch · [b]A[/b] jump · [b]B[/b] kick (hold: flip past a limb) · [b]Y[/b] throw (hold in the tree: lower the rope)\n[b]LB / RB[/b] change tool · [b]D-pad ← [/b] ear muffs · [b]D-pad →[/b] drag · [b]R3[/b] crouch\n[b]D-pad ↑ ↓[/b] angle the cut · ↓ sets the hook\n[b]View[/b] start the saw (truck: camera) · hold it for this card · [b]Menu[/b] pause\n[b]In the truck[/b] RT gas · LT reverse · A brake · left stick steers · Y unstick · X get out\n[b]In menus[/b] d-pad moves · A picks · B backs out"
+const PAD_HELP := "[b]Left stick[/b] walk · click it ([b]L3[/b]) to run · [b]Right stick[/b] look\n[b]RT[/b] grab · cast · reel · swing · throw the climbing line\n[b]RT with the saw[/b] pull-start it (a few pulls), then it's the throttle: rev and cut\n[b]LT[/b] rev the saw · set down / throw in the truck bed · jig the lure\n[b]X[/b] talk / pick up / use / drive / hitch · [b]A[/b] jump · [b]B[/b] kick (hold: flip past a limb) · [b]Y[/b] throw (hold in the tree: lower the rope) · by the truck: unstick\n[b]Hold LB[/b] tool wheel: point the right stick, let go · [b]RB[/b] back to your last tool\n[b]D-pad ← →[/b] angle the cut · → sets the hook · [b]D-pad ↑[/b] ear muffs · [b]D-pad ↓[/b] drag · [b]R3[/b] crouch\n[b]View[/b] stop the saw (truck: camera) · hold it for this card · [b]Menu[/b] pause\n[b]In the truck[/b] RT gas · LT reverse · A brake · left stick steers · Y unstick · X get out\n[b]In menus[/b] d-pad moves · A picks · B backs out"
 
 func pad_words(t: String) -> String:
 	if not pad_on or t == "": return t
 	for k in PAD_NAMES: t = t.replace(k, PAD_NAMES[k])
 	return t
 
+var _slot_txt := {}
 func pad_text(on: bool) -> void:
 	if touch_text: return
 	pad_on = on
+	for k in slots:
+		var l: Label = slots[k].get_child(0) as Label
+		if l == null: continue
+		if not _slot_txt.has(k): _slot_txt[k] = l.text
+		l.text = (str(_slot_txt[k]).substr(3) if on else str(_slot_txt[k]))
 	if help_lbl:
 		if _key_help == "": _key_help = help_lbl.text
 		help_lbl.text = PAD_HELP if on else _key_help
 	var lp := _last_prompt; _last_prompt = "~"; set_prompt(lp)
+	if on and toast_lbl and toast_lbl.text != "": toast_lbl.text = pad_words(toast_lbl.text)
 
 func set_prompt(t: String) -> void:
 	t = pad_words(t)

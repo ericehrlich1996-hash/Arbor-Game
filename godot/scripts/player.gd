@@ -18,6 +18,7 @@ var climbing := false           # on spurs up the job tree: Climb moves you (see
 var speed_mult := 1.0
 var wade := 1.0                 # slowed down wading in water
 var col_shape: CollisionShape3D
+static var no_jump_until := 0     # ms: A was pressing a menu button or moving a talk on
 static var input_off := false   # the pause menu's up in a crew game (the world keeps going, you don't)
 
 const WALK := 3.3
@@ -76,7 +77,7 @@ func _physics_process(dt: float) -> void:
 	var hv := dir * sp
 	velocity.x = move_toward(velocity.x, hv.x, dt * 30); velocity.z = move_toward(velocity.z, hv.z, dt * 30)
 	if is_on_floor():
-		if Input.is_action_just_pressed("jump") and not crouch and not input_off: velocity.y = JUMP
+		if Input.is_action_just_pressed("jump") and not crouch and not input_off and Time.get_ticks_msec() > no_jump_until: velocity.y = JUMP
 	else:
 		velocity.y -= GRAV * dt
 	var grounded := is_on_floor()

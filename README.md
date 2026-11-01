@@ -78,19 +78,22 @@ Plug in or turn on any Xbox-layout controller and it just works, alongside the k
 | --- | --- |
 | Left stick | walk (click **L3** to run) · truck: steer |
 | Right stick | look |
-| RT | left mouse: grab, cut, cast, reel, swing, throw the climbing line · truck: gas |
-| LT | right mouse: rev the saw, set down / throw in the bed, jig · truck: reverse |
-| A | jump · truck: brake · moves a conversation on |
+| RT | grab, cast, reel, swing, throw the climbing line · **saw in hand: pull-start it, then it's the throttle** · truck: gas |
+| LT | rev the saw, set down / throw in the bed, jig · truck: reverse |
+| A | jump · truck: brake · moves a conversation on (never jumps while you're in a menu or talking) |
 | X | talk, pick up, use, drive, hitch (the E key) |
-| B | kick (hold it in the tree to flip past a limb) |
-| Y | throw (hold it in the tree to let the lowering rope run) · truck: unstick |
-| LB / RB | previous / next tool |
-| D-pad ↑ ↓ | the mouse wheel: angle the cut, set the hook |
-| D-pad ← / → | ear muffs / drag |
+| B | kick (hold it in the tree to flip past a limb) · backs out of menus |
+| Y | throw (hold it in the tree to let the lowering rope run) · by the truck or in it: unstick |
+| Hold LB | the tool wheel: point the right stick at a tool and let go |
+| RB | swap back to the tool you had before |
+| D-pad ← → | angle the cut (→ also sets the fishing hook) |
+| D-pad ↑ / ↓ | ear muffs / drag |
 | R3 | crouch |
-| View | start the saw · truck: camera · hold: controls card |
+| View | stop the saw · truck: camera · hold: controls card |
 | Menu | pause |
 | In menus | d-pad or left stick moves, A picks, B backs out |
+
+The one thing the pad can't do is type: the crew phone's name box needs a keyboard (on the Ally, the Windows touch keyboard works). Your name defaults to your Windows user name.
 
 ## How it works
 

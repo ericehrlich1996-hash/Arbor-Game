@@ -1569,12 +1569,14 @@ func _update_hud() -> void:
 		elif saw.guide.get("kind", "") == "top" and not saw.guide.get("too_far", false): hud.tilt.text = "Topping cut · hold right mouse · it'll tip away from you"
 	else:
 		hud.tilt.text = "Bar roll %d°" % int(rad_to_deg(saw.roll))
+	if hud.pad_on:
+		hud.tilt.text = hud.pad_words(hud.tilt.text); hud.tool_state.text = hud.pad_words(hud.tool_state.text)
 	if player.in_truck:
-		hud.drive_lbl.text = "[b]W/S[/b] drive · [b]A/D[/b] steer · [b]Space[/b] brake · [b]V[/b] camera · [b]U[/b] unstick · [b]E[/b] get out    [b]%d mph[/b]" % int(truck.speed_mph())
+		hud.drive_lbl.text = hud.pad_words("[b]W/S[/b] drive · [b]A/D[/b] steer · [b]Space[/b] brake · [b]V[/b] camera · [b]U[/b] unstick · [b]E[/b] get out    [b]%d mph[/b]" % int(truck.speed_mph()))
 		if rig.rope == "rigged":
 			var tx := rig._tension_txt().substr(3)
 			var col := "#ff6a4a" if rig.rope_stretch > Rigging.ROPE_SNAP * 0.7 else ("#9be36b" if rig.rope_stretch >= Rigging.ROPE_TIGHT else "#ffd27a")
-			hud.drive_lbl.text = "[b]W/S[/b] drive · [b]Space[/b] brake · [b]E[/b] get out    [b]%d mph[/b]    Rope: [color=%s][b]%s[/b][/color]" % [int(truck.speed_mph()), col, tx]
+			hud.drive_lbl.text = hud.pad_words("[b]W/S[/b] drive · [b]Space[/b] brake · [b]E[/b] get out    [b]%d mph[/b]    Rope: [color=%s][b]%s[/b][/color]" % [int(truck.speed_mph()), col, tx])
 		hud.obj_panel.visible = truck.chase     # out of the way of the rear-view mirror
 		hud.set_prompt("")
 		return
