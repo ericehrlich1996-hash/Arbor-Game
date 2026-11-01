@@ -140,7 +140,7 @@ func pose(dt: float, rev: bool, carrying: bool) -> void:
 	var iq := Quaternion(Vector3.UP, 0.55) * Quaternion(Vector3.RIGHT, 0.1 + pull_r) * Quaternion(Vector3.BACK, -0.22) * Quaternion(Vector3.BACK, roll)
 	_look_sway(dt)
 	var stride := sin(player.bob) * 0.022 * _walk
-	var ip := Vector3(0.27 + bobx + _sway.x, -0.33 + pull_y + boby + _sway.y + absf(stride) * 0.4, -0.44 + stride)
+	var ip := Vector3(0.25 + bobx + _sway.x, -0.28 + pull_y + boby + _sway.y + absf(stride) * 0.4, -0.48 + stride)
 	# engaged: the bar runs out along the line of sight with the tip just under the crosshair
 	var reach := 1.0 + clampf(-player.pitch, 0, 1.2) * 0.5
 	var tip := Vector3(0, -0.03, -1.12 * reach)
@@ -334,7 +334,7 @@ func _grip(fist: MeshInstance3D, arm: MeshInstance3D, side: float, p: Vector3, b
 	var hb := Basis()
 	for it in range(2):
 		var z := (elbow - p).normalized()
-		if knuckles != Vector3.ZERO: z = (z - knuckles * knuckles.dot(z)).normalized() if absf(knuckles.dot(z)) < 0.95 else z
+		if knuckles != Vector3.ZERO: z = -knuckles.normalized()       # an empty hand: the fingers point where it says
 		var x := bar - z * bar.dot(z)
 		if x.length() < 1e-3: x = z.cross(Vector3.UP)
 		x = x.normalized()
@@ -391,11 +391,11 @@ func pose_hands(carrying: bool) -> void:
 		else:
 			# arms swing opposite each other with the stride: the right hand forward as the left goes back
 			var swing: float = sin(player.bob) * side * _walk
-			var p := Vector3(side * (0.28 + absf(swing) * 0.01), -0.43 + breathe - absf(swing) * 0.012, -0.36 - swing * 0.08)
+			var p := Vector3(side * (0.27 + absf(swing) * 0.01), -0.245 + breathe - absf(swing) * 0.012, -0.52 - swing * 0.08)
 			p += Vector3(_sway.x, _sway.y, 0)
 			fist.mesh = relax_mesh[side]
 			# knuckles forward and a little in, back of the hand out to the side, tipping with the swing
-			var knuckles := Vector3(-side * 0.25, -0.35 - swing * 0.3, -1).normalized()
+			var knuckles := Vector3(-side * 0.2, 0.3 - swing * 0.35, -1).normalized()
 			_grip(fist, arm, side, p, Vector3(-side, 0.15, 0).normalized(), Vector3(side, 0.35, 0.2).normalized(), sh, knuckles)
 		# rounds ride on the right shoulder: that hand's up holding them, out of sight
 		if wood_on_shoulder and side > 0: fist.visible = false; arm.visible = false
