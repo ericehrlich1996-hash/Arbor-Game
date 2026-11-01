@@ -3683,3 +3683,22 @@ func _mirror_rate() -> void:
 	g.exit_truck()
 	await wait(0.3)
 	note("mirror_out", [g.truck.mirror_live, g.truck.mirror_vp.render_target_update_mode == SubViewport.UPDATE_DISABLED])
+
+## the cabin computer: the monitor, each tab, and scrolled down
+func _hub_pcshots() -> void:
+	await wait(1.0)
+	g.hub_begin()
+	await wait(0.8)
+	g.open_computer()
+	await wait(0.5)
+	await shot("pc-jobs")
+	note("pc_size", [g.hud.pc_glass.size, g.get_viewport().get_visible_rect().size, g.hud.pc_scroll.get_v_scroll_bar().max_value, g.hud.pc_scroll.size.y])
+	g.hud.pc_scroll.scroll_vertical = 100000
+	await wait(0.3)
+	await shot("pc-jobs-scrolled")
+	g.hud.pc_tab = "upgrades"; g.hud._render_pc()
+	await wait(0.4)
+	await shot("pc-upgrades")
+	g.hud.pc_tab = "trophies"; g.hud._render_pc()
+	await wait(0.4)
+	await shot("pc-trophies")

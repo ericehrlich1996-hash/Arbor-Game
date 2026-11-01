@@ -1564,7 +1564,8 @@ func update_objectives() -> void:
 			if b.mass > Wood.LIFT_MAX: heavy += 1
 			if in_pile(b) and b.mode == "dyn": piled += 1
 	counts = {brush = brush, rounds = rounds, heavy = heavy, piled = piled}
-	# by weight: once 95% of the wood is chipped or on the pile, the job's done (crumbs don't count)
+	# by weight: once 95% of the wood is chipped or on the pile, the job's done (crumbs don't count;
+	# a job can ask for less, see Jobs: Mrs. Hale's trailer is done at 90%)
 	var total := haul.chipped_mass; var brush_kg := 0.0; var done_kg := haul.chipped_mass
 	for b in pieces():
 		total += b.mass
@@ -1576,7 +1577,7 @@ func update_objectives() -> void:
 	if objs.felled:
 		var attached := pieces().any(func(b): return b.kind == "trunk" and not b.limbs.is_empty() and b.mass > Wood.LIFT_MAX)
 		objs.limbed = not attached and (brush == 0 or brush_kg <= total * 0.05)
-		objs.stacked = objs.limbed and rounds > 0 and done_frac >= 0.95
+		objs.stacked = objs.limbed and rounds > 0 and done_frac >= float(job.get("done_frac", 0.95))
 	var buck_txt: String = "Buck the stem into liftable rounds and load them in %s's trailer" % job.who if trailer else job.get("pile_txt", "Buck the stem into liftable rounds and pile them behind the shed")
 	if objs.felled and rounds > 0:
 		buck_txt += " · %d/%d · %d%%" % [piled, rounds, int(floor(done_frac * 100.0))]

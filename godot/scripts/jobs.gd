@@ -38,6 +38,7 @@ const EARL := {
 
 const HALE := {
 	id = "hale", n = 2, title = "Widow Hale's leaning maple", pay = 650, unlock = 1, needs = "wedges", look = "hale", who = "Mrs. Hale",
+	done_frac = 0.9,         # 90% of the wood in the trailer counts as loaded (a few chunks always roll off)
 	text = "Mrs. Hale on Cedar Ln (Earl's buddy, sort of). Dead sugar maple leaning hard at her garage. It has to go the other way. Load the rounds in Walter's old utility trailer and tarp it. She says you can keep the trailer, and the firewood. Bring wedges. A pull rope wouldn't hurt.",
 	tree_word = "dead maple", bark_tint = Color(0.93, 0.82, 0.72),
 	talk = [

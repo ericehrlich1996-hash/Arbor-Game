@@ -273,8 +273,13 @@ var pc_tabs: HBoxContainer
 const CRT := Color("#7dff8a")
 const CRT_DIM := Color("#3f8a48")
 
+## text on the CRT is sized to the monitor (which is sized to your screen), not fixed pixels
+var pc_k := 1.0
+var pc_text_w := 460.0
+var pc_scroll: ScrollContainer
+
 func _crt_label(t: String, size := 18, col := CRT) -> Label:
-	var l := _label(t, size, col)
+	var l := _label(t, maxi(9, int(size * pc_k)), col)
 	l.add_theme_font_override("font", _mono())
 	return l
 
@@ -282,36 +287,109 @@ func _mono() -> Font:
 	var f := SystemFont.new(); f.font_names = PackedStringArray(["DejaVu Sans Mono", "Courier New", "Consolas", "monospace"])
 	return f
 
+const CRT_SHADER := """
+shader_type canvas_item;
+// the glass: scanlines, a little flicker, and dark corners
+void fragment() {
+	vec2 uv = UV;
+	float scan = 0.5 + 0.5 * sin(SCREEN_UV.y * 900.0);
+	float vig = smoothstep(0.85, 0.35, length(uv - 0.5));
+	float flick = 0.97 + 0.03 * sin(TIME * 60.0);
+	COLOR = vec4(0.0, 0.03, 0.0, (0.16 * scan + 0.5 * (1.0 - vig)) * flick);
+}
+"""
+
 func _build_computer() -> void:
 	pc_screen = ColorRect.new(); (pc_screen as ColorRect).color = Color(0, 0, 0, 0.55)
 	pc_screen.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var c := CenterContainer.new(); c.set_anchors_preset(Control.PRESET_FULL_RECT); pc_screen.add_child(c)
-	# a beige monitor bezel round a green-screen CRT
+	var col := VBoxContainer.new(); col.add_theme_constant_override("separation", 0); c.add_child(col)
+	# a beige monitor round a 4:3 green-screen CRT, about half the height of your screen
 	var bezel := PanelContainer.new()
-	var bs := StyleBoxFlat.new(); bs.bg_color = Color("#c9bfa4"); bs.set_corner_radius_all(26)
-	bs.content_margin_left = 34; bs.content_margin_right = 34; bs.content_margin_top = 30; bs.content_margin_bottom = 42
+	var bs := StyleBoxFlat.new(); bs.bg_color = Color("#c9bfa4"); bs.set_corner_radius_all(22)
 	bs.border_color = Color("#9e9478"); bs.set_border_width_all(3)
-	bezel.add_theme_stylebox_override("panel", bs); c.add_child(bezel)
+	bezel.add_theme_stylebox_override("panel", bs); col.add_child(bezel)
+	pc_bezel_style = bs
+	var bv := VBoxContainer.new(); bv.add_theme_constant_override("separation", 6); bezel.add_child(bv)
 	var scr := PanelContainer.new()
-	var ss := StyleBoxFlat.new(); ss.bg_color = Color("#06140a"); ss.set_corner_radius_all(18)
-	ss.content_margin_left = 26; ss.content_margin_right = 26; ss.content_margin_top = 20; ss.content_margin_bottom = 20
+	var ss := StyleBoxFlat.new(); ss.bg_color = Color("#06140a"); ss.set_corner_radius_all(16)
 	ss.border_color = Color("#1a2a1e"); ss.set_border_width_all(6)
-	scr.add_theme_stylebox_override("panel", ss); scr.custom_minimum_size = Vector2(640, 420); bezel.add_child(scr)
-	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 10); scr.add_child(v)
+	scr.add_theme_stylebox_override("panel", ss); bv.add_child(scr)
+	pc_glass = scr; pc_glass_style = ss
+	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 6); scr.add_child(v)
 	pc_head = _crt_label("", 18); v.add_child(pc_head)
-	pc_tabs = HBoxContainer.new(); pc_tabs.add_theme_constant_override("separation", 18); v.add_child(pc_tabs)
-	v.add_child(_crt_label("--------------------------------------------------", 16, CRT_DIM))
-	pc_list = VBoxContainer.new(); pc_list.add_theme_constant_override("separation", 12); v.add_child(pc_list)
-	var sp := Control.new(); sp.size_flags_vertical = Control.SIZE_EXPAND_FILL; v.add_child(sp)
-	var close := _crt_button("[ LOG OFF ]")
-	close.pressed.connect(func(): hide_computer(); computer_closed.emit())
-	v.add_child(close)
+	pc_tabs = HBoxContainer.new(); pc_tabs.add_theme_constant_override("separation", 12); v.add_child(pc_tabs)
+	pc_rule = _crt_label("-----------------------------------------------", 16, CRT_DIM); v.add_child(pc_rule)
+	# the list scrolls inside the glass (wheel, drag, or the pad's cursor walking down it)
+	pc_scroll = ScrollContainer.new(); pc_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	pc_scroll.follow_focus = true; pc_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var grab := StyleBoxFlat.new(); grab.bg_color = CRT_DIM; grab.set_corner_radius_all(3)
+	var track := StyleBoxFlat.new(); track.bg_color = Color(0.1, 0.25, 0.12, 0.6); track.set_corner_radius_all(3)
+	track.content_margin_left = 4; track.content_margin_right = 4
+	var vb := pc_scroll.get_v_scroll_bar()
+	vb.add_theme_stylebox_override("grabber", grab); vb.add_theme_stylebox_override("grabber_highlight", grab)
+	vb.add_theme_stylebox_override("grabber_pressed", grab); vb.add_theme_stylebox_override("scroll", track)
+	v.add_child(pc_scroll)
+	pc_list = VBoxContainer.new(); pc_list.add_theme_constant_override("separation", 8)
+	pc_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pc_scroll.add_child(pc_list)
+	pc_close = _crt_button("[ LOG OFF ]")
+	pc_close.pressed.connect(func(): hide_computer(); computer_closed.emit())
+	v.add_child(pc_close)
+	# scanlines over the glass (they don't catch clicks)
+	var lines := ColorRect.new(); lines.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sm := ShaderMaterial.new(); var sh := Shader.new(); sh.code = CRT_SHADER; sm.shader = sh
+	lines.material = sm
+	scr.add_child(lines)
+	pc_lines = lines
+	# the chin: a badge and a power light
+	var chin := HBoxContainer.new(); bv.add_child(chin)
+	var badge := _label("ARBORTEK 286", 12, Color("#6e6650")); badge.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	chin.add_child(badge)
+	var led := ColorRect.new(); led.color = Color("#59ff6a"); led.custom_minimum_size = Vector2(10, 6)
+	led.size_flags_vertical = Control.SIZE_SHRINK_CENTER; chin.add_child(led)
+	pc_chin = chin
+	# and a neck down to the desk
+	var neck := CenterContainer.new(); col.add_child(neck)
+	var nk := Panel.new(); var ns := StyleBoxFlat.new(); ns.bg_color = Color("#b3a98e"); nk.add_theme_stylebox_override("panel", ns)
+	neck.add_child(nk); pc_neck = nk
 	pc_screen.visible = false
 	root.add_child(pc_screen)
+	_size_pc()
+	get_viewport().size_changed.connect(_size_pc)
+
+var pc_glass: PanelContainer
+var pc_glass_style: StyleBoxFlat
+var pc_bezel_style: StyleBoxFlat
+var pc_rule: Label
+var pc_close: Button
+var pc_lines: ColorRect
+var pc_chin: HBoxContainer
+var pc_neck: Panel
+
+## the monitor's size follows your screen: the glass is 4:3 and about half the screen's height
+func _size_pc() -> void:
+	var vs := get_viewport().get_visible_rect().size
+	var gh := clampf(vs.y * 0.5, 300.0, vs.y - 120.0)
+	var gw := minf(gh * 4.0 / 3.0, vs.x - 80.0)
+	pc_k = gh / 380.0
+	pc_glass.custom_minimum_size = Vector2(gw, gh)
+	var m := 16.0 * pc_k
+	pc_glass_style.content_margin_left = m; pc_glass_style.content_margin_right = m
+	pc_glass_style.content_margin_top = m * 0.8; pc_glass_style.content_margin_bottom = m * 0.8
+	var bm := 22.0 * pc_k
+	pc_bezel_style.content_margin_left = bm; pc_bezel_style.content_margin_right = bm
+	pc_bezel_style.content_margin_top = bm; pc_bezel_style.content_margin_bottom = bm * 0.5
+	pc_text_w = gw - m * 2.0 - 18.0
+	pc_lines.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pc_neck.custom_minimum_size = Vector2(gw * 0.22, 26.0 * pc_k)
+	for l in [pc_head, pc_rule]: l.add_theme_font_size_override("font_size", int(15 * pc_k))
+	pc_close.add_theme_font_size_override("font_size", int(15 * pc_k))
+	if pc_screen.visible: _render_pc()
 
 func _crt_button(t: String) -> Button:
 	var b := Button.new(); b.text = t
-	b.add_theme_font_override("font", _mono()); b.add_theme_font_size_override("font_size", 18)
+	b.add_theme_font_override("font", _mono()); b.add_theme_font_size_override("font_size", int(15 * pc_k))
 	var n := StyleBoxFlat.new(); n.bg_color = Color(0, 0, 0, 0); n.content_margin_left = 6; n.content_margin_right = 6
 	var hv := StyleBoxFlat.new(); hv.bg_color = CRT; hv.content_margin_left = 6; hv.content_margin_right = 6
 	b.add_theme_stylebox_override("normal", n); b.add_theme_stylebox_override("hover", hv); b.add_theme_stylebox_override("pressed", hv)
@@ -332,7 +410,8 @@ func show_computer(jobs: Array, bank: int, jobs_done: int, upgrades: Array = [],
 	pc_screen.visible = true
 
 func _render_pc() -> void:
-	pc_head.text = "TREE-MAIL v1.2        BANK: $%d   JOBS DONE: %d" % [pc_data.bank, pc_data.done]
+	pc_head.text = "TREE-MAIL v1.2   BANK $%d   JOBS %d" % [pc_data.bank, pc_data.done]
+	if pc_scroll: pc_scroll.set_deferred("scroll_vertical", 0)
 	for ch in pc_tabs.get_children(): ch.queue_free()
 	for tb in [["jobs", "JOBS"], ["upgrades", "UPGRADES"], ["trophies", "ACHIEVEMENTS"]]:
 		var b := _crt_button(("[ %s ]" if pc_tab == tb[0] else "  %s  ") % tb[1])
@@ -341,7 +420,7 @@ func _render_pc() -> void:
 		pc_tabs.add_child(b)
 	for ch in pc_list.get_children(): ch.queue_free()
 	if pc_tab == "jobs":
-		pc_list.add_child(_crt_label("> NEW WORK IN YOUR AREA:", 18))
+		pc_list.add_child(_crt_label("> NEW WORK IN YOUR AREA:", 15))
 		var jobs: Array = pc_data.jobs
 		for i in range(jobs.size()):
 			var j: Dictionary = jobs[i]
@@ -353,7 +432,7 @@ func _render_pc() -> void:
 	elif pc_tab == "trophies":
 		_render_trophies()
 	else:
-		pc_list.add_child(_crt_label("> FIX UP YOUR GEAR:", 18))
+		pc_list.add_child(_crt_label("> FIX UP YOUR GEAR:", 15))
 		var ups: Array = pc_data.upgrades
 		for u: Dictionary in ups:
 			var can: bool = not u.owned and int(pc_data.bank) >= int(u.cost)
@@ -366,22 +445,20 @@ func _render_pc() -> void:
 			pc_list.add_child(b)
 			_pc_text("     " + u.text, not u.owned)
 	if pc_msg != "":
-		pc_list.add_child(_crt_label("> " + pc_msg, 18))
+		pc_list.add_child(_crt_label("> " + pc_msg, 15))
 
 ## the achievement tracker: every one by category, ticked with the date you got it, tallies for the
 ## count-based ones, and the secret ones kept secret until you find them
 func _render_trophies() -> void:
 	var n := Ach.count()
-	pc_list.add_child(_crt_label("> ACHIEVEMENTS: %d OF %d" % [n.x, n.y], 18))
-	var sc := ScrollContainer.new(); sc.custom_minimum_size = Vector2(600, 300); sc.follow_focus = true
-	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 4); v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sc.add_child(v); pc_list.add_child(sc)
+	pc_list.add_child(_crt_label("> ACHIEVEMENTS: %d OF %d" % [n.x, n.y], 15))
+	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 3); v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pc_list.add_child(v)
 	var got: Dictionary = Career.load().get("ach", {})
 	for cat in Ach.CATS:
 		var ids := Ach.LIST.keys().filter(func(id): return Ach.LIST[id][0] == cat)
 		var have := ids.filter(func(id): return got.has(id)).size()
-		var h := _crt_label("%s  (%d/%d)" % [cat.to_upper(), have, ids.size()], 16)
+		var h := _crt_label("%s  (%d/%d)" % [cat.to_upper(), have, ids.size()], 14)
 		v.add_child(h)
 		for id in ids:
 			var e: Array = Ach.LIST[id]
@@ -391,17 +468,21 @@ func _render_trophies() -> void:
 			var line := ("[X] " if on else "[ ] ") + title
 			if on: line += "   " + str(got[id])
 			elif e[3] != "": line += "   %d/%d" % [mini(Ach.tally(e[3]), int(e[4])), int(e[4])]
-			var l := _crt_label(line, 15, CRT if on else CRT_DIM)
+			var l := _crt_label(line, 13, CRT if on else CRT_DIM)
 			v.add_child(l)
-			var d := _crt_label("      " + how, 13, CRT_DIM)
-			d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; d.custom_minimum_size = Vector2(560, 0)
-			v.add_child(d)
+			v.add_child(_crt_indent(how, 12, CRT_DIM))
 		v.add_child(_crt_label(" ", 8))
 
 func _pc_text(t: String, bright: bool) -> void:
-	var d := _crt_label(t, 15, CRT if bright else CRT_DIM)
-	d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; d.custom_minimum_size = Vector2(580, 0)
-	pc_list.add_child(d)
+	pc_list.add_child(_crt_indent(t, 12, CRT if bright else CRT_DIM))
+
+## wrapped text set in from the left, every line of it (not just the first)
+func _crt_indent(t: String, size: int, col: Color) -> Control:
+	var mc := MarginContainer.new(); mc.add_theme_constant_override("margin_left", int(34 * pc_k))
+	var d := _crt_label(t.strip_edges(), size, col)
+	d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; d.custom_minimum_size = Vector2(pc_text_w - 34 * pc_k, 0)
+	mc.add_child(d)
+	return mc
 
 func hide_computer() -> void:
 	pc_screen.visible = false
