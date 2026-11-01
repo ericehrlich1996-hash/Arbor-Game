@@ -459,10 +459,9 @@ func _render_trophies() -> void:
 	# --- the overview: count, percent and a block bar
 	var top := HBoxContainer.new(); top.add_theme_constant_override("separation", int(14 * pc_k))
 	top.add_child(_crt_label("%d / %d" % [n.x, n.y], 22))
-	var tv := VBoxContainer.new(); tv.add_theme_constant_override("separation", 0); tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tv.add_child(_crt_label("ACHIEVEMENTS EARNED   %d%%" % roundi(100.0 * n.x / maxf(1.0, n.y)), 12, CRT_DIM))
-	tv.add_child(_crt_label(_crt_bar(n.x, n.y, 30), 14))
-	top.add_child(tv)
+	var bar := _crt_label("%s  %d%%" % [_crt_bar(n.x, n.y, 24), roundi(100.0 * n.x / maxf(1.0, n.y))], 14, CRT_DIM)
+	bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL; bar.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	top.add_child(bar)
 	pc_list.add_child(top)
 	# --- the category pager
 	ach_cat = posmod(ach_cat, Ach.CATS.size())
@@ -472,18 +471,12 @@ func _render_trophies() -> void:
 	var pg := HBoxContainer.new(); pg.add_theme_constant_override("separation", int(6 * pc_k))
 	var prev := _crt_button(" < "); prev.pressed.connect(func(): ach_cat -= 1; pc_msg = ""; _render_pc(); _focus_pager(0))
 	var next := _crt_button(" > "); next.pressed.connect(func(): ach_cat += 1; pc_msg = ""; _render_pc(); _focus_pager(2))
-	var mid := _crt_label("%s" % cat.to_upper(), 16)
+	var mid := _crt_label(cat.to_upper(), 16)
 	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL; mid.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var cnt := _crt_label("%d/%d" % [have, ids.size()], 14, CRT if have == ids.size() else CRT_DIM)
 	pg.add_child(prev); pg.add_child(mid); pg.add_child(cnt); pg.add_child(next)
 	pg.set_meta("ach_pager", true)
 	pc_list.add_child(pg)
-	# which page of how many, as dots
-	var dots := ""
-	for i in Ach.CATS.size(): dots += ("#" if i == ach_cat else ".") + " "
-	var dl := _crt_label(dots.strip_edges(), 11, CRT_DIM); dl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	pc_list.add_child(dl)
-	pc_list.add_child(_crt_label("-".repeat(46), 10, CRT_DIM))
 	# --- the rows: earned ones first, then the rest in their order
 	ids.sort_custom(func(a, b): return got.has(a) and not got.has(b))
 	for id in ids:
@@ -508,8 +501,10 @@ func _render_trophies() -> void:
 			right = "%s %d/%d" % [_crt_bar(t, int(e[4]), 6), t, int(e[4])]
 		var rl := _crt_label(right, 12, CRT if on else CRT_DIM)
 		rl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT; rl.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-		rl.custom_minimum_size = Vector2(110 * pc_k, 0)
+		rl.custom_minimum_size = Vector2(96 * pc_k, 0)
 		row.add_child(rl)
+		row.add_child(Control.new())
+		(row.get_child(row.get_child_count() - 1) as Control).custom_minimum_size = Vector2(8 * pc_k, 0)
 		pc_list.add_child(row)
 
 ## [#####.....] for n of total, w blocks wide
@@ -518,11 +513,11 @@ func _crt_bar(n: int, total: int, w: int) -> String:
 	if n > 0 and k == 0: k = 1
 	return "[" + "#".repeat(k) + ".".repeat(w - k) + "]"
 
-## 2026-10-31 -> OCT 31 '26
+## 2026-10-31 -> OCT 31
 func _short_date(d: String) -> String:
 	var p := d.split("-")
 	if p.size() != 3: return d
-	return "%s %d '%s" % [MONTHS[clampi(int(p[1]) - 1, 0, 11)], int(p[2]), p[0].right(2)]
+	return "%s %d" % [MONTHS[clampi(int(p[1]) - 1, 0, 11)], int(p[2])]
 
 ## after flipping a page, keep the pad's cursor on the arrow you pressed
 func _focus_pager(i: int) -> void:
