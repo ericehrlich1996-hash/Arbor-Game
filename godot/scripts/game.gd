@@ -81,10 +81,13 @@ var intro := {}
 var path: Array = []
 var path_len: Array = []
 var can_node: Node3D
+var can_mesh: MeshInstance3D       # the can alone (it crushes; the hand round it doesn't)
+var intro_arms := {}               # drink: the right sleeve; door: the left fist and sleeve (all on the cab camera)
 
 const INTRO_DRIVE := 11.0
 const INTRO_DRINK := 4.4
-const INTRO_OUT := 2.4
+const INTRO_OUT := 4.6
+const INTRO_STAND := Vector3(1.85, 0, -0.7)      # where you end up after shutting the door (truck frame)
 
 func _ready() -> void:
 	Net.game = self
@@ -552,10 +555,15 @@ func start_intro() -> void:
 	truck.cab_cam.rotation = Vector3(-0.06, PI, 0)
 	intro.eng = Sfx.engine("truck")
 	can_node = Node3D.new(); truck.cab_cam.add_child(can_node)
-	var can_mi := Models.can().instance(); can_mi.position = Vector3(0, -0.02, 0); can_node.add_child(can_mi)
-	var hand := Models.fist(1).instance(); hand.position = Vector3(0.0, 0.07, 0.0); hand.rotation = Vector3(0, 0, PI / 2); can_node.add_child(hand)
-	for c in [can_mi, hand]: c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	can_mesh = Models.can().instance(); can_mesh.position = Vector3(0, -0.02, 0); can_node.add_child(can_mesh)
+	var hand := Models.can_hand().instance(); can_node.add_child(hand)
+	intro_arms = {
+		drink = Models.arm().instance(),
+		fist = Models.fist(-1).instance(), reach = Models.arm().instance()}
+	for k in intro_arms: truck.cab_cam.add_child(intro_arms[k]); intro_arms[k].visible = false
+	for c in [can_mesh, hand] + intro_arms.values(): c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	can_node.visible = false
+	truck.door_open = 0.0
 	hud.intro_card.text = "Job %d · %s" % [job.n, job.title]
 	hud.fade.color.a = 1.0
 	create_tween().tween_property(hud.fade, "color:a", 0.0, 1.5)
@@ -605,26 +613,98 @@ func _step_intro(dt: float) -> void:
 		if t0 > 3.6:
 			var k := clampf((t0 - 3.6) / 0.6, 0, 1)
 			pos = Vector3(0.22, -0.28, -0.42).lerp(Vector3(0.55, -0.5, -0.35), k); pos.y += sin(k * PI) * 0.12; rz = lerpf(0.15, 2.5, k)
-		can_node.transform = Transform3D(Basis(Vector3.RIGHT, rx) * Basis(Vector3.BACK, rz) * Basis.from_scale(Vector3(1, sc, 1)), pos)
+		can_node.transform = Transform3D(Basis(Vector3.RIGHT, rx) * Basis(Vector3.BACK, rz), pos)
+		can_mesh.scale = Vector3(1, sc, 1)
 		pitch += smoothstep(0, 1, clampf(t0 / 0.8, 0, 1)) * smoothstep(0, 1, clampf((3.4 - t0) / 0.6, 0, 1)) * 0.38
 		for g in [[0.9, "glug0"], [1.5, "glug1"], [2.1, "glug2"], [2.9, "can_crush"], [4.1, "clank"]]:
 			if t0 > g[0] and not I.flags.has(g[1]): I.flags[g[1]] = true; Sfx.play(g[1])
+	# the right sleeve runs from the glove's cuff back to a shoulder below and beside the camera
+	intro_arms.drink.visible = can_node.visible
+	if can_node.visible:
+		_sleeve(intro_arms.drink, can_node.transform * Models.CAN_WRIST, Vector3(0.24, -0.42, 0.12), 0.04)
 	cam.rotation = Vector3(pitch, PI + rel, 0)
 	var t2: float = I.t - INTRO_DRIVE - INTRO_DRINK
-	if t2 > 0:
-		if not I.flags.has("door"): I.flags.door = true; Sfx.play("door")
-		var k := smoothstep(0, 1, clampf((t2 - 0.5) / 1.6, 0, 1))
-		var out := truck.global_transform * Vector3(1.75, 0, 0.15); out.y = world.H(out.x, out.z) + 1.62
-		cam.global_position = eye.lerp(out, k)
-		var face := atan2(-(earl.global_position.x - cam.global_position.x), -(earl.global_position.z - cam.global_position.z))
-		cam.global_rotation = Vector3(lerpf(pitch, -0.05, k), lerp_angle(ty + rel, face, smoothstep(0, 1, clampf((t2 - 0.2) / 1.8, 0, 1))), 0)
+	if t2 > 0: _intro_get_out(I, t2, eye, ty, rel, pitch)
+	# the slam rocks the truck on its springs
+	if I.has("slam_t"):
+		var ks: float = I.t - I.slam_t
+		var roll := sin(ks * 18.0) * exp(-ks * 5.0) * 0.018
+		truck.global_transform = truck.global_transform * Transform3D(Basis(Vector3.BACK, roll), Vector3.ZERO)
 	if I.t > INTRO_DRIVE + INTRO_DRINK + INTRO_OUT: end_intro()
+
+## a sleeve (Models.arm) from a to b, in its parent's frame
+func _sleeve(m: MeshInstance3D, a: Vector3, b: Vector3, r := 0.042) -> void:
+	var d := b - a; var L := d.length()
+	if L < 1e-3: return
+	m.transform = Transform3D(Basis(Quaternion(Vector3.UP, d / L)) * Basis.from_scale(Vector3(r, L, r)), a)
+
+## getting out: look to the door, reach for the handle, pop it and push it open, step down out of the cab, turn
+## back and swing it shut (the truck rocks), then turn to the client
+func _intro_get_out(I: Dictionary, t2: float, eye: Vector3, ty: float, rel: float, pitch: float) -> void:
+	var cam := truck.cab_cam
+	var T := truck.global_transform
+	var ez := func(a: float, b: float) -> float: return smoothstep(0, 1, clampf((t2 - a) / (b - a), 0, 1))
+	# --- the left hand to the handle (door card pull, in the door's frame) and back
+	var handle: Vector3 = truck.door.global_transform * Vector3(-0.1, 1.15, -0.36) if truck.door else T * Vector3(0.9, 1.15, 0.42)
+	var reach: float = ez.call(0.15, 0.6) * (1.0 - ez.call(1.05, 1.45))
+	var rest := Vector3(-0.2, -0.42, -0.3)
+	var shoulder_l := Vector3(-0.24, -0.42, 0.12)
+	intro_arms.fist.visible = reach > 0.01 and t2 < 1.5
+	intro_arms.reach.visible = intro_arms.fist.visible
+	# --- the door: latch, a shove open, shut again from outside
+	if t2 > 0.62 and not I.flags.has("latch"):
+		I.flags.latch = true; Sfx.play("door")
+		if truck.door: truck.swing_door(1.0, 0.55)
+	if t2 > 2.85 and not I.flags.has("shut"):
+		I.flags.shut = true
+		if truck.door: truck.swing_door(0.0, 0.32)
+	if t2 > 3.17 and not I.flags.has("slam"):
+		I.flags.slam = true; I.slam_t = I.t; Sfx.play("slam")
+	# --- the camera: a turn to the door, out through the gap with a drop to the ground, a turn back to the truck
+	var look_door: float = ez.call(0.0, 0.55)
+	var k_out: float = ez.call(1.1, 2.35)
+	var gap := T * Vector3(1.05, 1.42, 0.05)
+	var out := T * Vector3(1.75, 0, 0.15); out.y = world.H(out.x, out.z) + 1.62
+	var back := T * INTRO_STAND; back.y = world.H(back.x, back.z) + 1.62      # a step back, clear of the door's swing
+	var p: Vector3
+	if k_out < 0.5: p = eye.lerp(gap, k_out * 2.0)
+	else: p = gap.lerp(out, (k_out - 0.5) * 2.0)
+	p = p.lerp(back, ez.call(2.4, 2.85))
+	# the step down: a little sag as the boots land, then up to standing
+	var land := clampf((t2 - 2.05) / 0.45, 0, 1)
+	p.y -= sin(land * PI) * 0.09
+	cam.global_position = p
+	var yaw_in := ty + rel + 0.95 * look_door                     # looking left, at the door
+	var yaw_outward := ty + PI * 0.5 + 0.35                        # facing out from the cab, down the step
+	var to_door := T * Vector3(1.0, 1.2, 0.0) - p
+	var yaw_truck := atan2(-to_door.x, -to_door.z)
+	var to_om := earl.global_position - p
+	var yaw_om := atan2(-to_om.x, -to_om.z)
+	var yaw := lerp_angle(yaw_in, yaw_outward, ez.call(1.0, 1.9))
+	yaw = lerp_angle(yaw, yaw_truck, ez.call(2.25, 2.75))
+	yaw = lerp_angle(yaw, yaw_om, ez.call(3.35, 4.3))
+	var pt := lerpf(pitch, -0.2, look_door)
+	pt = lerpf(pt, -0.32, ez.call(1.5, 2.0) * (1.0 - ez.call(2.2, 2.6)))   # a glance down at the step
+	pt = lerpf(pt, -0.05, ez.call(2.4, 2.9))
+	if I.has("slam_t"):                                                         # flinch at the slam
+		var ks: float = I.t - I.slam_t
+		pt += sin(ks * 30.0) * exp(-ks * 9.0) * 0.012
+	cam.global_rotation = Vector3(pt, yaw, 0)
+	# the hand, placed after the camera so it sits on the handle this frame
+	if intro_arms.fist.visible:
+		var at := rest.lerp(cam.to_local(handle), reach)
+		var to_sh := (shoulder_l - at).normalized()
+		var up := Vector3.UP if absf(to_sh.y) < 0.95 else Vector3.BACK
+		intro_arms.fist.transform = Transform3D(Basis.looking_at(-to_sh, up), at)
+		_sleeve(intro_arms.reach, at + to_sh * 0.065, shoulder_l, 0.037)
 
 func end_intro() -> void:
 	if phase != "intro": return
 	truck.scripted_speed = -1.0; truck.scripted_engine = false
 	if intro.get("eng"): intro.eng.stop()
-	Sfx.play("slam")
+	var slammed: bool = intro.get("flags", {}).has("slam")
+	if not slammed: Sfx.play("slam")
+	truck.shut_door_now()
 	_place_on_path(path_len[path_len.size() - 1])
 	truck.freeze = false
 	truck.brake = 400
@@ -633,9 +713,12 @@ func end_intro() -> void:
 	chipper.hitch_now()
 	player.visible = true
 	if can_node: can_node.queue_free(); can_node = null
+	for k in intro_arms: intro_arms[k].queue_free()
+	intro_arms = {}
+	truck.door_open = 0.0
 	truck.cab_cam.position = Models.EYE
 	hud.intro_card.modulate.a = 0
-	var out := truck.global_transform * Vector3(1.75, 0, 0.15)
+	var out := truck.global_transform * (INTRO_STAND if slammed else Vector3(1.75, 0, 0.15))
 	player.teleport(Vector3(out.x, world.H(out.x, out.z) + 0.05, out.z))
 	_crew_spot(player)
 	var to := earl.global_position - player.global_position
@@ -1178,6 +1261,7 @@ func enter_truck() -> void:
 	player.visible = false
 	player.col_shape.disabled = true
 	truck.enter()
+	truck.door_blip()
 	Sfx.play("door")
 	truck.engine_snd = Sfx.engine("truck")
 	hud.set_play_visible(false); hud.crosshair.visible = false
@@ -1194,6 +1278,7 @@ func enter_truck_mirror() -> void:
 	truck.driving = true; truck.look_yaw = 0; truck.look_pitch = 0
 	truck._set_cam(); truck.mirror_live = true; truck.mirror_div = 3
 	_seat_t = clock
+	truck.door_blip()
 	Sfx.play("door")
 	truck.engine_snd = Sfx.engine("truck")
 	hud.set_play_visible(false); hud.crosshair.visible = false
@@ -1215,6 +1300,7 @@ func exit_truck(ask := true) -> void:
 	player.col_shape.disabled = false
 	player.in_truck = false; player.visible = true
 	player.cam.make_current()
+	truck.door_blip()
 	Sfx.play("slam")
 	hud.set_play_visible(true); hud.drive.visible = false
 

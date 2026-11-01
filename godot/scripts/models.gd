@@ -10,6 +10,7 @@ const REAR_AXLE := -1.58
 const TRACK := 0.86
 const HITCH := Vector3(0, 0.5, -2.95)
 const EYE := Vector3(0.38, 1.55, -0.20)          # the driver's eye, on the bench seat behind the wheel
+const DOOR_HINGE := Vector3(1.0, 0.0, 0.78)       # the driver's door swings about its front edge (truck frame)
 
 static func h(s: String) -> Color: return Color.html(s)
 static func sh(c: Color, k: float) -> Color: return MeshBuilder.shade(c, k)
@@ -23,6 +24,9 @@ static func truck(rng: RandomNumberGenerator) -> Dictionary:
 	var G := MeshBuilder.new(); var L := MeshBuilder.new(); var TG := MeshBuilder.new()
 	var mirror := Transform3D(Basis.from_scale(Vector3(-1, 1, 1)), Vector3.ZERO)
 	for m in [P, C, D, G, L, TG]: m.push(mirror)
+	# the driver's door (builder side -1, the truck's +x) is its own mesh, built about its front hinge so it can swing
+	var DP := MeshBuilder.new(); var DC := MeshBuilder.new(); var DD := MeshBuilder.new(); var DG := MeshBuilder.new()
+	for m in [DP, DC, DD, DG]: m.push(Transform3D(Basis.from_scale(Vector3(-1, 1, 1)), -DOOR_HINGE))
 	var chrome := h("#d4d8dc"); var black := h("#17181a"); var dark := h("#26272a"); var rubber := h("#121212")
 	var vinyl := h("#b89a6a"); var dash := h("#3a2e26")
 	var W2 := 1.0
@@ -41,15 +45,16 @@ static func truck(rng: RandomNumberGenerator) -> Dictionary:
 				var za := lerpf(z0, z1, float(i) / n); var zb := lerpf(z0, z1, float(i + 1) / n)
 				var ya: float = arch.call(za, ax); var yb: float = arch.call(zb, ax)
 				var nrm := Vector3(sx, 0, 0)
+				var tp: MeshBuilder = DP if (sx < 0 and ax > 90) else P
 				# lower body in the main colour, a two-tone band through the middle
 				for band in [[ya, 0.86, c1], [0.86, 1.06, c2], [1.06, top, c1]]:
 					var lo: float = maxf(band[0], ya if band[0] == ya else band[0]); var hi: float = band[1]
 					var lo_b: float = yb if band[0] == ya else band[0]
 					if hi <= lo and hi <= lo_b: continue
-					var i0 := P.v(Vector3(sx * W2, maxf(lo, minf(ya, hi)), za), nrm, band[2]); var i1 := P.v(Vector3(sx * W2, maxf(lo_b, minf(yb, hi)), zb), nrm, band[2])
-					var i2 := P.v(Vector3(sx * W2, hi, zb), nrm, band[2]); var i3 := P.v(Vector3(sx * W2, hi, za), nrm, band[2])
-					if sx > 0: P.quad(i0, i1, i2, i3)
-					else: P.quad(i0, i3, i2, i1)
+					var i0 := tp.v(Vector3(sx * W2, maxf(lo, minf(ya, hi)), za), nrm, band[2]); var i1 := tp.v(Vector3(sx * W2, maxf(lo_b, minf(yb, hi)), zb), nrm, band[2])
+					var i2 := tp.v(Vector3(sx * W2, hi, zb), nrm, band[2]); var i3 := tp.v(Vector3(sx * W2, hi, za), nrm, band[2])
+					if sx > 0: tp.quad(i0, i1, i2, i3)
+					else: tp.quad(i0, i3, i2, i1)
 			# wheel well liner and a rubber lip around the arch
 			if ax < 90:
 				# only the arch above the sill line, so nothing hangs down below the body
@@ -68,14 +73,18 @@ static func truck(rng: RandomNumberGenerator) -> Dictionary:
 					if q.y >= 0.55 and k > 0 and prev.y >= 0.55: D.tube(prev, q, 0.022, 0.022, rubber, 5)
 					prev = q
 		# chrome side trim along the two-tone band and the bed rail cap
-		C.box(sx * (W2 + 0.006), 0.86, (bz0 + fz1) / 2, 0.012, 0.018, fz1 - bz0 - 0.1, chrome)
-		C.box(sx * (W2 + 0.006), 1.06, (bz0 + fz1) / 2, 0.012, 0.018, fz1 - bz0 - 0.1, chrome)
+		for ty in [0.86, 1.06]:
+			if sx > 0: C.box(sx * (W2 + 0.006), ty, (bz0 + fz1) / 2, 0.012, 0.018, fz1 - bz0 - 0.1, chrome)
+			else:      # broken at the door gaps so the door's piece swings with it
+				C.box(sx * (W2 + 0.006), ty, (bz0 + 0.05 + cz0 - 0.01) / 2, 0.012, 0.018, cz0 - 0.01 - bz0 - 0.05, chrome)
+				DC.box(sx * (W2 + 0.006), ty, (cz0 + cz1) / 2, 0.012, 0.018, cz1 - cz0 - 0.02, chrome)
+				C.box(sx * (W2 + 0.006), ty, (cz1 + 0.01 + fz1 - 0.05) / 2, 0.012, 0.018, fz1 - 0.05 - cz1 - 0.01, chrome)
 		P.bevel_box(sx * 0.955, 1.33, (bz0 + bz1) / 2, 0.11, 0.05, bz1 - bz0, MeshBuilder.shade(c1, 1.08), 0.015)
 		for z in [-2.45, -1.25]: D.box(sx * 0.955, 1.36, z, 0.05, 0.01, 0.07, black)          # stake pockets
 		# rocker panel and door seams, handle
 		D.box(sx * (W2 - 0.01), 0.58, (cz0 + cz1) / 2, 0.03, 0.06, cz1 - cz0, dark)
 		for z in [cz0 + 0.02, cz1 - 0.02]: D.box(sx * (W2 + 0.004), 0.98, z, 0.008, 0.66, 0.008, black)
-		C.bevel_box(sx * (W2 + 0.015), 1.2, cz0 + 0.22, 0.02, 0.035, 0.13, chrome, 0.008)
+		(DC if sx < 0 else C).bevel_box(sx * (W2 + 0.015), 1.2, cz0 + 0.22, 0.02, 0.035, 0.13, chrome, 0.008)
 		# fuel filler on the bed side
 		D.cyl(sx * (W2 + 0.002), 1.1, -1.0, 0.05, 0.05, 0.0, dark, 10, false)
 	# ---------------- front end
@@ -105,8 +114,8 @@ static func truck(rng: RandomNumberGenerator) -> Dictionary:
 		P.bevel_box(sx * 0.955, (yb + yt) / 2, cz0 + 0.06, 0.09, yt - yb, 0.12, c2, 0.02)             # B pillars
 		C.box(sx * 1.0, yt + 0.02, -0.06, 0.025, 0.025, 1.24, chrome)                                  # drip rails
 		# side glass and its frame
-		G.box(sx * 0.955, (yb + yt) / 2, 0.06, 0.01, yt - yb - 0.04, 1.2, Color(0.55, 0.68, 0.78))
-		C.box(sx * 0.97, yb + 0.012, 0.06, 0.03, 0.02, 1.32, chrome)
+		(DG if sx < 0 else G).box(sx * 0.955, (yb + yt) / 2, 0.06, 0.01, yt - yb - 0.04, 1.2, Color(0.55, 0.68, 0.78))
+		(DC if sx < 0 else C).box(sx * 0.97, yb + 0.012, 0.06, 0.03, 0.02, 1.32, chrome)
 		# mirrors
 		C.tube(Vector3(sx * 0.99, 1.38, 0.66), Vector3(sx * 1.17, 1.48, 0.62), 0.012, 0.012, chrome, 5)
 		C.bevel_box(sx * 1.2, 1.52, 0.62, 0.05, 0.24, 0.16, chrome, 0.015)
@@ -125,7 +134,7 @@ static func truck(rng: RandomNumberGenerator) -> Dictionary:
 	for sx in [-0.45, 0.35]: D.tube(Vector3(sx, yb + 0.05, 0.84), Vector3(sx + 0.4, yb + 0.12, 0.78), 0.008, 0.008, black, 4)
 	# ---------------- interior (the dash, gauges, wheel, bench seat)
 	# (built mirrored like the rest: the driver sits at builder x -0.4, which is +0.4 on the truck)
-	_interior(D, C, P, c1, dash, vinyl, chrome, dark, black, rubber, cz0, cz1)
+	_interior(D, C, P, c1, dash, vinyl, chrome, dark, black, rubber, cz0, cz1, [DD, DC, DP])
 	# ---------------- bed
 	for sx in [-1.0, 1.0]: P.box(sx * 0.915, 1.03, (bz0 + bz1) / 2, 0.02, 0.56, bz1 - bz0, MeshBuilder.shade(c1, 0.85))   # inner walls
 	D.box(0, 0.77, (bz0 + bz1) / 2, 1.84, 0.06, bz1 - bz0, h("#3a3632"))
@@ -148,7 +157,8 @@ static func truck(rng: RandomNumberGenerator) -> Dictionary:
 	D.sphere(0, 0.42, Models.REAR_AXLE, 0.16, 0.14, 0.16, dark, 10, 6)
 	D.bevel_box(0.62, 0.52, -0.9, 0.3, 0.26, 0.7, dark, 0.05)                                         # fuel tank
 	D.tube(Vector3(-0.3, 0.42, 1.2), Vector3(-0.35, 0.36, -2.5), 0.03, 0.03, h("#5a5652"), 6)           # exhaust
-	return {paint = P, chrome = C, dark = D, glass = G, lamps = L, tailgate = TG, c1 = c1, c2 = c2}
+	return {paint = P, chrome = C, dark = D, glass = G, lamps = L, tailgate = TG, c1 = c1, c2 = c2,
+		door = {paint = DP, chrome = DC, dark = DD, glass = DG}}
 
 static func wheel() -> MeshBuilder:
 	var mb := MeshBuilder.new()
@@ -681,6 +691,25 @@ static func arm() -> MeshBuilder:
 	for k in range(2): mb.cyl(0, 0.12 + k * 0.05, 0, 1.04, 1.04, 0.02, sh(sleeve, 0.75), 10, false)
 	return mb
 
+## the right glove wrapped around a can (the can stands on the origin, up +Y, the camera toward +Z): the back of
+## the hand on the right, four fingers curling round the front, the thumb round the back, and a closed cuff
+## ending at CAN_WRIST, where the sleeve takes over
+const CAN_WRIST := Vector3(0.07, -0.05, 0.05)
+static func can_hand() -> MeshBuilder:
+	var mb := MeshBuilder.new()
+	var gl := h("#c9a46a"); var cuff := h("#8a6a3a")
+	mb.sphere(0.04, 0.045, 0.006, 0.024, 0.055, 0.038, gl, 10, 7)                       # palm / back of the hand
+	for k in range(4):
+		var y := 0.014 + k * 0.024; var r := 0.0115 if k > 0 else 0.0095
+		var a := Vector3(0.042, y, -0.016); var b := Vector3(0.016, y, -0.043); var c := Vector3(-0.02, y, -0.037)
+		mb.tube(a, b, r, r, sh(gl, 0.97 - k * 0.02), 6, true); mb.tube(b, c, r, r * 0.92, sh(gl, 0.95 - k * 0.02), 6, true)
+		mb.sphere(b.x, b.y, b.z, r, r, r, sh(gl, 0.96), 6, 4)                             # knuckle, so the bend is round
+	var t0 := Vector3(0.036, 0.074, 0.028); var t1 := Vector3(0.006, 0.08, 0.044); var t2 := Vector3(-0.016, 0.077, 0.036)
+	mb.tube(t0, t1, 0.013, 0.012, sh(gl, 1.02), 6, true); mb.tube(t1, t2, 0.012, 0.011, sh(gl, 1.02), 6, true)
+	mb.sphere(t1.x, t1.y, t1.z, 0.012, 0.012, 0.012, gl, 6, 4)
+	mb.tube(Vector3(0.045, 0.012, 0.018), CAN_WRIST, 0.034, 0.039, cuff, 10, true)     # cuff, capped both ends
+	return mb
+
 static func can() -> MeshBuilder:
 	var mb := MeshBuilder.new()
 	var g := h("#1d1f22"); var lime := h("#8be02c"); var al := h("#c8ccd0")
@@ -693,7 +722,7 @@ static func can() -> MeshBuilder:
 ## lamps), radio, heater slides, vents, glovebox and a woodgrain strip; a three-spoke wheel on a column with
 ## its stalks and the keys hanging; pedals, a pleated bench, door cards with cranks and pulls, visors, dome
 ## light, a pine-tree air freshener and some work-truck clutter. The dial needles are live nodes in Truck.
-static func _interior(D: MeshBuilder, C: MeshBuilder, P: MeshBuilder, c1: Color, dash: Color, vinyl: Color, chrome: Color, dark: Color, black: Color, rubber: Color, cz0: float, cz1: float) -> void:
+static func _interior(D: MeshBuilder, C: MeshBuilder, P: MeshBuilder, c1: Color, dash: Color, vinyl: Color, chrome: Color, dark: Color, black: Color, rubber: Color, cz0: float, cz1: float, door: Array = []) -> void:
 	var pad := sh(dash, 0.72); var face := sh(dash, 1.18); var bezel := h("#1b1a19"); var wood := h("#7a4f2c")
 	var cream := h("#ece4c8"); var mat := h("#25221f")
 	var to_seat := Basis(Vector3.RIGHT, -PI / 2)           # a cylinder pointing back at the seat (-z)
@@ -808,18 +837,22 @@ static func _interior(D: MeshBuilder, C: MeshBuilder, P: MeshBuilder, c1: Color,
 	D.box(0, 0.79, -0.05, 1.8, 0.012, 0.01, pipe)
 	# door cards: painted sill, padded panel, armrest, pull, chrome handle and window crank, map pocket
 	for sx in [-1.0, 1.0]:
-		D.box(sx * 0.94, 0.98, 0.04, 0.03, 0.5, 1.3, sh(vinyl, 0.8))
-		P.box(sx * 0.935, 1.27, 0.06, 0.045, 0.06, 1.3, c1)
-		D.bevel_box(sx * 0.92, 1.06, 0.1, 0.02, 0.2, 1.0, sh(vinyl, 0.9), 0.008)
-		for k in range(4): D.box(sx * 0.909, 0.99 + k * 0.045, 0.1, 0.004, 0.004, 1.0, sh(vinyl, 0.72))
-		D.bevel_box(sx * 0.885, 0.97, -0.02, 0.08, 0.05, 0.42, sh(vinyl, 0.75), 0.02)
-		D.bevel_box(sx * 0.91, 0.82, 0.25, 0.02, 0.1, 0.5, sh(vinyl, 0.65), 0.008)
-		C.bevel_box(sx * 0.9, 1.15, 0.42, 0.02, 0.025, 0.09, chrome, 0.008)
-		D.push(Transform3D(Basis(Vector3.BACK, PI / 2 * sx), Vector3(sx * 0.905, 1.12, -0.12)))
-		C.cyl(0, 0, 0, 0.018, 0.018, 0.012, chrome, 10, true)
-		D.pop()
-		C.tube(Vector3(sx * 0.895, 1.12, -0.12), Vector3(sx * 0.89, 1.06, -0.18), 0.006, 0.006, chrome, 4)
-		D.tube(Vector3(sx * 0.875, 1.06, -0.18), Vector3(sx * 0.86, 1.06, -0.18), 0.009, 0.009, black, 6)
+		# the driver's door card rides on the door
+		var d: MeshBuilder = door[0] if (sx < 0 and door.size() == 3) else D
+		var c: MeshBuilder = door[1] if (sx < 0 and door.size() == 3) else C
+		var p: MeshBuilder = door[2] if (sx < 0 and door.size() == 3) else P
+		d.box(sx * 0.94, 0.98, 0.04, 0.03, 0.5, 1.3, sh(vinyl, 0.8))
+		p.box(sx * 0.935, 1.27, 0.06, 0.045, 0.06, 1.3, c1)
+		d.bevel_box(sx * 0.92, 1.06, 0.1, 0.02, 0.2, 1.0, sh(vinyl, 0.9), 0.008)
+		for k in range(4): d.box(sx * 0.909, 0.99 + k * 0.045, 0.1, 0.004, 0.004, 1.0, sh(vinyl, 0.72))
+		d.bevel_box(sx * 0.885, 0.97, -0.02, 0.08, 0.05, 0.42, sh(vinyl, 0.75), 0.02)
+		d.bevel_box(sx * 0.91, 0.82, 0.25, 0.02, 0.1, 0.5, sh(vinyl, 0.65), 0.008)
+		c.bevel_box(sx * 0.9, 1.15, 0.42, 0.02, 0.025, 0.09, chrome, 0.008)
+		c.push(Transform3D(Basis(Vector3.BACK, PI / 2 * sx), Vector3(sx * 0.905, 1.12, -0.12)))
+		c.cyl(0, 0, 0, 0.018, 0.018, 0.012, chrome, 10, true)
+		c.pop()
+		c.tube(Vector3(sx * 0.895, 1.12, -0.12), Vector3(sx * 0.89, 1.06, -0.18), 0.006, 0.006, chrome, 4)
+		d.tube(Vector3(sx * 0.875, 1.06, -0.18), Vector3(sx * 0.86, 1.06, -0.18), 0.009, 0.009, black, 6)
 	# sun visors flipped up, the driver's with the registration tucked in; dome light; air freshener
 	for sx in [-1.0, 1.0]:
 		D.bevel_box(sx * 0.46, 1.86, 0.38, 0.6, 0.025, 0.2, h("#8a8172"), 0.01)

@@ -390,7 +390,7 @@ func _job() -> void:
 func _intro() -> void:
 	await wait(1.0)
 	g.start_intro()
-	for t in [2.0, 6.0, 10.0, 12.5, 14.0, 16.5]:
+	for t in [2.0, 6.0, 10.0, 12.5, 13.4, 14.0, 15.9, 16.4, 17.0, 17.6, 18.0, 18.4, 18.65, 19.6]:
 		while g.intro.t < t and g.phase == "intro": await get_tree().process_frame
 		await shot("intro-%04.1f" % t)
 		note("intro_t", [t, g.truck.global_position, g.chipper.coupler_world().distance_to(g.truck.hitch_world())])

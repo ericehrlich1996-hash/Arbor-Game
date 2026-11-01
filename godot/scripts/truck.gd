@@ -41,6 +41,13 @@ const M_TACH := Vector3(0.3109, 1.3285, 0.667)
 const M_DIAL_R := 0.047
 const M_MIRROR := Vector3(-0.008, 1.739, 0.517)
 var modeled := false
+var door: Node3D = null            # the driver's door, pivoting on its front hinge (code-built truck only)
+var door_open := 0.0:              # 0 shut .. 1 swung all the way out
+	set(v):
+		door_open = v
+		if door: door.rotation.y = -DOOR_SWING * v
+const DOOR_SWING := 1.15           # radians at full open (about 66 degrees)
+var _door_tw: Tween
 var _model_wheels := {}          # f1 / f0 / r1 / r0 (front or rear, on the +x or -x side)
 
 ## the model's parts, ready to add: the body recoloured to this truck's paint and on the game's paint, chrome
@@ -145,6 +152,7 @@ func setup(rng: RandomNumberGenerator) -> void:
 		var gl: MeshInstance3D = m.glass.instance(Mats.truck_glass); gl.name = "Glass"
 		gl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(gl)
+		_build_door(m.door)
 	# collision: front clip, cab, bed floor, bed walls, tailgate, chassis
 	_box(Vector3(0, 0.95, 1.62), Vector3(2.0, 0.75, 1.9))
 	_box(Vector3(0, 1.35, 0.05), Vector3(2.0, 1.25, 1.46))
@@ -212,6 +220,47 @@ func setup(rng: RandomNumberGenerator) -> void:
 	mirror_quad.rotation.y = PI          # glass faces the driver (−Z)
 	mirror_quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mirror_quad)
+
+func _build_door(parts: Dictionary) -> void:
+	door = Node3D.new(); door.name = "Door"; door.position = Models.DOOR_HINGE
+	add_child(door)
+	var mesh := ArrayMesh.new()
+	for part in [[parts.paint, Mats.truck_paint], [parts.chrome, Mats.truck_chrome], [parts.dark, Mats.vcol]]:
+		var mb: MeshBuilder = part[0]
+		if mb.is_empty(): continue
+		mb.commit(mesh)
+		mesh.surface_set_material(mesh.get_surface_count() - 1, part[1])
+	var mi := MeshInstance3D.new(); mi.mesh = mesh; mi.name = "DoorBody"; door.add_child(mi)
+	var gmb: MeshBuilder = parts.glass
+	if not gmb.is_empty():
+		var gl: MeshInstance3D = gmb.instance(Mats.truck_glass); gl.name = "DoorGlass"
+		gl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		door.add_child(gl)
+
+## swing the door: open (a quick pull, easing to a stop with a little bounce on the check strap) or shut (slow
+## start, slamming home). Returns the tween so a caller can chain a sound on its end.
+func swing_door(to: float, secs := 0.45) -> Tween:
+	if _door_tw: _door_tw.kill()
+	_door_tw = create_tween()
+	if to > door_open:
+		_door_tw.tween_property(self, "door_open", to, secs).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	else:
+		_door_tw.tween_property(self, "door_open", to, secs).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	return _door_tw
+
+## snap it shut (skipping the intro, resets)
+func shut_door_now() -> void:
+	if _door_tw: _door_tw.kill()
+	door_open = 0.0
+
+## a quick open-and-shut as someone climbs in or out
+func door_blip() -> void:
+	if not door: return
+	if _door_tw: _door_tw.kill()
+	_door_tw = create_tween()
+	_door_tw.tween_property(self, "door_open", 0.85, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_door_tw.tween_interval(0.2)
+	_door_tw.tween_property(self, "door_open", 0.0, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 func _box(center: Vector3, size: Vector3) -> void:
 	var cs := CollisionShape3D.new()
