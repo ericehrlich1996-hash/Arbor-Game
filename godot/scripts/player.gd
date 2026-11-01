@@ -90,7 +90,7 @@ func _physics_process(dt: float) -> void:
 		if step_t > 1.3:
 			step_t = 0
 			Sfx.play("step")
-	var bob_y := absf(sin(bob)) * 0.025 if moving else 0.0
+	var bob_y := absf(sin(bob)) * 0.0125 if moving else 0.0
 	head.position.y = eye_h + bob_y
 
 const STEP_H := 0.36            # the tallest step you walk straight up (stairs, a porch, a dock edge)

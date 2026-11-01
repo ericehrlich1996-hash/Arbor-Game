@@ -132,14 +132,14 @@ func pose(dt: float, rev: bool, carrying: bool) -> void:
 	var on_guide: bool = not guide.is_empty() and not guide.get("too_far", false)
 	var want := 1.0 if (on and not carrying and (rev or on_guide)) else 0.0
 	eng = lerpf(eng, want, minf(1, dt * 9))
-	var bobx := sin(player.bob) * 0.012; var boby := -absf(cos(player.bob)) * 0.012
+	var bobx := sin(player.bob) * 0.006; var boby := -absf(cos(player.bob)) * 0.006
 	var pull_y := 0.0; var pull_r := 0.0
 	if pull > 0:
 		var kk := sin((1 - pull / 0.5) * PI); pull_y = -0.06 * kk; pull_r = 0.25 * kk
 	# idle at the hip
 	var iq := Quaternion(Vector3.UP, 0.55) * Quaternion(Vector3.RIGHT, 0.1 + pull_r) * Quaternion(Vector3.BACK, -0.22) * Quaternion(Vector3.BACK, roll)
 	_look_sway(dt)
-	var stride := sin(player.bob) * 0.022 * _walk
+	var stride := sin(player.bob) * 0.011 * _walk
 	var ip := Vector3(0.25 + bobx + _sway.x, -0.28 + pull_y + boby + _sway.y + absf(stride) * 0.4, -0.48 + stride)
 	# engaged: the bar runs out along the line of sight with the tip just under the crosshair
 	var reach := 1.0 + clampf(-player.pitch, 0, 1.2) * 0.5
@@ -389,7 +389,7 @@ func hold(side: float, p: Vector3, bar: Vector3, back: Vector3, relaxed := false
 
 ## the empty hand on one side, as when walking about
 func relax(side: float) -> void:
-	var swing: float = sin(player.bob) * side * _walk
+	var swing: float = sin(player.bob) * side * _walk * 0.5      # (dialled back by half: it read goofy at a run)
 	var breathe := sin(_t * 1.6) * 0.006
 	var p := Vector3(side * (0.27 + absf(swing) * 0.01), -0.245 + breathe - absf(swing) * 0.012, -0.52 - swing * 0.08)
 	p += Vector3(_sway.x, _sway.y, 0)
