@@ -1,0 +1,55 @@
+# Every push to main: export the Windows build and push it to itch.io.
+# The itch app on your machine (the ROG Ally) sees the new version and updates the game itself.
+# Needs the repository secret BUTLER_API_KEY (an itch.io API key).
+name: Ship to itch.io
+
+on:
+  push:
+    branches: [main]
+    paths: ["godot/**", ".github/workflows/itch.yml"]
+  workflow_dispatch: {}           # or run it by hand from the Actions tab
+
+concurrency:
+  group: itch
+  cancel-in-progress: true        # two quick pushes: only the newest gets built
+
+env:
+  GODOT_VERSION: "4.7"
+  ITCH_TARGET: "fizzehbuboleh/arborsim:windows"
+
+jobs:
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get Godot and the export templates
+        run: |
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fsSL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          curl -fsSL -o templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          unzip -q templates.tpz
+          mv templates/* "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/"
+
+      - name: Export the Windows build
+        working-directory: godot
+        run: |
+          # stamp the build so the game can show which one you're on
+          echo "build $(date -u +%Y-%m-%d) ${GITHUB_SHA::7}" > build_id.txt
+          godot --headless --path . --import || true
+          mkdir -p build/windows
+          godot --headless --path . --export-release "Windows Desktop" build/windows/ArborSimulator.exe
+          cp ../README.md build/windows/README.md
+          ls -la build/windows
+          test -f build/windows/ArborSimulator.exe
+
+      - name: Push to itch.io
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          curl -fsSL -o butler.zip https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default
+          unzip -q butler.zip -d butler && chmod +x butler/butler
+          ./butler/butler push godot/build/windows "$ITCH_TARGET" --userversion "${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"

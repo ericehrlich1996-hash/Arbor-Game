@@ -98,6 +98,10 @@ func _build() -> void:
 		body.add_child(ht)
 		return
 
+	# which build this is (the itch.io builds are stamped; a build you made yourself says so)
+	var bid := "your own build"
+	if FileAccess.file_exists("res://build_id.txt"): bid = FileAccess.get_file_as_string("res://build_id.txt").strip_edges()
+	var bl := _lbl("Arbor Simulator · " + bid, 12, DIM); body.add_child(bl)
 	_section("Sound")
 	_slider("volume", "Volume", 0.0, 1.0, 0.05, func(x): return "%d%%" % roundi(x * 100))
 	_slider("ambience", "Nature sounds", 0.0, 1.0, 0.05, func(x): return "%d%%" % roundi(x * 100))
