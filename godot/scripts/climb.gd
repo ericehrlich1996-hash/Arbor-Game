@@ -415,4 +415,4 @@ func catch_limb(p: WoodPiece) -> void:
 	if game.haul.carrying(): game.haul.drop_all()
 	game.haul.pick_up(p)
 	p.set_meta("held_t", 0.2)
-	game.hud.toast("Got it. Aim away from the house and throw it clear with [b]G[/b] · the saw's idling on your saddle.", 4.0)
+	game.hud.toast("Got it. The saw's idling on your saddle. Aim away from the house and throw it clear.", 4.0)
