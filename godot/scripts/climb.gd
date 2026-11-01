@@ -122,12 +122,28 @@ func interact() -> bool:
 	if climbing:
 		if h <= 0.12:
 			_get_off(); return true
+		if can_choke():
+			choke(); return true
 		_tell("off", "Climb all the way down to step off (or Shift + S to rappel).", 2.5)
 		return true
 	if game.player.tool != "climb" or tree.state != "stand": return false
 	if not near_trunk(): return false
 	_get_on()
 	return true
+
+## your line can come down to the stem just above your saddle (you choke it round the trunk), so the
+## wood above it can come off in rounds, one at a time, with you tied in below every cut
+func can_choke() -> bool:
+	if not climbing or h <= 0.12 or line.is_empty(): return false
+	var y := harness() + 0.3
+	return float(line.y) - y > 0.4 and y < tree.top_y - 0.35
+
+func choke() -> void:
+	var y := harness() + 0.3
+	line = {y = y, id = -1}
+	Sfx.play("pick", 0.7, 0.8)
+	game.hud.toast("Line's choked round the stem at %d ft. Everything above it can come off now: tie the lowering rope on above your cut, cut, and let it down." % roundi(y * 3.28), 5.0)
+	game.update_objectives()
 
 func near_trunk() -> bool:
 	var p: Player = game.player
@@ -232,7 +248,7 @@ func physics_step(dt: float) -> void:
 		fall("The tree went over with you on it."); return
 	if not line.is_empty():
 		var id := int(line.id)
-		if not tree.on_limbs.has(id) or float(tree.on_limbs[id]) < 0.25 or tree.top_y < float(line.y) + 0.15:
+		if (id >= 0 and (not tree.on_limbs.has(id) or float(tree.on_limbs[id]) < 0.25)) or tree.top_y < float(line.y) + 0.15:
 			line = {}
 			fall("Your climbing line came down out of the tree."); return
 	var cap: bool = game.cap() or game.tests != null
@@ -302,8 +318,9 @@ func _draw_line() -> void:
 	var cam := get_viewport().get_camera_3d()
 	var segs := []
 	if not line.is_empty():
-		var L: Dictionary = tree.T.limbs[int(line.id)]
-		var top := tree.to_world(L.base + Vector3(0, 0.04, 0))
+		var top: Vector3
+		if int(line.id) >= 0: top = tree.to_world((tree.T.limbs[int(line.id)] as Dictionary).base + Vector3(0, 0.04, 0))
+		else: top = tree.to_world(Vector3(Wood.r_at(tree.T, float(line.y)), float(line.y), 0))
 		var low: Vector3
 		if climbing: low = game.player.global_position + Vector3(0, HARNESS, 0)
 		else: low = tree.to_world(Vector3(0.45, 0.05, 0.25))
@@ -333,6 +350,8 @@ func _draw_line() -> void:
 func prompt() -> String:
 	if climbing:
 		if game.haul.carrying(): return "Holding the limb · aim away from the house and [b]G[/b] to throw it clear · [b]Q[/b] lets it drop"
+		if can_choke() and on_limbs_above() == 0:
+			return "[b]E[/b] Choke your climbing line round the stem here, to take the trunk down in rounds"
 		if block_y >= 0.0:
 			if line.is_empty(): return "A limb's stopping your lanyard. No climbing line, no getting past it"
 			return "A limb's stopping your lanyard · hold [b]F[/b] to flip it past (you're on the climbing line)" + (" ·%s" % "▮".repeat(int(flip_t / 0.9 * 6)) if flip_t > 0 else "")
@@ -344,6 +363,13 @@ func prompt() -> String:
 		if meter >= 0.0: return "Let go to throw"
 		return "Hold [b]left mouse[/b] and let go to throw a line into the crown" + (" · line set at %d ft" % roundi(float(line.y) * 3.28) if not line.is_empty() else "")
 	return ""
+
+## limbs still on the tree above your saddle (once they're off, the trunk comes down in rounds)
+func on_limbs_above() -> int:
+	var n := 0
+	for id in tree.on_limbs:
+		if float(tree.T.limbs[id].y) > harness() and float(tree.on_limbs[id]) > 0.08: n += 1
+	return n
 
 func status() -> String:
 	if not climbing: return ""

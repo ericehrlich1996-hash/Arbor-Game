@@ -51,6 +51,19 @@ func close() -> void:
 	game._was_captured = false            # the browser may refuse to grab the mouse back until a click
 	game._capture()
 
+var _quit_armed := false
+func _quit(b: Button) -> void:
+	if not _quit_armed:
+		_quit_armed = true
+		b.text = "Sure? Job progress is lost" if not game.in_hub else "Sure? Press again"
+		get_tree().create_timer(3.0).timeout.connect(func():
+			_quit_armed = false
+			if is_instance_valid(b): b.text = "Quit game")
+		return
+	Settings.save()
+	if Net.active(): Net.leave(true)
+	get_tree().quit()
+
 func _unhandled_input(ev: InputEvent) -> void:
 	if not visible: return
 	if ev is InputEventKey and ev.pressed and not ev.echo and ev.physical_keycode == KEY_ESCAPE:
@@ -80,6 +93,10 @@ func _build() -> void:
 	var t := _lbl("Paused", 30, Color("#ffe1b8")); t.size_flags_horizontal = Control.SIZE_EXPAND_FILL; head.add_child(t)
 	help_btn = _btn("Settings" if showing_help else "Controls", false); head.add_child(help_btn)
 	help_btn.pressed.connect(func(): showing_help = not showing_help; _build())
+	# quit to the desktop (asks once more first: whatever's left of a job in progress is lost)
+	if not OS.has_feature("web"):
+		var qb := _btn("Quit game", false); head.add_child(qb)
+		qb.pressed.connect(func(): _quit(qb))
 	var rb := _btn("Resume", true); head.add_child(rb)
 	rb.pressed.connect(close)
 

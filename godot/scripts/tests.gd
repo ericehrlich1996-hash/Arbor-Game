@@ -3753,3 +3753,54 @@ func _hub_orbit() -> void:
 	await shot("split-orbit")
 	Input.action_press("move_back", 1.0); await wait(0.3); Input.action_release("move_back")
 	note("stepped_away", not ws.active)
+
+## taking the spar down in rounds from the tree: top it, then choke your line lower, tie the lowering
+## rope round the stem above the cut, cut a round off, let it down, and go again
+func _climb_chunks() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(0.5)
+	var tr: AshTree = g.tree
+	var cl: Climb = g.climb
+	await _climb_line(tr.T.H * 0.62)
+	await _climb_on()
+	await _climb_to(float(cl.line.y) - 0.3)
+	var top0 := tr.top_y
+	await _saw_at(tr.to_world(Vector3(0, float(cl.line.y) + 0.35, 0)), func(): return tr.top_y < top0 - 0.1, 25.0)
+	note("topped", [snappedf(top0, 0.1), snappedf(tr.top_y, 0.1), cl.climbing])
+	# limbed up first, the way you would before rounding it down
+	for lid in tr.on_limbs.keys():
+		if lid != int(cl.line.id) and float(tr.T.limbs[lid].y) > cl.harness() - 3.0: tr.cut_standing_limb(lid, 0.0)
+	await wait(2.0)
+	for round_i in range(2):
+		g.equip("hands")
+		await _climb_down(20.0, cl.h - 0.8)
+		var could := cl.can_choke()
+		g.interact()
+		note("choked_%d" % round_i, [could, int(cl.line.id), snappedf(float(cl.line.y) - cl.harness(), 0.01), cl.climbing])
+		var hz := cl.harness()
+		g.equip("rope")
+		look_at_point(tr.to_world(Vector3(Wood.r_at(tr.T, hz + 1.0), hz + 1.0, 0)).lerp(tr.to_world(Vector3(0, hz + 1.0, 0)), 0.5))
+		await wait(0.2)
+		g.tie_lowering_line()
+		note("rope_on_%d" % round_i, [g.lower.tie.get("kind", ""), snappedf(float(g.lower.tie.get("y", 0.0)) - hz, 0.01)])
+		var ty: float = tr.top_y
+		var cut_y := hz + 0.6
+		var ok := await _saw_at(tr.to_world(Vector3(0, cut_y, 0)), func(): return tr.top_y < ty - 0.1, 25.0)
+		await wait(0.5)
+		var ld = g.lower.load
+		note("round_off_%d" % round_i, [ok, snappedf(ty - tr.top_y, 0.01), ld != null, cl.climbing, cl.falls])
+		g.equip("hands")
+		Input.action_press("throw")
+		var down := false
+		for k in range(250):
+			if g.lower.load == null: down = true; break
+			await wait(0.1)
+		Input.action_release("throw")
+		var gh := -1.0
+		if ld != null and is_instance_valid(ld):
+			var cw: Vector3 = ld.center_world()
+			gh = cw.y - g.world.H(cw.x, cw.z)
+		note("round_lowered_%d" % round_i, [down, snappedf(gh, 0.1), Ach.tally("lowered"), g.lower.snaps, g.lower.shocks, snappedf(ld.mass if ld else 0.0, 1.0)])
+		await shot("chunk-%d" % round_i)
+	note("chunks_end", [cl.climbing, cl.falls, snappedf(tr.top_y, 0.1)])

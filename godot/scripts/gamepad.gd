@@ -163,12 +163,17 @@ func _menu_move(m: Control, dir: Vector2) -> void:
 		if c == fo: continue
 		var rc: Rect2 = c.get_global_rect()
 		var d := rc.get_center() - c0
-		var along := d.dot(dir)
-		# must be that way: past our edge, not just a nudge
-		var edge := (from.size.y if dir.y != 0.0 else from.size.x) * 0.5
-		if along <= edge * 0.5: continue
-		var across := absf(d.dot(Vector2(dir.y, dir.x)))
-		var score := along + across * 2.5
+		if d.dot(dir) <= 4.0: continue
+		# measured edge to edge: the gap that way, and how far off to the side (0 if they overlap)
+		var along: float; var across: float
+		if dir.y != 0.0:
+			along = (rc.position.y - from.end.y) if dir.y > 0.0 else (from.position.y - rc.end.y)
+			across = maxf(0.0, maxf(rc.position.x - from.end.x, from.position.x - rc.end.x))
+		else:
+			along = (rc.position.x - from.end.x) if dir.x > 0.0 else (from.position.x - rc.end.x)
+			across = maxf(0.0, maxf(rc.position.y - from.end.y, from.position.y - rc.end.y))
+		if along < -from.size.length() * 0.25: continue
+		var score := maxf(along, 0.0) + across * 3.0 + absf(d.dot(Vector2(dir.y, dir.x))) * 0.05
 		if score < bd: bd = score; best = c
 	if best:
 		best.grab_focus()

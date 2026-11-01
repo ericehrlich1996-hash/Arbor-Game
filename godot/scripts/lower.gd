@@ -101,11 +101,11 @@ func tie_aimed(line_y: float) -> bool:
 		return true
 	if part.has("upper"):
 		var y := w.y
-		if y > line_y + 0.05:
-			game.hud.toast("Tie it below your block, or the top'll take the block with it.", 3.0); return true
+		if y < line_y + 0.15:
+			game.hud.toast("Tie it higher up the stem: above where you'll cut, with your line below the cut.", 3.0); return true
 		tie = {kind = "top", y = y, block_y = line_y}
 		Sfx.play("pick")
-		game.hud.toast("Lowering line's tied round the stem. Top it below the tie, then let it down.", 4.0)
+		game.hud.toast("Lowering line's round the stem. Cut below the tie (above your line), then let it run.", 4.0)
 		return true
 	return true
 
@@ -152,6 +152,8 @@ func physics_step(dt: float) -> void:
 		rope_len = minf(rope_len + RUN_SPEED * dt, b.y - game.world.H(b.x, b.z) + 4.0)
 	var d := a - b
 	var L := d.length()
+	var was_tight := _tight
+	_tight = L > rope_len
 	if L > rope_len and L > 0.01:
 		var n := d / L
 		var st := PhysicsServer3D.body_get_direct_state(load.get_rid())
@@ -161,9 +163,13 @@ func physics_step(dt: float) -> void:
 			var vout := v.dot(n)
 			if vout > 0.0:
 				load.apply_impulse(-n * vout * load.mass * 0.9, a - load.global_position)
-				if vout > SHOCK_SNAP:
+				# a shock is the rope coming tight on a piece that was falling free, not the swing after
+				var lin := st.linear_velocity.dot(n)
+				if not was_tight and lin > SHOCK_SNAP:
 					_snap(); return
-				if vout > SHOCK_FELT:
+				if not was_tight and lin > SHOCK_FELT and game.clock - _shock_t > 1.5:
+					_shock_t = game.clock
+					shocks += 1
 					Sfx.play("thud", 0.8, 0.7); Sfx.play("creak", 0.5, 0.9)
 					game.hud.toast("Shock load! The whole tree shook. Let it run sooner.", 2.5)
 					Ach.add("shock")
@@ -184,8 +190,13 @@ func physics_step(dt: float) -> void:
 	else:
 		_rest_t = 0.0
 
+var snaps := 0
+var _shock_t := -10.0
+var _tight := false
+var shocks := 0
 func _snap() -> void:
 	load = null
+	snaps += 1
 	Sfx.play("crack", 0.8, 1.5)
 	game.hud.toast("SNAP! It caught too hard and the rope parted. Let it run before it drops.", 4.0)
 
