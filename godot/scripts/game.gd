@@ -557,10 +557,13 @@ func start_intro() -> void:
 	can_node = Node3D.new(); truck.cab_cam.add_child(can_node)
 	can_mesh = Models.can().instance(); can_mesh.position = Vector3(0, -0.02, 0); can_node.add_child(can_mesh)
 	var hand := Models.can_hand().instance(); can_node.add_child(hand)
+	# the same gloves and arms as in your hands everywhere else (Saw.arm_pose)
+	var reach_arm := Saw.make_arm(truck.cab_cam, -1.0)
 	intro_arms = {
-		drink = Models.arm().instance(),
-		fist = Models.fist(-1).instance(), reach = Models.arm().instance()}
-	for k in intro_arms: truck.cab_cam.add_child(intro_arms[k]); intro_arms[k].visible = false
+		drink = Models.arm().instance(), drink_up = Models.arm().instance(),
+		fist = reach_arm.fist, reach = reach_arm.arm}
+	truck.cab_cam.add_child(intro_arms.drink); truck.cab_cam.add_child(intro_arms.drink_up)
+	for k in intro_arms: intro_arms[k].visible = false
 	for c in [can_mesh, hand] + intro_arms.values(): c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	can_node.visible = false
 	truck.door_open = 0.0
@@ -619,9 +622,9 @@ func _step_intro(dt: float) -> void:
 		for g in [[0.9, "glug0"], [1.5, "glug1"], [2.1, "glug2"], [2.9, "can_crush"], [4.1, "clank"]]:
 			if t0 > g[0] and not I.flags.has(g[1]): I.flags[g[1]] = true; Sfx.play(g[1])
 	# the right sleeve runs from the glove's cuff back to a shoulder below and beside the camera
-	intro_arms.drink.visible = can_node.visible
+	intro_arms.drink.visible = can_node.visible; intro_arms.drink_up.visible = can_node.visible
 	if can_node.visible:
-		_sleeve(intro_arms.drink, can_node.transform * Models.CAN_WRIST, Vector3(0.24, -0.42, 0.12), 0.04)
+		Saw.limb(intro_arms.drink, intro_arms.drink_up, can_node.transform * Models.CAN_WRIST, Saw.SH_R, 1.0)
 	cam.rotation = Vector3(pitch, PI + rel, 0)
 	var t2: float = I.t - INTRO_DRIVE - INTRO_DRINK
 	if t2 > 0: _intro_get_out(I, t2, eye, ty, rel, pitch)
@@ -632,12 +635,6 @@ func _step_intro(dt: float) -> void:
 		truck.global_transform = truck.global_transform * Transform3D(Basis(Vector3.BACK, roll), Vector3.ZERO)
 	if I.t > INTRO_DRIVE + INTRO_DRINK + INTRO_OUT: end_intro()
 
-## a sleeve (Models.arm) from a to b, in its parent's frame
-func _sleeve(m: MeshInstance3D, a: Vector3, b: Vector3, r := 0.042) -> void:
-	var d := b - a; var L := d.length()
-	if L < 1e-3: return
-	m.transform = Transform3D(Basis(Quaternion(Vector3.UP, d / L)) * Basis.from_scale(Vector3(r, L, r)), a)
-
 ## getting out: look to the door, reach for the handle, pop it and push it open, step down out of the cab, turn
 ## back and swing it shut (the truck rocks), then turn to the client
 func _intro_get_out(I: Dictionary, t2: float, eye: Vector3, ty: float, rel: float, pitch: float) -> void:
@@ -647,8 +644,7 @@ func _intro_get_out(I: Dictionary, t2: float, eye: Vector3, ty: float, rel: floa
 	# --- the left hand to the handle (door card pull, in the door's frame) and back
 	var handle: Vector3 = truck.door.global_transform * Vector3(-0.1, 1.15, -0.36) if truck.door else T * Vector3(0.9, 1.15, 0.42)
 	var reach: float = ez.call(0.15, 0.6) * (1.0 - ez.call(1.05, 1.45))
-	var rest := Vector3(-0.2, -0.42, -0.3)
-	var shoulder_l := Vector3(-0.24, -0.42, 0.12)
+	var rest := Vector3(-0.24, -0.4, -0.38)
 	intro_arms.fist.visible = reach > 0.01 and t2 < 1.5
 	intro_arms.reach.visible = intro_arms.fist.visible
 	# --- the door: latch, a shove open, shut again from outside
@@ -692,11 +688,10 @@ func _intro_get_out(I: Dictionary, t2: float, eye: Vector3, ty: float, rel: floa
 	cam.global_rotation = Vector3(pt, yaw, 0)
 	# the hand, placed after the camera so it sits on the handle this frame
 	if intro_arms.fist.visible:
+		# the glove closes round the door's pull handle (it runs fore and aft along the door)
 		var at := rest.lerp(cam.to_local(handle), reach)
-		var to_sh := (shoulder_l - at).normalized()
-		var up := Vector3.UP if absf(to_sh.y) < 0.95 else Vector3.BACK
-		intro_arms.fist.transform = Transform3D(Basis.looking_at(-to_sh, up), at)
-		_sleeve(intro_arms.reach, at + to_sh * 0.065, shoulder_l, 0.037)
+		var bar := cam.global_transform.basis.inverse() * (truck.global_transform.basis * Vector3.BACK)
+		Saw.arm_pose(intro_arms.fist, intro_arms.reach, intro_arms.fist.get_child(0), -1.0, at, bar, Vector3(-1, 0.6, 0).normalized(), Saw.SH_L)
 
 func end_intro() -> void:
 	if phase != "intro": return
@@ -713,7 +708,8 @@ func end_intro() -> void:
 	chipper.hitch_now()
 	player.visible = true
 	if can_node: can_node.queue_free(); can_node = null
-	for k in intro_arms: intro_arms[k].queue_free()
+	for k in intro_arms:
+		if is_instance_valid(intro_arms[k]) and intro_arms[k].get_parent() == truck.cab_cam: intro_arms[k].queue_free()
 	intro_arms = {}
 	truck.door_open = 0.0
 	truck.cab_cam.position = Models.EYE

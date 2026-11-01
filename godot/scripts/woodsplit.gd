@@ -788,13 +788,13 @@ func _pose_axe(_dt: float) -> void:
 	# hands on the handle: right at the knob, left sliding down from near the head to meet it
 	var s: Saw = game.saw
 	var left_at := lerpf(-0.42, -0.1, clampf(wind + (1.0 if swing >= 0.0 else 0.0), 0.0, 1.0))
-	s._fist_at(s.fist_r, s.arm_r, axe.transform * Vector3(0, 0, -0.03), Vector3(0.26, -0.62, 0.15))
-	s._fist_at(s.fist_l, s.arm_l, axe.transform * Vector3(0, 0, left_at), Vector3(-0.3, -0.6, 0.12))
-	for m in [s.fist_r, s.fist_l, s.arm_r, s.arm_l]: m.visible = true
+	var ax_dir := axe.transform.basis.z.normalized()
+	s.hold(1.0, axe.transform * Vector3(0, 0, -0.03), ax_dir, axe.transform.basis.y)
+	s.hold(-1.0, axe.transform * Vector3(0, 0, left_at), ax_dir, axe.transform.basis.y)
 
 func _hold_round_hands() -> void:
 	var s: Saw = game.saw
 	var R: float = carry_round.R
-	s._fist_at(s.fist_r, s.arm_r, Vector3(R + 0.02, -0.5, -0.62), Vector3(0.3, -0.75, 0.1))
-	s._fist_at(s.fist_l, s.arm_l, Vector3(-R - 0.02, -0.5, -0.62), Vector3(-0.3, -0.75, 0.1))
-	for m in [s.fist_r, s.fist_l, s.arm_r, s.arm_l]: m.visible = true
+	# open hands flat against either side of the round, fingers forward and under it
+	for sd in [1.0, -1.0]:
+		s.hold(sd, Vector3(sd * (R + 0.035), -0.5, -0.6), Vector3.UP, Vector3(sd, 0.2, 0), true, Vector3(-sd * 0.15, -0.25, -1))

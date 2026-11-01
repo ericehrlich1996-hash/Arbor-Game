@@ -1239,6 +1239,13 @@ func _viewhands() -> void:
 	await wait(0.6)
 	await shot("vh-saw-trunk")
 	g.force_rev = false
+	# every other tool that puts something in your hands
+	look_at_point(tp + Vector3(0, 1.4, 0)); g.player.pitch = -0.1
+	for t in ["wedge", "rope", "rod"]:
+		g.equip(t); g.player.tool = t
+		await wait(0.5)
+		await shot("vh-tool-" + t)
+	g.equip("hands")
 
 func _weather() -> void:
 	await wait(0.5)
@@ -2336,7 +2343,7 @@ func _dock() -> void:
 	g.player.teleport(Vector3(hp.x, g.world.H(hp.x, hp.z) + 0.05, hp.z + 0.8))
 	await wait(0.3)
 	g.rig.use()
-	note("rigged", [g.rig.rope, g.rig.rope_piece == lg])
+	note("rigged", [g.rig.rope, g.rig.rope_piece == lg, g.player.tool])
 	g.enter_truck()
 	await wait(0.4)
 	Input.action_press("move_fwd")

@@ -122,8 +122,18 @@ func pose(dt: float) -> void:
 		var reach := clampf((ang - rest) / (1.45 - rest), 0, 1)
 		hammer.transform = Transform3D(Basis(Vector3.RIGHT, -ang) * Basis(Vector3.BACK, 0.12), Vector3(0.2 - reach * 0.08, -0.3 + reach * 0.04, -0.42 - reach * 0.12))
 		held_wedge.transform = Transform3D(Basis(Vector3.RIGHT, -0.25) * Basis(Vector3.UP, PI * 0.1), Vector3(-0.23, -0.23, -0.6))
+		# the right hand round the sledge's rubber grip, the left pinching the back of the wedge
+		var s: Saw = game.saw
+		var hb := hammer.transform.basis
+		s.hold(1.0, hammer.transform * Vector3(0, -0.015, 0), hb * Vector3.UP, hb * Vector3(1, 0, 0.4))
+		var wb := held_wedge.transform.basis
+		s.hold(-1.0, held_wedge.transform * Vector3(0, 0, 0.012), wb * Vector3.RIGHT, wb * Vector3.UP)
 	if coil.visible:
 		coil.transform = Transform3D(Basis(Vector3.UP, 0.5).scaled(Vector3(0.55, 0.55, 0.55)), Vector3(-0.3, -0.3, -0.62))
+		# the coil hangs from the left hand, hooked over the top of the loops
+		var s2: Saw = game.saw
+		var cb := coil.transform.basis.orthonormalized()
+		s2.hold(-1.0, coil.transform * Vector3(0, 0.125, 0.018), cb * Vector3.RIGHT, cb * Vector3(0, 1, 0.3))
 
 # ---------------------------------------------------------------- aiming
 ## the back cut under the crosshair that can take a wedge, or {}
@@ -304,7 +314,9 @@ func _rope_action() -> bool:
 				rope = "rigged"
 				rope_len = (_anchor() if rope_piece else anchor_w).distance_to(game.truck.hitch_world()) + 0.6
 				Sfx.play("clank")
-				if rope_piece: game.hud.toast("Rope's on the hitch. Get in and drive up the lawn, nice and slow, to drag the log out.", 4.5)
+				if rope_piece:
+					game.hud.toast("Rope's on the hitch. Get in and drive up the lawn, nice and slow, to drag the log out.", 4.5)
+					game.equip("hands")          # log and truck linked: put the rope tool away (bare hands for the door)
 				else: game.hud.toast("Rope's on the hitch. Get in and ease the truck away until it's bar-tight (don't overdo it), park, then go make your cuts.", 5.5)
 				return true
 			if _near_tie():

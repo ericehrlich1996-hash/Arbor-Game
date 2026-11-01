@@ -664,14 +664,6 @@ static func chain_link() -> MeshBuilder:
 	mb.box(0, 0.007, -0.003, 0.019, 0.006, 0.008, h("#b8bcc0"))
 	return mb
 
-## a gloved hand, kept simple: a ball with a cuff behind it (the bar it holds runs along local X)
-static func fist(_side: float) -> MeshBuilder:
-	var mb := MeshBuilder.new()
-	var glove := h("#c9a46a"); var cuff := h("#8a6a3a")
-	mb.sphere(0, 0.01, 0, 0.045, 0.042, 0.045, glove, 12, 8)
-	mb.tube(Vector3(0, 0.015, 0.03), Vector3(0, 0.02, 0.075), 0.034, 0.04, cuff, 10)
-	return mb
-
 ## a work glove closed round a bar that runs along local X through the origin. The forearm comes in from +Z (the
 ## cuff ends at HAND_WRIST), the back of the hand faces +Y, the fingers come over the far side (-Z) and curl
 ## underneath, and the thumb wraps the near side. side: 1 right hand, -1 left (the thumb goes on the inside).
@@ -706,17 +698,6 @@ static func hand(side: float, curl := 1.0) -> MeshBuilder:
 	mb.tube(t1, t2, 0.012, 0.011, sh(gl, 1.03), 6, true)
 	# the cuff, closed at both ends so you never see inside it
 	mb.tube(Vector3(0, 0.004, 0.078), HAND_WRIST, 0.036, 0.04, cuff, 10, true)
-	return mb
-
-## open glove + sleeve reaching back toward the camera (idle hands)
-static func glove(side: float) -> MeshBuilder:
-	var mb := MeshBuilder.new()
-	var gl := h("#c9a46a"); var cuff := h("#9c7a44"); var sleeve := h("#5a6a3a")
-	mb.sphere(0, 0, 0, 0.05, 0.045, 0.065, gl, 8, 6)
-	for k in range(4): mb.tube(Vector3(-0.03 + k * 0.02, 0.02, -0.04), Vector3(-0.03 + k * 0.02, -0.035, -0.06), 0.014, 0.012, sh(gl, 0.95), 5)
-	mb.tube(Vector3(side * -0.035, 0, 0.02), Vector3(side * -0.05, -0.03, -0.04), 0.016, 0.014, gl, 5)
-	mb.tube(Vector3(0, 0, 0.04), Vector3(side * 0.06, -0.12, 0.3), 0.05, 0.06, cuff, 7)
-	mb.tube(Vector3(side * 0.06, -0.12, 0.3), Vector3(side * 0.14, -0.26, 0.62), 0.06, 0.075, sleeve, 8)
 	return mb
 
 ## sleeve from the origin to (0,1,0); scaled per frame from wrist toward shoulder
