@@ -413,11 +413,11 @@ func pose_hands(carrying: bool) -> void:
 			relax(side)
 	# rounds ride on the right shoulder: that hand's up holding them, out of sight
 	if wood_on_shoulder: fist_r.visible = false; arm_r.visible = false
-	# the rod: the right hand round the cork below the reel
+	# the rod: the right hand round the reel seat, the reel hanging below it between the fingers
 	var fishing = game.get("fishing")
 	if not carrying and player.tool == "rod" and fishing and fishing.rod and fishing.rod.visible:
 		var rt: Transform3D = fishing.rod.transform
-		hold(1.0, rt * Vector3(0, -0.055, 0.035), (rt.basis * Vector3(0, 0.22, -0.07)).normalized(), rt.basis * Vector3(1, 0, 0.3))
+		hold(1.0, rt * Vector3(0, 0.088, -0.009), (rt.basis * Vector3(0, 0.22, -0.07)).normalized(), rt.basis * Vector3(1, 0, -0.4))
 	guide = {}
 	_draw_guide()
 
