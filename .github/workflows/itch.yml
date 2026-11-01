@@ -1,5 +1,6 @@
-# Every push to main: export the Windows build and push it to itch.io.
-# The itch app on your machine (the ROG Ally) sees the new version and updates the game itself.
+# Every push to main: export the Windows and Linux builds and push them to itch.io.
+# Windows -> the ROG Ally (and other PCs). Linux -> Steam Deck and Linux PCs.
+# The itch app sees each new version and updates the game itself.
 # Needs the repository secret BUTLER_API_KEY (an itch.io API key).
 name: Ship to itch.io
 
@@ -15,11 +16,22 @@ concurrency:
 
 env:
   GODOT_VERSION: "4.7"
-  ITCH_TARGET: "fizzehbuboleh/arborsim:windows"
+  ITCH_PROJECT: "fizzehbuboleh/arborsim"
 
 jobs:
-  windows:
+  build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false            # a broken Linux build never blocks the Windows one
+      matrix:
+        include:
+          - channel: windows
+            preset: "Windows Desktop"
+            binary: ArborSimulator.exe
+          - channel: linux
+            preset: "Linux"
+            binary: ArborSimulator.x86_64
+    name: ${{ matrix.channel }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,17 +46,23 @@ jobs:
           unzip -q templates.tpz
           mv templates/* "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/"
 
-      - name: Export the Windows build
+      - name: Export the ${{ matrix.channel }} build
         working-directory: godot
         run: |
+          out="build/${{ matrix.channel }}"
           # stamp the build so the game can show which one you're on
           echo "build $(date -u +%Y-%m-%d) ${GITHUB_SHA::7}" > build_id.txt
           godot --headless --path . --import || true
-          mkdir -p build/windows
-          godot --headless --path . --export-release "Windows Desktop" build/windows/ArborSimulator.exe
-          cp ../README.md build/windows/README.md
-          ls -la build/windows
-          test -f build/windows/ArborSimulator.exe
+          mkdir -p "$out"
+          godot --headless --path . --export-release "${{ matrix.preset }}" "$out/${{ matrix.binary }}"
+          cp ../README.md "$out/README.md"
+          if [ "${{ matrix.channel }}" = "linux" ]; then
+            chmod +x "$out/${{ matrix.binary }}"
+            # tells the itch app (and Steam Deck players using it) which file to launch
+            printf '[[actions]]\nname = "play"\npath = "%s"\n' "${{ matrix.binary }}" > "$out/.itch.toml"
+          fi
+          ls -la "$out"
+          test -f "$out/${{ matrix.binary }}"
 
       - name: Push to itch.io
         env:
@@ -52,4 +70,5 @@ jobs:
         run: |
           curl -fsSL -o butler.zip https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default
           unzip -q butler.zip -d butler && chmod +x butler/butler
-          ./butler/butler push godot/build/windows "$ITCH_TARGET" --userversion "${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
+          ./butler/butler push "godot/build/${{ matrix.channel }}" "${ITCH_PROJECT}:${{ matrix.channel }}" \
+            --userversion "${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
