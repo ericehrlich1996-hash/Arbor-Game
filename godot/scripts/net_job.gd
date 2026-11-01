@@ -340,6 +340,18 @@ func as_peer(id: int, fn: Callable) -> void:
 	game.player = keep_p; game.haul = keep_h; game.aim = keep_aim
 	for s in said: Net.tell("toast", s, id)
 
+## a crew member up the tree just cut a light limb: it's theirs, in their hands (they throw it)
+func _hand_to(b: WoodPiece, id: int) -> void:
+	var nid := nid_of(b)
+	if nid == 0:
+		nid = next_id; next_id += 1
+		b.set_meta("nid", nid); pieces[nid] = b
+	holders[nid] = id
+	b.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC; b.freeze = true
+	b.mode = "held"; b.collision_layer = 0; b.collision_mask = 0
+	_send_defs(false)
+	Net.tell("catch", [nid], id)
+
 # ---------------------------------------------------------------- the guests' requests
 func on_ask(id: int, name: String, a: Array) -> void:
 	match name:
@@ -386,7 +398,9 @@ func on_ask(id: int, name: String, a: Array) -> void:
 			if a.size() > 0 and a[0] is Array: on_pose(id, a[0])
 			as_peer(id, func(): game.rig.use())
 		# up in the tree: a guest climber's cut through a limb or the stem, and their lowering line
-		"crown": game.climb.cut_crown(str(a[0]), float(a[1]), int(a[2]), float(a[3]), a[4])
+		"crown":
+			var cp: WoodPiece = game.climb.cut_crown(str(a[0]), float(a[1]), int(a[2]), float(a[3]), a[4])
+			if game.climb.catchable(cp): _hand_to(cp, id)
 		"lower_tie":
 			on_pose(id, a[0])
 			as_peer(id, func(): game.lower.tie_aimed(float(a[1])))

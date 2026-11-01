@@ -3332,6 +3332,22 @@ func _climb() -> void:
 		var n0: int = g.pieces().size()
 		var ok := await _saw_at(tr.to_world(Wood.limb_pt(L, 0.12)), func(): return float(tr.on_limbs.get(id, 0.0)) < 0.9, 15.0)
 		note("limb_cut", [ok, tr.on_limbs.get(id, "gone"), g.pieces().size() - n0])
+		# a light limb comes into your hands with the saw still running on its strap
+		await wait(0.3)
+		var held: Array = g.haul.carry
+		note("caught", [held.size(), snappedf(held[0].mass, 0.1) if held.size() > 0 else -1.0, g.player.tool, g.saw.on])
+		await shot("climb-holding-limb")
+		if held.size() > 0:
+			var lb: WoodPiece = held[0]
+			var e := InputEventAction.new(); e.action = "throw"; e.pressed = true
+			g._unhandled_input(e)
+			await wait(0.1)
+			note("thrown", [g.haul.carrying(), snappedf(Vector2(lb.linear_velocity.x, lb.linear_velocity.z).length(), 0.1), lb.mode])
+			await wait(2.5)
+			var w := lb.global_position - tr.global_position
+			note("landed_out", snappedf(Vector2(w.x, w.z).length(), 0.1))
+		g.equip("saw")
+		note("saw_still_running", g.saw.on)
 	await wait(1.0)
 	# top it out above the tie-in
 	var ty: float = float(cl.line.y) + 0.35

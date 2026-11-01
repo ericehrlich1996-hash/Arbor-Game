@@ -550,6 +550,15 @@ func _guest_climbing() -> void:
 		var ok := await _saw_at(tr.to_world(Wood.limb_pt(L, tc)), func(): return float(tr.on_limbs.get(id, 0.0)) < tc + 0.05, 15.0)
 		await wait(1.0)
 		note("guest_limb_cut", [ok, tr.on_limbs.get(id, "gone"), g.pieces().size() - n0])
+		# light ones come back into your hands: throw it clear
+		var caught := await until(func(): return g.haul.carrying(), 3.0)
+		var cm: float = g.haul.carry[0].mass if caught else -1.0
+		note("guest_caught", [caught, snappedf(cm, 0.1), g.saw.on])
+		if caught:
+			var e := InputEventAction.new(); e.action = "throw"; e.pressed = true
+			g._unhandled_input(e)
+			await wait(0.5)
+			note("guest_threw", not g.haul.carrying())
 	# the lowering line on the next limb, then the cut, then let it down with G
 	var id2 := await _guest_pick(cl)
 	note("guest_second_limb", id2 >= 0)

@@ -177,7 +177,8 @@ func lands_in_bed(t: Vector3) -> String:
 func throw_one() -> void:
 	if carry.is_empty(): return
 	var b: WoodPiece = carry.pop_back()
-	var tgt = throw_target()
+	var up_tree: bool = game.climb != null and game.climb.climbing
+	var tgt = null if up_tree else throw_target()
 	var start := b.center_world()
 	release(b)
 	if tgt != null:
@@ -203,7 +204,11 @@ func throw_one() -> void:
 		b.linear_velocity = Vector3(d.x / tf, d.y / tf + 0.5 * 9.81 * tf, d.z / tf) + bd.v
 	else:
 		var fw: Vector3 = game.player.fwd()
-		b.linear_velocity = fw * 4.2 * (1 - minf(0.5, b.mass / 120.0)) + Vector3(0, 2.4, 0)
+		if up_tree:
+			# a good shove out and away from the stem: clears the crown below and lands well out
+			b.linear_velocity = fw * 5.2 * (1 - minf(0.4, b.mass / 90.0)) + Vector3(0, 1.4, 0)
+		else:
+			b.linear_velocity = fw * 4.2 * (1 - minf(0.5, b.mass / 120.0)) + Vector3(0, 2.4, 0)
 	b.angular_velocity = Vector3(randf() - 0.5, (randf() - 0.5) * 0.5, randf() - 0.5) * 2
 	_let_go(b)
 	Sfx.play("pick")

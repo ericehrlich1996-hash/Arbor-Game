@@ -845,12 +845,13 @@ func _unhandled_input(ev: InputEvent) -> void:
 func equip(t: String) -> void:
 	if t == "saw" and saw.racked: hud.toast("The saw is on the chipper rack.", 1.8); return
 	if haul.carrying(): haul.drop_all()
-	if t != "saw" and saw.on: saw.stop()
+	if t != "saw" and saw.on and not (climb and climb.climbing): saw.stop()
 	if fishing and (player.tool == "rod") != (t == "rod"): fishing.equip(t == "rod")
 	if climb and (player.tool == "climb") != (t == "climb"): climb.equip(t == "climb")
 	player.tool = t
 	hud.set_tool(t, muffs)
 	if t == "saw" and not saw.on: hud.toast("Press R to pull-start the saw.", 2.2)
+	elif t == "saw" and climb and climb.climbing: hud.toast("Saw's still running.", 1.4)
 	if t == "wedge": hud.toast("Wedges: make your notch, start the back cut, then tap a wedge into the kerf behind the bar.", 3.5)
 	if t == "rope":
 		if climb and climb.climbing: hud.toast("Lowering line: aim at a limb (or the stem above you) and left click to tie it on. Cut below the tie, then hold G to let it down.", 4.5)
@@ -1956,6 +1957,11 @@ func net_pose():
 ## a message from the host
 func net_event(name: String, a: Array) -> void:
 	match name:
+		"catch":
+			# the limb I just cut, handed back to me by the host's game
+			var cb = Net.job.piece(int(a[0])) if Net.job else null
+			if cb != null and climb and climb.climbing: climb.catch_limb(cb)
+			elif cb != null and Net.job: Net.job.mine[int(a[0])] = true; Net.job.give(cb, Vector3.ZERO, Vector3.ZERO)
 		"begin":
 			if in_hub: begin_job(int(a[0]), int(a[1]))
 		"home": go_home_now()

@@ -19,6 +19,7 @@ const ROUND_SPEED := 0.6
 const STAND_OFF := 0.38       # your feet sit this far off the bark
 const FALL_COST := 150
 const THROW_T := 1.4          # seconds for the throw meter to fill
+const HAND_MAX := 30.0        # kg: a limb this light you catch as it comes off and toss clear yourself
 
 var game
 var tree: AshTree
@@ -162,6 +163,8 @@ func _get_off() -> void:
 	p.teleport(Vector3(out.x, game.world.H(out.x, out.z) + 0.05, out.z))
 	p.col_shape.disabled = false
 	Sfx.play("thud", 0.5, 1.2)
+	# the saw on your strap gets switched off on the way down
+	if game.saw.on and p.tool != "saw": game.saw.stop()
 	game.hud.toast("Feet on the ground.", 1.6)
 
 ## off the tree the hard way
@@ -172,6 +175,8 @@ func fall(why: String) -> void:
 	p.climbing = false
 	falling = true
 	falls += 1
+	if game.haul.carrying(): game.haul.drop_all()
+	if game.saw.on and game.player.tool != "saw": game.saw.stop()
 	p.col_shape.disabled = false
 	p.collision_mask = 1 | 4 | 8 | 16            # nothing in the crown to catch on
 	p.velocity = Vector3(cos(th), 0, sin(th)) * 0.5
@@ -327,6 +332,7 @@ func _draw_line() -> void:
 # ---------------------------------------------------------------- what's said, and what's on screen
 func prompt() -> String:
 	if climbing:
+		if game.haul.carrying(): return "Holding the limb · aim away from the house and [b]G[/b] to throw it clear · [b]Q[/b] lets it drop"
 		if block_y >= 0.0:
 			if line.is_empty(): return "A limb's stopping your lanyard. No climbing line, no getting past it"
 			return "A limb's stopping your lanyard · hold [b]F[/b] to flip it past (you're on the climbing line)" + (" ·%s" % "▮".repeat(int(flip_t / 0.9 * 6)) if flip_t > 0 else "")
@@ -374,12 +380,13 @@ func finish_crown_cut(c: Dictionary) -> void:
 		Net.ask("crown", [kind, float(c.get("y", 0.0)), int(c.get("id", -1)), float(c.get("t", 0.0)), toward])
 		Sfx.play("crunch")
 	else:
-		cut_crown(kind, float(c.get("y", 0.0)), int(c.get("id", -1)), float(c.get("t", 0.0)), toward)
+		var p := cut_crown(kind, float(c.get("y", 0.0)), int(c.get("id", -1)), float(c.get("t", 0.0)), toward)
+		if why == "": after_cut(p)
 	if why != "": fall(why)
 	game.update_objectives()
 
 ## the host's game takes the wood off (asked by its own climber, or a crew member's)
-func cut_crown(kind: String, y: float, id: int, t: float, toward: Vector3) -> void:
+func cut_crown(kind: String, y: float, id: int, t: float, toward: Vector3) -> WoodPiece:
 	var p: WoodPiece = null
 	if kind == "top":
 		p = tree.top_out(y, toward)
@@ -387,3 +394,25 @@ func cut_crown(kind: String, y: float, id: int, t: float, toward: Vector3) -> vo
 	else:
 		p = tree.cut_standing_limb(id, t)
 	if p and game.lower: game.lower.on_crown_cut(kind, y, id, t, p)
+	return p
+
+## a limb light enough to hold, and not already hanging on the lowering line?
+func catchable(p) -> bool:
+	if p == null or not is_instance_valid(p) or p.kind != "limb": return false
+	if game.lower and game.lower.load == p: return false
+	return p.mass <= HAND_MAX
+
+## your cut just came through: a light limb, you catch it (the saw hangs off your saddle, still
+## running) and throw it clear; a heavy one comes down by itself, and it'd better miss the house
+func after_cut(p) -> void:
+	if not climbing or p == null or not is_instance_valid(p): return
+	if catchable(p): catch_limb(p)
+	elif p.kind == "limb" and not (game.lower and game.lower.load == p):
+		game.hud.toast("Too heavy to hold up here. Rig the big ones on the lowering line (rope tool) before you cut.", 4.0)
+
+func catch_limb(p: WoodPiece) -> void:
+	game.equip("hands")                    # (up here the saw keeps running on its strap)
+	if game.haul.carrying(): game.haul.drop_all()
+	game.haul.pick_up(p)
+	p.set_meta("held_t", 0.2)
+	game.hud.toast("Got it. Aim away from the house and throw it clear with [b]G[/b] · the saw's idling on your saddle.", 4.0)
