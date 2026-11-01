@@ -3537,6 +3537,7 @@ func _gamepad() -> void:
 	_jb(JOY_BUTTON_LEFT_SHOULDER, true); await wait(0.2)
 	var wh: Gamepad.ToolWheel = g.gamepad.wheel
 	note("pad_wheel_open", [wh.visible, wh.items.size()])
+	note("pad_hotbar_hidden", g.hud.hotbar.modulate.a < 0.01)
 	note("pad_hints", [g.hud.pad_on, g.hud.help_lbl.text.begins_with("[b]Left stick[/b]"), g.hud.pad_words("Talk with [b]E[/b], cut with [b]Left click[/b]")])
 	var n: int = wh.items.size()
 	var ang := TAU * 1.0 / n
@@ -3587,7 +3588,18 @@ func _gamepad() -> void:
 	note("pad_pause", [g.pause.is_open(), fo != null and g.pause.panel.is_ancestor_of(fo)])
 	await _jtap(JOY_BUTTON_DPAD_DOWN)
 	var fo2: Control = g.get_viewport().gui_get_focus_owner()
+	var nb: NodePath = fo.focus_neighbor_bottom
+	var nxt: Control = fo.find_valid_focus_neighbor(SIDE_BOTTOM)
 	note("pad_menu_moved", [fo2 != null and fo2 != fo, fo.get_class() + ":" + str(fo.get("text")), (fo2.get_class() + ":" + str(fo2.get("text"))) if fo2 else "none"])
+	# right on a slider slides it
+	var v0: float = (fo2 as Range).value if fo2 is Range else -1.0
+	await _jtap(JOY_BUTTON_DPAD_LEFT)
+	var v1: float = (fo2 as Range).value if fo2 is Range else -1.0
+	await _jtap(JOY_BUTTON_DPAD_RIGHT)
+	note("pad_slider_moves", [v0, v1, (fo2 as Range).value if fo2 is Range else -1.0])
+	for i in range(3): await _jtap(JOY_BUTTON_DPAD_DOWN)
+	var fo3: Control = g.get_viewport().gui_get_focus_owner()
+	note("pad_menu_down3", (fo3.get_class() + ":" + str(fo3.get("text"))) if fo3 else "none")
 	await _jtap(JOY_BUTTON_B)
 	await wait(0.3)
 	note("pad_unpaused", not g.pause.is_open())
@@ -3626,7 +3638,7 @@ func _gamepad() -> void:
 	await wait(0.2)
 	var ku := InputEventKey.new(); ku.physical_keycode = KEY_W; ku.keycode = KEY_W; ku.pressed = false
 	Input.parse_input_event(ku)
-	note("pad_keys_back", not g.hud.pad_on)
+	note("pad_keys_back", [not g.hud.pad_on, g.hud.hotbar.modulate.a > 0.99])
 
 ## the cabin computer with a pad: A presses its buttons and never hops you, B closes it
 func _hub_gamepad() -> void:
@@ -3658,3 +3670,16 @@ func _hub_gamepad() -> void:
 		if p.velocity.y > 1.0: hopped = true
 		await wait(0.05)
 	note("hub_jump_works_after", hopped)
+
+## the rear-view mirror on a computer: live every frame while you drive, off when you get out
+func _mirror_rate() -> void:
+	await wait(1.0)
+	g._start()
+	await wait(0.5)
+	g.player.teleport(g.truck.global_position + g.truck.global_transform.basis.x * 2.0)
+	g.enter_truck()
+	await wait(0.5)
+	note("mirror_in_cab", [g.truck.mirror_live, g.truck.mirror_div, g.truck.mirror_vp.render_target_update_mode == SubViewport.UPDATE_ALWAYS, g.truck.mirror_vp.size])
+	g.exit_truck()
+	await wait(0.3)
+	note("mirror_out", [g.truck.mirror_live, g.truck.mirror_vp.render_target_update_mode == SubViewport.UPDATE_DISABLED])

@@ -142,6 +142,43 @@ func _let_focus(n: Node) -> void:
 	for c in n.get_children(): _let_focus(c)
 
 var _focus_t := 0.0
+var _stick_out := false
+
+## the pad's cursor moves to the nearest button that way (and on a slider, left and right slide it)
+func _menu_move(m: Control, dir: Vector2) -> void:
+	_let_focus(m)
+	var fo := get_viewport().gui_get_focus_owner()
+	if fo == null or not m.is_ancestor_of(fo):
+		var f := _focusable(m)
+		if f: f.grab_focus()
+		return
+	if fo is Range and dir.y == 0.0:
+		var r := fo as Range
+		r.value = clampf(r.value + dir.x * maxf(r.step, (r.max_value - r.min_value) / 20.0), r.min_value, r.max_value)
+		return
+	var from := fo.get_global_rect()
+	var c0 := from.get_center()
+	var best: Control = null; var bd := INF
+	for c in _all_focusable(m):
+		if c == fo: continue
+		var rc: Rect2 = c.get_global_rect()
+		var d := rc.get_center() - c0
+		var along := d.dot(dir)
+		# must be that way: past our edge, not just a nudge
+		var edge := (from.size.y if dir.y != 0.0 else from.size.x) * 0.5
+		if along <= edge * 0.5: continue
+		var across := absf(d.dot(Vector2(dir.y, dir.x)))
+		var score := along + across * 2.5
+		if score < bd: bd = score; best = c
+	if best:
+		best.grab_focus()
+		Sfx.play("pick", 0.2, 1.9)
+
+func _all_focusable(n: Node, out: Array = []) -> Array:
+	if n is Control and (n as Control).is_visible_in_tree() and (n as Control).focus_mode == Control.FOCUS_ALL and (n is BaseButton or n is Range) and not (n is ScrollBar):
+		if not (n is BaseButton and (n as BaseButton).disabled): out.append(n)
+	for c in n.get_children(): _all_focusable(c, out)
+	return out
 
 func _menu_focus(m: Control) -> void:
 	_focus_t -= get_process_delta_time()
@@ -164,7 +201,20 @@ func _input(ev: InputEvent) -> void:
 				var fo := get_viewport().gui_get_focus_owner()
 				if fo: fo.release_focus()
 		return
-	if ev is InputEventJoypadMotion and absf(ev.axis_value) < 0.4: return
+	if ev is InputEventJoypadMotion:
+		# the left stick in a menu: one step each time it's pushed out (the d-pad's handled below)
+		if ev.axis == JOY_AXIS_LEFT_X or ev.axis == JOY_AXIS_LEFT_Y:
+			var mm := _menu()
+			if mm != null:
+				get_viewport().set_input_as_handled()
+				var st := Vector2(Gamepad.axis(JOY_AXIS_LEFT_X), Gamepad.axis(JOY_AXIS_LEFT_Y)) if fake.is_empty() else Vector2.ZERO
+				if ev.axis == JOY_AXIS_LEFT_X: st.x = ev.axis_value
+				else: st.y = ev.axis_value
+				if st.length() > 0.6 and not _stick_out:
+					_stick_out = true
+					_menu_move(mm, (Vector2(signf(st.x), 0) if absf(st.x) > absf(st.y) else Vector2(0, signf(st.y))))
+				elif st.length() < 0.3: _stick_out = false
+		if absf(ev.axis_value) < 0.4: return
 	last_used = _clock
 	if not _pad_last:
 		_pad_last = true
@@ -176,6 +226,9 @@ func _input(ev: InputEvent) -> void:
 	if m != null:
 		if down and (b == JOY_BUTTON_B or (b == JOY_BUTTON_START and (game.pause.is_open() or game.phone.visible))):
 			_key(KEY_ESCAPE)
+			get_viewport().set_input_as_handled()
+		elif b in [JOY_BUTTON_DPAD_UP, JOY_BUTTON_DPAD_DOWN, JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_DPAD_RIGHT]:
+			if down: _menu_move(m, {JOY_BUTTON_DPAD_UP: Vector2.UP, JOY_BUTTON_DPAD_DOWN: Vector2.DOWN, JOY_BUTTON_DPAD_LEFT: Vector2.LEFT, JOY_BUTTON_DPAD_RIGHT: Vector2.RIGHT}[b])
 			get_viewport().set_input_as_handled()
 		return
 	# play

@@ -300,13 +300,25 @@ func enter(remote := false) -> void:
 	look_yaw = 0; look_pitch = 0
 	if remote: return
 	_set_cam()
+	mirror_on()
+
+## the mirror's live while someone's in the cab: a computer redraws it with every frame, a phone
+## every third (or every Nth) to save the battery
+func mirror_on(phone_div := 3) -> void:
 	mirror_live = true
-	mirror_div = 3
+	mirror_div = phone_div if _phone() else 1
+	if mirror_div == 1:
+		mirror_vp.size = Vector2i(540, 180)
+		mirror_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+
+func _phone() -> bool:
+	return OS.has_feature("web") or OS.has_feature("mobile") or TouchControls.wanted()
 
 func exit() -> void:
 	driving = false
 	engine_force = 0; brake = 30.0; steering = 0
 	mirror_live = false
+	mirror_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	exited.emit()
 
 func _set_cam() -> void:
@@ -560,7 +572,9 @@ func _physics_process(dt: float) -> void:
 func _process(dt: float) -> void:
 	_gauges_step(dt)
 	# the rear-view mirror is a second render of the world: only refresh it every third frame
-	if mirror_live:
+	if not mirror_live and mirror_vp.render_target_update_mode == SubViewport.UPDATE_ALWAYS:
+		mirror_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	if mirror_live and mirror_div > 1:
 		_mirror_n += 1
 		if _mirror_n % mirror_div == 0: mirror_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	if driving:

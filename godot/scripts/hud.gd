@@ -576,6 +576,8 @@ func pad_text(on: bool) -> void:
 		help_lbl.text = PAD_HELP if on else _key_help
 	var lp := _last_prompt; _last_prompt = "~"; set_prompt(lp)
 	if on and toast_lbl and toast_lbl.text != "": toast_lbl.text = pad_words(toast_lbl.text)
+	# the tool wheel (hold LB) takes the hotbar's place on a pad
+	if hotbar: hotbar.modulate.a = 0.0 if on else 1.0
 
 func set_prompt(t: String) -> void:
 	t = pad_words(t)

@@ -550,7 +550,7 @@ func start_intro() -> void:
 	chipper.hitch_now()
 	chipper.follow_kinematic(true)
 	player.visible = false
-	truck.mirror_live = true; truck.mirror_div = 6     # just a glance during the drive in
+	truck.mirror_on(6)     # just a glance during the drive in
 	truck.cab_cam.make_current()
 	truck.cab_cam.rotation = Vector3(-0.06, PI, 0)
 	intro.eng = Sfx.engine("truck")
@@ -1276,7 +1276,7 @@ func enter_truck_mirror() -> void:
 	player.visible = false
 	player.col_shape.disabled = true
 	truck.driving = true; truck.look_yaw = 0; truck.look_pitch = 0
-	truck._set_cam(); truck.mirror_live = true; truck.mirror_div = 3
+	truck._set_cam(); truck.mirror_on()
 	_seat_t = clock
 	truck.door_blip()
 	Sfx.play("door")
